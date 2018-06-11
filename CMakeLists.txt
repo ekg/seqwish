@@ -18,21 +18,21 @@ include_directories("${PROJECT_SOURCE_DIR}")
 
 # Add external projects
 include(${CMAKE_ROOT}/Modules/ExternalProject.cmake)
-#ExternalProject_Add(sdsl-lite
-#  SOURCE_DIR ${CMAKE_SOURCE_DIR}/deps/sdsl-lite)
-#set(SDSL_INSTALL_PREFIX
-#CMAKE_INSTALL_PREFIX
+
+# sdsl-lite (full build using its cmake config)
 ExternalProject_Add(sdsl-lite
   GIT_REPOSITORY "https://github.com/simongog/sdsl-lite.git"
   GIT_TAG "d52aa9a71513d132e30c09491b5899af449ebb94"
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${INSTALL_DIR}
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${INSTALL_DIR} # TODO ADD static build flag
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 
+# bsort (header-only, so here we just check if we can build it)
 ExternalProject_Add(bsort
   GIT_REPOSITORY "https://github.com/ekg/bsort.git"
   GIT_TAG "0e4076e176d8777d6287bdbe373078415f858903"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 
+# TODO link into bsort and sdsl-lite to verify build works
 add_executable(seqwish ${CMAKE_SOURCE_DIR}/src/main.cpp)
