@@ -1,6 +1,6 @@
 # seqwish
 
-*These* __seq__*uences* __wish__ *they were squished into a graph.*
+*These __seq__uences __wish__ they were squished into a graph.*
 
 ## a variation graph inducer
 
