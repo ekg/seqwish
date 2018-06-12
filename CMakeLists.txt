@@ -40,7 +40,7 @@ ExternalProject_Add(bsort
 ExternalProject_Get_property(bsort SOURCE_DIR)
 set(bsort_INCLUDE "${SOURCE_DIR}/src")
 
-# TODO link into bsort and sdsl-lite to verify build works
+# set up our target executable and specify its dependencies and includes
 add_executable(seqwish ${CMAKE_SOURCE_DIR}/src/main.cpp)
 add_dependencies(seqwish bsort)
 add_dependencies(seqwish sdsl-lite)
