@@ -40,12 +40,23 @@ ExternalProject_Add(bsort
 ExternalProject_Get_property(bsort SOURCE_DIR)
 set(bsort_INCLUDE "${SOURCE_DIR}/src")
 
+# bsort (header-only, so here we just check if we can build it)
+ExternalProject_Add(tayweeargs
+  GIT_REPOSITORY "https://github.com/Taywee/args.git"
+  GIT_TAG "3de44ec671db452cc0c4ef86399b108939768abb"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND "")
+ExternalProject_Get_property(tayweeargs SOURCE_DIR)
+set(tayweeargs_INCLUDE "${SOURCE_DIR}")
+
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish ${CMAKE_SOURCE_DIR}/src/main.cpp)
 add_dependencies(seqwish bsort)
+add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
 target_include_directories(seqwish PUBLIC
   "${bsort_INCLUDE}"
-  "${sdsl-lite_INCLUDE}")
+  "${sdsl-lite_INCLUDE}"
+  "${tayweeargs_INCLUDE}")
 target_link_libraries(seqwish "${sdsl-lite_LIB}/libsdsl.a")
 set(CMAKE_EXE_LINKER_FLAGS "-static")
