@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
     args::ValueFlag<string> alns(parser, "alns", "induce the graph from these alignments", {'a', "alns"});
     args::ValueFlag<string> seqs(parser, "seqs", "the sequences used to generate the alignments", {'s', "seqs"});
-    args::ValueFlag<string> base(parser, "base", "output graph using this basename", {'b', "base"});
+    args::ValueFlag<string> base(parser, "base", "build graph using this basename", {'b', "base"});
     try {
         parser.ParseCLI(argc, argv);
     } catch (args::Help) {
