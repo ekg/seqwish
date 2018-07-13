@@ -28,8 +28,10 @@ ExternalProject_Add(sdsl-lite
   INSTALL_COMMAND "")
 ExternalProject_Get_property(sdsl-lite INSTALL_DIR)
 set(sdsl-lite_INCLUDE "${INSTALL_DIR}/src/sdsl-lite-build/include")
+set(sdsl-lite-divsufsort_INCLUDE "${INSTALL_DIR}/src/sdsl-lite-build/external/libdivsufsort/include")
 message("${sdsl-lite_INCLUDE}")
 set(sdsl-lite_LIB "${INSTALL_DIR}/src/sdsl-lite-build/lib")
+set(sdsl-lite-divsufsort_LIB "${INSTALL_DIR}/src/sdsl-lite-build/external/libdivsufsort/lib")
 
 # bsort (header-only, so here we just check if we can build it)
 ExternalProject_Add(bsort
@@ -40,7 +42,7 @@ ExternalProject_Add(bsort
 ExternalProject_Get_property(bsort SOURCE_DIR)
 set(bsort_INCLUDE "${SOURCE_DIR}/src")
 
-# bsort (header-only, so here we just check if we can build it)
+# taywee's C++ args library, header only
 ExternalProject_Add(tayweeargs
   GIT_REPOSITORY "https://github.com/Taywee/args.git"
   GIT_TAG "3de44ec671db452cc0c4ef86399b108939768abb"
@@ -48,6 +50,15 @@ ExternalProject_Add(tayweeargs
   INSTALL_COMMAND "")
 ExternalProject_Get_property(tayweeargs SOURCE_DIR)
 set(tayweeargs_INCLUDE "${SOURCE_DIR}")
+
+# gzip file reader, header only
+ExternalProject_Add(gzipreader
+  GIT_REPOSITORY "https://github.com/gatoravi/gzip_reader.git"
+  GIT_TAG "0ef26c0399e926087f9d6c4a56067a7bf1fc4f5e"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND "")
+ExternalProject_Get_property(gzipreader SOURCE_DIR)
+set(gzipreader_INCLUDE "${SOURCE_DIR}")
 
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish ${CMAKE_SOURCE_DIR}/src/main.cpp)
@@ -57,6 +68,12 @@ add_dependencies(seqwish sdsl-lite)
 target_include_directories(seqwish PUBLIC
   "${bsort_INCLUDE}"
   "${sdsl-lite_INCLUDE}"
-  "${tayweeargs_INCLUDE}")
-target_link_libraries(seqwish "${sdsl-lite_LIB}/libsdsl.a")
+  "${sdsl-lite-divsufsort_INCLUDE}"
+  "${tayweeargs_INCLUDE}"
+  "${gzipreader_INCLUDE}")
+target_link_libraries(seqwish
+  "${sdsl-lite_LIB}/libsdsl.a"
+  "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
+  "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
+  z)
 set(CMAKE_EXE_LINKER_FLAGS "-static")

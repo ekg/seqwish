@@ -75,6 +75,7 @@ public:
 
     // load from base file name
     void load(const std::string& f) {
+        open_reader();
         set_base_filename(f);
         std::ifstream in(index_filename.c_str());
         std::string magic;
