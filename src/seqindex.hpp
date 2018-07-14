@@ -210,13 +210,27 @@ public:
     }
 
     std::string subseq(const std::string& name, size_t pos, size_t count) {
-        char s[count];
         size_t n = rank_of_seq_named(name);
-        //std::cerr << "rank of seq named " << n << " " << name << std::endl;
-        //std::cerr << "seq offset " << nth_seq_offset(n) + pos << std::endl;
-        seqfile.seekg(nth_seq_offset(n) + pos);
+        return subseq(n, pos, count);
+    }
+
+    std::string subseq(size_t n, size_t pos, size_t count) {
+        return subseq(nth_seq_offset(n)+pos, count);
+    }
+
+    std::string subseq(size_t pos, size_t count) {
+        char s[count];
+        seqfile.seekg(pos);
         seqfile.read(s, count);
         return std::string(s, count);
+    }
+
+    size_t pos_in_all_seqs(const std::string& name, size_t pos) {
+        return pos_in_all_seqs(rank_of_seq_named(name), pos);
+    }
+
+    size_t pos_in_all_seqs(size_t n, size_t pos) {
+        return nth_seq_offset(n) + pos;
     }
 };
 
