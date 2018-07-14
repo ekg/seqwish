@@ -74,6 +74,7 @@ public:
             seqname_offset.push_back(seq_names_bytes_written);
             seq_offset.push_back(seq_bytes_written);
             line[0] = '>';
+            line = line.substr(0, line.find(" "));
             seqnames << line;
             seq_names_bytes_written += line.size();
             std::string seq;
