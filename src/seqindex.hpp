@@ -17,12 +17,18 @@ class SeqIndex {
 private:
 
     std::string basefilename;
-    std::string seqfile;
+    std::string seqfilename;
     std::string seqnamefile;
     std::string seqidxfile;
-    sdsl::dac_vector<> seq_offset_civ;   // sequence offsets (for offset and length)
-    sdsl::csa_wt<> seq_name_csa;         // seq name compressed suffix array
-    sdsl::sd_vector<> seq_name_cbv;      // path name starts
+    size_t seq_count = 0;
+    // a file containing the concatenated sequences
+    std::ifstream seqfile;
+    // sequence offsets (for offset and length)
+    sdsl::dac_vector<> seq_offset_civ;
+    // seq name compressed suffix array
+    sdsl::csa_wt<> seq_name_csa;
+    // seq name index
+    sdsl::sd_vector<> seq_name_cbv;
     sdsl::sd_vector<>::rank_1_type seq_name_cbv_rank;
     sdsl::sd_vector<>::select_1_type seq_name_cbv_select;
     uint32_t OUTPUT_VERSION = 1; // update as we change our format
@@ -37,7 +43,7 @@ public:
     // provide queries over this index that let us extract particular positions and subsequences
     void set_base_filename(const std::string& filename) {
         basefilename = filename;
-        seqfile = basefilename + ".seq";
+        seqfilename = basefilename + ".seq";
         seqnamefile = basefilename + ".seqnames";
         seqidxfile = basefilename + ".seqidx";
     }
@@ -47,7 +53,7 @@ public:
         // read the file
         igzstream in(filename.c_str());
         std::ofstream seqnames(seqnamefile.c_str());
-        std::ofstream seqout(seqfile.c_str());
+        std::ofstream seqout(seqfilename.c_str());
         std::vector<uint64_t> seqname_offset;
         std::vector<uint64_t> seq_offset;
         bool input_is_fasta=false, input_is_fastq=false;
@@ -75,8 +81,7 @@ public:
             if (input_is_fasta) {
                 while (std::getline(in, line)) {
                     if (line[0] == '>') {
-                        // seek back, this is the next sequence
-                        //in.seekg(in.tellg()-(std::streamoff)(line.size()+1));
+                        // this is the header of the next sequence
                         break;
                     } else {
                         seq.append(line);
@@ -98,10 +103,12 @@ public:
         seqname_offset.push_back(seq_names_bytes_written);
         seqnames.close();
         seqout.close();
-        // mark the seq name starts vector
-        sdsl::bit_vector seq_name_starts(seqname_offset.back());
-        for (size_t i = 0; i < seqname_offset.size()-1; ++i) {
-            seq_name_starts[i] = 1;
+        // save the count of sequences
+        seq_count = seqname_offset.size()-1;
+        // mark the seq name starts vector, adding a terminating mark
+        sdsl::bit_vector seq_name_starts(seqname_offset.back()+1);
+        for (size_t i = 0; i < seqname_offset.size(); ++i) {
+            seq_name_starts[seqname_offset[i]] = 1;
         }
         // build the name index
         construct(seq_name_csa, seqnamefile, 1);
@@ -112,6 +119,9 @@ public:
         sdsl::util::assign(seq_name_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_name_cbv));
         sdsl::util::assign(seq_name_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_name_cbv));
         sdsl::util::assign(seq_offset_civ, sdsl::dac_vector<>(seq_offset));
+        //std::cerr << seq_offset_civ << std::endl;
+        // validate
+        // look up each sequence by name
     }
 
     size_t save(sdsl::structure_tree_node* s = NULL, std::string name = "") {
@@ -123,12 +133,14 @@ public:
         out << "seqidx"; written += 9;
         uint32_t version_buffer = OUTPUT_VERSION;
         out.write((char*) &version_buffer, sizeof(version_buffer));
+        written += sdsl::write_member(seq_count, out, child, "seq_count");
         written += seq_name_csa.serialize(out, child, "seq_name_csa");
         written += seq_name_cbv.serialize(out, child, "seq_name_cbv");
         written += seq_name_cbv_rank.serialize(out, child, "seq_name_cbv_rank");
         written += seq_name_cbv_select.serialize(out, child, "seq_name_cbv_select");
         written += seq_offset_civ.serialize(out, child, "seq_offset_civ");
         out.close();
+        seqfile.open(seqfilename); // open the seq file
         return written;
     }
 
@@ -140,12 +152,70 @@ public:
         uint32_t version;
         in.read((char*) &version, sizeof(version));
         assert(version == OUTPUT_VERSION);
+        sdsl::read_member(seq_count, in);
         seq_name_csa.load(in);
         seq_name_cbv.load(in);
         seq_name_cbv_rank.load(in);
         seq_name_cbv_select.load(in);
         seq_offset_civ.load(in);
-        in.close();
+        in.close(); // close the sdsl index input
+        seqfile.open(seqfilename); // open the seq file
+    }
+
+    void to_fasta(std::ostream& out, size_t linewidth = 60) {
+        // extract the sequence names
+        for (size_t i = 1; i < seq_count+1; ++i) {
+            auto name = nth_name(i);
+            out << ">" << name << std::endl;
+            // pad sequence
+            size_t seq_length = nth_seq_length(i);
+            // for chunk of 80 up to sequence length
+            //out << subseq(name, 0, linewidth) << std::endl;
+            for (size_t j = 0; j < seq_length; j += linewidth) {
+                out << subseq(name, j, std::min(linewidth, seq_length - j)) << std::endl;
+            }
+        }
+        // iterate through the sequence names and extract the sequences
+    }
+
+    std::string nth_name(size_t n) {
+        // get the extents from our seq name dictionary
+        size_t begin = seq_name_cbv_select(n)+1; // step past '>' delimiter
+        size_t end = seq_name_cbv_select(n+1)-1;
+        std::string name = sdsl::extract(seq_name_csa, begin, end);
+        return name;
+    }
+
+    size_t rank_of_seq_named(const std::string& name) {
+        std::string query = ">" + name;
+        //std::cerr << query << std::endl;
+        auto occs = locate(seq_name_csa, query);
+        //std::cerr << "occurs " << occs << std::endl;
+        assert(occs.size() == 1);
+        return seq_name_cbv_rank(occs[0])+1;
+    }
+
+    size_t nth_seq_length(size_t n) {
+        //std::cerr << "trying for "  << n << std::endl;
+        return seq_offset_civ[n]-seq_offset_civ[n-1];
+    }
+
+    size_t nth_seq_offset(size_t n) {
+        return seq_offset_civ[n-1];
+    }
+
+    std::string seq(const std::string& name) {
+        return subseq(name, 0, nth_seq_length(rank_of_seq_named(name)));
+    }
+
+    std::string subseq(const std::string& name, size_t pos, size_t count) {
+        char s[count];
+        size_t n = rank_of_seq_named(name);
+        //std::cerr << "rank of seq named " << n << " " << name << std::endl;
+        //std::cerr << "seq offset " << nth_seq_offset(n) + pos << std::endl;
+        seqfile.seekg(nth_seq_offset(n) + pos);
+        seqfile.read(s, count);
+        return std::string(s, count);
     }
 };
 
