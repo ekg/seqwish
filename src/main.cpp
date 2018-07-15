@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
         cout << parser;
         return 1;
     }
-    // index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a 3-bit sequence file
+    // index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     // parse the alignments into position pairs and index (A)
     // find the transitive closures via the alignments and construct S, N, and P indexed arrays
     // construct the links of the graph in L by rewriting the forward and reverse of Q in terms of pairs of basis in S
