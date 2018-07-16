@@ -3,18 +3,53 @@
 namespace seqwish {
 
 void unpack_alignments(const std::string& paf_file,
-                       dmultimap<pos_t, pos_t>& aln_mm,
-                       const seqindex_t& seqidx) {
+                       dmultimap<uint64_t, pos_t>& aln_mm,
+                       seqindex_t& seqidx) {
     // go through the PAF file
     std::ifstream paf_in(paf_file.c_str());
     std::string line;
     while (std::getline(paf_in, line)) {
-        paf_row_t pafrow(line);
-        // transform the alignments into a series of pairs b_i, b_j
-        // that point into offsets in the seqindex
-        //pafrow.cigar;
+        paf_row_t paf(line);
+        //std::cerr << paf << std::endl;
+        size_t query_idx = seqidx.rank_of_seq_named(paf.query_sequence_name);
+        size_t query_len = seqidx.nth_seq_length(query_idx);
+        size_t target_idx = seqidx.rank_of_seq_named(paf.target_sequence_name);
+        size_t target_len = seqidx.nth_seq_length(target_idx);
+        bool t_rev = !paf.query_target_same_strand;
+        //std::cerr << "query_idx " << query_idx << " " << seqidx.nth_seq_length(query_idx) << std::endl;
+        //std::cerr << "target_idx " << target_idx << " " << seqidx.nth_seq_length(target_idx) << std::endl;
+        size_t q_all_pos = seqidx.pos_in_all_seqs(query_idx, paf.query_start);
+        size_t t_all_pos = seqidx.pos_in_all_seqs(target_idx, paf.target_start) + (t_rev ? target_len : 0);
+        //std::cerr << "q_all_pos " << q_all_pos << std::endl;
+        //std::cerr << "t_all_pos " << t_all_pos << std::endl;
+        // convert to 1-based positions as 0 has a special meaning in the dmultimap 
+        uint64_t q_pos = q_all_pos+1;
+        pos_t t_pos = make_pos_t(t_all_pos+1, t_rev);
+        for (auto& c : paf.cigar) {
+            switch (c.op) {
+            case 'M':
+                for (size_t i = 0; i < c.len; ++i) {
+                    //std::cerr << q_pos << ":" << pos_to_string(t_pos) << "/" << t_pos << std::endl;
+                    aln_mm.append(q_pos, t_pos);
+                    ++q_pos;
+                    incr_pos(t_pos);
+                }
+                break;
+            case 'I':
+                q_pos += c.len;
+                break;
+            case 'D':
+                t_pos += c.len;
+                break;
+            default: break;
+            }
+        }
     }
-
-}                      
+    //std::cerr << "at end" << std::endl;
+    aln_mm.index();
+    //std::cerr << "record count " << aln_mm.record_count() << std::endl;
+    aln_mm.for_each_pair([&](const pos_t& p1, const pos_t& p2) {
+            std::cout << p1 << ":" << pos_to_string(p2) << std::endl; });
+}
 
 }

@@ -13,7 +13,7 @@ namespace seqwish {
 
 void unpack_alignments(const std::string& paf_file,
                        seqwish::dmultimap<pos_t, pos_t>& aln_mm,
-                       const seqindex_t& seqidx);
+                       seqindex_t& seqidx);
 
 }
 

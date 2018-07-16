@@ -41,7 +41,7 @@ ExternalProject_Add(bsort
   INSTALL_COMMAND "")
 ExternalProject_Get_property(bsort SOURCE_DIR)
 set(bsort_INCLUDE "${SOURCE_DIR}/src")
-set(bsort_LIB "${INSTALL_DIR}/src/bsort-build/lib")
+set(bsort_LIB "${SOURCE_DIR}/lib")
 
 # taywee's C++ args library, header only
 ExternalProject_Add(tayweeargs
@@ -86,5 +86,6 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
+  "${bsort_LIB}/libbsort.a"
   z)
 set(CMAKE_EXE_LINKER_FLAGS "-static")

@@ -1,9 +1,10 @@
 #ifndef DMULTIMAP_HPP_INCLUDED
 #define DMULTIMAP_HPP_INCLUDED
 
-#include "bsort.hpp"
 #include <iostream>
 #include <string>
+#include <functional>
+#include "bsort.hpp"
 #include "sdsl/bit_vectors.hpp"
 
 namespace seqwish {
@@ -35,8 +36,8 @@ private:
     // bsort parameters
     int char_start = 0;
     int char_stop = 255;
-    int stack_size = 12;
-    int cut_off = 4;
+    int stack_size = 32;
+    int cut_off = 32;
     size_t record_size = 0;
     // key information
     Key max_key = 0;
@@ -54,7 +55,7 @@ private:
     void init(void) {
         record_size = sizeof(Key) + sizeof(Value);
         nullkey = 0;
-        for (size_t i; i < sizeof(Value); ++i) {
+        for (size_t i = 0; i < sizeof(Value); ++i) {
             ((uint8_t*)&nullvalue)[i] = 0;
         }
     }
@@ -161,8 +162,10 @@ public:
     void append(const Key& k, const Value& v) {
         sorted = false; // assume we break the sort
         // write to the end of the file
-        writer.write((char*)&k, sizeof(Key));
-        writer.write((char*)&v, sizeof(Value));
+        auto k_be = htobe64(k);
+        auto v_be = htobe64(v);
+        writer.write((char*)&k_be, sizeof(Key));
+        writer.write((char*)&v_be, sizeof(Value));
     }
 
     /// get the record count
@@ -179,10 +182,11 @@ public:
     /// sort the record in the backing file by key
     void sort(void) {
         if (sorted) return;
+        //std::cerr << "sorting!" << std::endl;
         close_reader();
         close_writer();
         struct bsort::sort sort;
-        if (-1==bsort::open_sort(filename.c_str(), &sort)) {
+        if (-1==bsort::open_sort((char*)filename.c_str(), &sort)) {
             assert(false);
         }
         size_t key_size = sizeof(Key);
@@ -199,6 +203,18 @@ public:
         sorted = true;
     }
 
+    Key get_key(void) {
+        Key k;
+        reader.read((char*)&k, sizeof(Key));
+        return be64toh(k);
+    }
+
+    Value get_value(void) {
+        Value v;
+        reader.read((char*)&v, sizeof(Value));
+        return be64toh(v);
+    }
+
     // pad our key space so that we can query it directly with select operations
     void pad(void) {
         assert(sorted);
@@ -208,19 +224,21 @@ public:
         // get the number of records
         size_t n_records = record_count();
         // we need to record the max value and record state during the iteration
-        Key curr, prev=0;
+        Key curr=0, prev=0;
         Value value;
         bool missing_records = false;
         // go through the records of the file and write records [k_i, 0x0] for each k_i that we don't see up to the max record we've seen
-        for (size_t i = 0; i < n_records; i+=record_size) {
-            reader.read((char*)&curr, sizeof(Key));
-            reader.read((char*)&value, sizeof(Value));
+        for (size_t i = 0; i < n_records; ++i) {
+            curr = get_key();
+            value = get_value();
+            //std::cerr << "seeing " << curr << " " << value << std::endl;
             while (prev+1 < curr) {
+                ++prev;
+                //std::cerr << "appending " << prev << " " << nullvalue << std::endl;
                 missing_records = true;
                 append(prev, nullvalue);
-                ++prev;
             }
-            append(curr, value);
+            //append(curr, value); // no need to append as we already have it!
             prev = curr;
         }
         // we have to sort again if we found any empty records
@@ -228,7 +246,7 @@ public:
             sort();
         }
     }
-
+    
     // index
     void index(void) {
         sort();
@@ -238,10 +256,12 @@ public:
         sdsl::bit_vector key_bv(n_records);
         // record the key starts
         Key last, curr;
+        Value val;
         reader.read((char*)&last, sizeof(Key));
         key_bv[0] = 1;
-        for (size_t i = 1; i < n_records; i+=record_size) {
-            reader.read((char*)&curr, sizeof(Key));
+        for (size_t i = 1; i < n_records; ++i) {
+            curr = get_key();
+            val = get_value();
             if (curr != last) {
                 key_bv[i] = 1;
                 last = curr;
@@ -270,6 +290,18 @@ public:
         reader.seekg(n*record_size+sizeof(Key));
         reader.read((char*)&value, sizeof(Value));
         return value;
+    }
+
+    void for_each_pair(const std::function<void(const Key&, const Value&)>& lambda) {
+        open_reader(); // open or seek to beginning
+        Key key;
+        Value value;
+        size_t n_records = record_count();
+        for (size_t i = 0; i < n_records; ++i) {
+            key = get_key();
+            value = get_value();
+            lambda(key, value);
+        }
     }
 
     std::vector<Value> values(const Key& key) {
