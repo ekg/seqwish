@@ -36,11 +36,12 @@ set(sdsl-lite-divsufsort_LIB "${INSTALL_DIR}/src/sdsl-lite-build/external/libdiv
 # bsort (header-only, so here we just check if we can build it)
 ExternalProject_Add(bsort
   GIT_REPOSITORY "https://github.com/ekg/bsort.git"
-  GIT_TAG "0e4076e176d8777d6287bdbe373078415f858903"
+  GIT_TAG "e80bdd183ecca23e75901d2bdabe9920b78f1590"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(bsort SOURCE_DIR)
 set(bsort_INCLUDE "${SOURCE_DIR}/src")
+set(bsort_LIB "${INSTALL_DIR}/src/bsort-build/lib")
 
 # taywee's C++ args library, header only
 ExternalProject_Add(tayweeargs
@@ -68,10 +69,12 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/seqindex.cpp
   ${CMAKE_SOURCE_DIR}/src/paf.cpp
   ${CMAKE_SOURCE_DIR}/src/cigar.cpp
+  ${CMAKE_SOURCE_DIR}/src/alignments.cpp
   )
 add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
+add_dependencies(seqwish gzipreader)
 target_include_directories(seqwish PUBLIC
   "${bsort_INCLUDE}"
   "${sdsl-lite_INCLUDE}"

@@ -5,12 +5,11 @@
 #include <fstream>
 #include <string>
 #include <vector>
-#include <utility>
 #include "cigar.hpp"
 
 namespace seqwish {
 
-class PAFrow {
+class paf_row_t {
 public:
     std::string query_sequence_name;
     uint64_t query_sequence_length;
@@ -22,15 +21,14 @@ public:
     uint64_t target_start;
     uint64_t target_end;
     uint64_t bases_in_mapping;
+    uint64_t bases_and_gaps_in_mapping;
     uint16_t mapping_quality;
     cigar_t cigar;
-    //PAFrow(void) { }
-    //~PAFrow(void) { }
-    PAFrow(const std::string& l);
-    friend std::ostream& operator<<(std::ostream& out, const PAFrow& pafrow);
+    paf_row_t(const std::string& l);
+    friend std::ostream& operator<<(std::ostream& out, const paf_row_t& pafrow);
 };
 
-void parse_alignments(const std::string& filename);
+void dump_alignments(const std::string& filename);
 
 }
 

@@ -12,7 +12,7 @@
 
 namespace seqwish {
 
-class SeqIndex {
+class seqindex_t {
 
 private:
 
@@ -35,8 +35,8 @@ private:
 
 public:
 
-    SeqIndex(void) { }
-    ~SeqIndex(void) { }
+    seqindex_t(void) { }
+    ~seqindex_t(void) { }
     void set_base_filename(const std::string& filename);
     void build_index(const std::string& filename);
     size_t save(sdsl::structure_tree_node* s = NULL, std::string name = "");
