@@ -18,13 +18,13 @@ void unpack_alignments(const std::string& paf_file,
         bool t_rev = !paf.query_target_same_strand;
         //std::cerr << "query_idx " << query_idx << " " << seqidx.nth_seq_length(query_idx) << std::endl;
         //std::cerr << "target_idx " << target_idx << " " << seqidx.nth_seq_length(target_idx) << std::endl;
-        size_t q_all_pos = seqidx.pos_in_all_seqs(query_idx, paf.query_start);
-        size_t t_all_pos = seqidx.pos_in_all_seqs(target_idx, paf.target_start) + (t_rev ? target_len : 0);
+        size_t q_all_pos = seqidx.pos_in_all_seqs(query_idx, paf.query_start, false);
+        size_t t_all_pos = seqidx.pos_in_all_seqs(target_idx, paf.target_start, t_rev);// + (t_rev ? target_len : 0);
         //std::cerr << "q_all_pos " << q_all_pos << std::endl;
         //std::cerr << "t_all_pos " << t_all_pos << std::endl;
-        // convert to 1-based positions as 0 has a special meaning in the dmultimap 
-        uint64_t q_pos = q_all_pos+1;
-        pos_t t_pos = make_pos_t(t_all_pos+1, t_rev);
+        // these calls convert to 1-based positions as 0 has a special meaning in the dmultimap 
+        uint64_t q_pos = q_all_pos;
+        pos_t t_pos = make_pos_t(t_all_pos, t_rev);
         for (auto& c : paf.cigar) {
             switch (c.op) {
             case 'M':
@@ -39,7 +39,7 @@ void unpack_alignments(const std::string& paf_file,
                 q_pos += c.len;
                 break;
             case 'D':
-                t_pos += c.len;
+                incr_pos(t_pos, c.len);
                 break;
             default: break;
             }
@@ -49,7 +49,7 @@ void unpack_alignments(const std::string& paf_file,
     aln_mm.index();
     //std::cerr << "record count " << aln_mm.record_count() << std::endl;
     aln_mm.for_each_pair([&](const pos_t& p1, const pos_t& p2) {
-            std::cout << p1 << ":" << pos_to_string(p2) << std::endl; });
+            std::cout << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
 }
 
 }

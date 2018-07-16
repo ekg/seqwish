@@ -29,6 +29,14 @@ void incr_pos(pos_t& pos) {
     }
 }
 
+void incr_pos(pos_t& pos, size_t by) {
+    if (is_rev(pos)) {
+        pos -= 2*by;
+    } else {
+        pos += 2*by;
+    }
+}
+
 std::string pos_to_string(const pos_t& pos) {
     return std::to_string(offset(pos)) + (is_rev(pos)?"-":"+");
 }

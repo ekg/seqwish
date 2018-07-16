@@ -188,12 +188,12 @@ std::string seqindex_t::subseq(size_t pos, size_t count) {
     return std::string(s, count);
 }
 
-size_t seqindex_t::pos_in_all_seqs(const std::string& name, size_t pos) {
-    return pos_in_all_seqs(rank_of_seq_named(name), pos);
+size_t seqindex_t::pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev) {
+    return pos_in_all_seqs(rank_of_seq_named(name), pos, is_rev);
 }
 
-size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos) {
-    return nth_seq_offset(n) + pos;
+size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos, bool is_rev) {
+    return nth_seq_offset(n) + 1 + (is_rev ? nth_seq_length(n)-pos : pos);
 }
 
 }

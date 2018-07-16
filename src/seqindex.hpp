@@ -50,8 +50,8 @@ public:
     std::string subseq(const std::string& name, size_t pos, size_t count);
     std::string subseq(size_t n, size_t pos, size_t count);
     std::string subseq(size_t pos, size_t count);
-    size_t pos_in_all_seqs(const std::string& name, size_t pos);
-    size_t pos_in_all_seqs(size_t n, size_t pos);
+    size_t pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev);
+    size_t pos_in_all_seqs(size_t n, size_t pos, bool is_rev);
 
 };
 
