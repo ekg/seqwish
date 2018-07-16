@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     // 2) parse the alignments into position pairs and index (A)
-    dmultimap<int64_t, int64_t> aln_mm(args::get(base) + ".sqa");
+    dmultimap<pos_t, pos_t> aln_mm(args::get(base) + ".sqa");
     if (args::get(debug)) dump_alignments(args::get(alns));
     unpack_alignments(args::get(alns), aln_mm, seqidx); // yields A index
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays

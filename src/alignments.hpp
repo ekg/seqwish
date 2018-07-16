@@ -7,11 +7,12 @@
 #include "paf.hpp"
 #include "dmultimap.hpp"
 #include "seqindex.hpp"
+#include "pos.hpp"
 
 namespace seqwish {
 
 void unpack_alignments(const std::string& paf_file,
-                       seqwish::dmultimap<int64_t, int64_t>& aln_mm,
+                       seqwish::dmultimap<pos_t, pos_t>& aln_mm,
                        const seqindex_t& seqidx);
 
 }
