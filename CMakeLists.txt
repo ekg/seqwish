@@ -60,10 +60,15 @@ ExternalProject_Add(gzipreader
 ExternalProject_Get_property(gzipreader SOURCE_DIR)
 set(gzipreader_INCLUDE "${SOURCE_DIR}")
 
+set(CMAKE_BUILD_TYPE Debug) 
+
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/main.cpp
-  ${CMAKE_SOURCE_DIR}/src/seqindex.cpp)
+  ${CMAKE_SOURCE_DIR}/src/seqindex.cpp
+  ${CMAKE_SOURCE_DIR}/src/paf.cpp
+  ${CMAKE_SOURCE_DIR}/src/cigar.cpp
+  )
 add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)

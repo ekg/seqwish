@@ -4,13 +4,11 @@
 #include "args.hxx"
 #include "dmultimap.hpp"
 #include "seqindex.hpp"
+#include "paf.hpp"
 
 using namespace std;
 using namespace seqwish;
 
-struct arrayX {
-    char bin[100];
-};
 
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
@@ -33,21 +31,26 @@ int main(int argc, char** argv) {
         cout << parser;
         return 1;
     }
-    // index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
-    // parse the alignments into position pairs and index (A)
-    // find the transitive closures via the alignments and construct S, N, and P indexed arrays
-    // construct the links of the graph in L by rewriting the forward and reverse of Q in terms of pairs of basis in S
-    // optionally generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
-    // emit the graph in GFA
-    dmultimap<int64_t, arrayX> d;
-    SeqIndex idx;
-    idx.build_index(args::get(seqs));
-    idx.save();
+    // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
+    SeqIndex seqidx;
+    seqidx.build_index(args::get(seqs));
+    seqidx.save();
     if (args::get(debug)) {
-        idx.to_fasta(cout);
+        seqidx.to_fasta(cout);
     }
-    //cout << args::get(alns) << endl;
-    //cout << args::get(seqs) << endl;
-    //cout << args::get(base) << endl;
+    if (args::get(base).empty()
+        || args::get(alns).empty()) {
+        // nothing to do
+        return 0;
+    }
+    // 2) parse the alignments into position pairs and index (A)
+    dmultimap<int64_t, int64_t> aln_mm(args::get(base) + ".sqa");
+    //parse_alignments(aln_mm, args::get(alns));
+    parse_alignments(args::get(alns));
+    // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays
+    // 4) construct the links of the graph in L by rewriting the forward and reverse of Q in terms of pairs of basis in S
+    // 5) optionally generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
+    // 6) emit the graph in GFA
+
     return(0);
 }

@@ -19,8 +19,8 @@ to put the padding pairs in the right positions.  We record the key
 space by marking a bitvector of length equal to max(keys) with 1 at
 those positions corresponding to the first record of each key in the
 sorted array.  We compress this bitvector and build select supports on
-it We are now able to memory map the sorted array and seach into it
-using select queries on this bitvector.
+it We are now able to traverse the sorted array using select queries
+on this bitvector.
 */
 
 template <typename Key, typename Value> class dmultimap {
@@ -64,7 +64,7 @@ public:
     // constructor
     dmultimap(void) { init(); }
 
-    dmultimap(const std::string& f) : filename(f) { init(); }
+    dmultimap(const std::string& f) : filename(f) { init(); open_writer(f); }
 
     ~dmultimap(void) { }
 
