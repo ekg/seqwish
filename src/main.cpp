@@ -56,6 +56,10 @@ int main(int argc, char** argv) {
     dmultimap<uint64_t, pos_t> aln_mm(aln_idx);
     if (args::get(debug)) dump_alignments(args::get(alns));
     unpack_alignments(args::get(alns), aln_mm, seqidx); // yields array A
+    if (args::get(debug)) {
+        aln_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
+                std::cout << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
+    }
 
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays
     std::string seq_v_file = args::get(base) + ".sqs";
@@ -66,14 +70,26 @@ int main(int argc, char** argv) {
     std::remove(path_mm_idx.c_str());
     dmultimap<uint64_t, pos_t> path_mm(path_mm_idx);
     sdsl::bit_vector q_seen_bv(seqidx.seq_length());
-    compute_transitive_closures(seqidx, aln_mm, q_seen_bv, seq_v_file, node_mm, path_mm);
+    size_t graph_length = compute_transitive_closures(seqidx, aln_mm, q_seen_bv, seq_v_file, node_mm, path_mm);
+    if (args::get(debug)) {
+        node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
+                std::cout << "node_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
+        path_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
+                std::cout << "path_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
+    }
 
     // 4) construct the links of the graph in L by rewriting the forward and reverse of Q in terms of pairs of basis in S
     std::string link_mm_idx = args::get(base) + ".sql";
     std::remove(link_mm_idx.c_str());
     dmultimap<pos_t, pos_t> link_mm(link_mm_idx);
-    derive_links(seqidx, path_mm, link_mm);
-    
+    derive_links(seqidx, graph_length, path_mm, link_mm);
+    if (args::get(debug)) {
+        link_mm.for_each_pair([&](const pos_t& p1, const pos_t& p2) {
+                std::cerr << "link_mm" << "\t"
+                          << pos_to_string(p1) << "\t"
+                          << pos_to_string(p2) << std::endl; });
+    }
+
     // 5) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
     // 6) emit the graph in GFA
 

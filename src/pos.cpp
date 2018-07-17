@@ -37,6 +37,10 @@ void incr_pos(pos_t& pos, size_t by) {
     }
 }
 
+pos_t rev_pos_t(const pos_t& pos) {
+    return make_pos_t(offset(pos), !is_rev(pos));
+}
+
 std::string pos_to_string(const pos_t& pos) {
     return std::to_string(offset(pos)) + (is_rev(pos)?"-":"+");
 }

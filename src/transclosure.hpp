@@ -10,7 +10,7 @@
 
 namespace seqwish {
 
-void compute_transitive_closures(
+size_t compute_transitive_closures(
     seqindex_t& seqidx,
     dmultimap<uint64_t, uint64_t>& aln_mm,
     sdsl::bit_vector& q_seen_bv,

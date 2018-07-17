@@ -45,13 +45,7 @@ void unpack_alignments(const std::string& paf_file,
             }
         }
     }
-    //std::cerr << "at end" << std::endl;
     aln_mm.index(seqidx.seq_length());
-    //std::cerr << "record count " << aln_mm.record_count() << std::endl;
-    /*
-    aln_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
-            std::cout << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
-    */
 }
 
 }

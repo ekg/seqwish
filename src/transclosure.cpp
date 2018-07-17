@@ -3,7 +3,7 @@
 
 namespace seqwish {
 
-void compute_transitive_closures(
+size_t compute_transitive_closures(
     seqindex_t& seqidx,
     dmultimap<uint64_t, pos_t>& aln_mm,
     sdsl::bit_vector& q_seen_bv,
@@ -60,17 +60,13 @@ void compute_transitive_closures(
             // and add them to todo if we haven't done'm
         }
     }
-    // when done, build node_mm and path_mm indexes
+    // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
+    // build node_mm and path_mm indexes
     node_mm.index(seq_bytes);
-    node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
-            std::cout << "node_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
-    
     path_mm.index(input_seq_length);
-    path_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
-            std::cout << "path_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
-
+    return seq_bytes;
 }
 
 }
