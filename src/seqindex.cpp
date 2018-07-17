@@ -196,4 +196,19 @@ size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos, bool is_rev) {
     return nth_seq_offset(n) + (is_rev ? nth_seq_length(n)-pos : pos);
 }
 
+size_t seqindex_t::seq_length(void) {
+    return seq_offset_civ[seq_offset_civ.size()-1];
+}
+
+char seqindex_t::at(size_t pos) {
+    char c;
+    seqfile.seekg(pos);
+    seqfile.read(&c, 1);
+    return c;
+}
+
+size_t seqindex_t::n_seqs(void) {
+    return seq_count;
+}
+
 }

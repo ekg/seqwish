@@ -227,10 +227,15 @@ public:
         Key curr=0, prev=0;
         Value value;
         bool missing_records = false;
-        // go through the records of the file and write records [k_i, 0x0] for each k_i that we don't see up to the max record we've seen
-        for (size_t i = 0; i < n_records; ++i) {
-            curr = get_key();
-            value = get_value();
+        // go through the records of the file and write records [k_i, 0x0] for each k_i that we don't see up to the max record
+        for (size_t i = 0; i < n_records+1; ++i) {
+            if (i == n_records) {
+                // handle the max record case
+                curr = max_key+1;
+            } else {
+                curr = get_key();
+                value = get_value();
+            }
             //std::cerr << "seeing " << curr << " " << value << std::endl;
             while (prev+1 < curr) {
                 ++prev;
@@ -241,34 +246,37 @@ public:
             //append(curr, value); // no need to append as we already have it!
             prev = curr;
         }
+        // 
         // we have to sort again if we found any empty records
         if (missing_records) {
             sort();
         }
     }
-    
+
     // index
-    void index(void) {
+    void index(Key new_max = 0) {
+        if (new_max) max_key = new_max;
         sort();
         pad();
         open_reader();
         size_t n_records = record_count();
-        sdsl::bit_vector key_bv(n_records);
+        sdsl::bit_vector key_bv(n_records+1);
         // record the key starts
-        Key last, curr;
-        Value val;
-        reader.read((char*)&last, sizeof(Key));
-        key_bv[0] = 1;
-        for (size_t i = 1; i < n_records; ++i) {
+        Key last = nullkey, curr = nullkey;
+        Value val = nullvalue;
+        //reader.read((char*)&last, sizeof(Key));
+        //key_bv[0] = 1;
+        for (size_t i = 0; i < n_records; ++i) {
             curr = get_key();
             val = get_value();
             if (curr != last) {
                 key_bv[i] = 1;
-                last = curr;
             }
+            last = curr;
         }
         // the last key in the sort is our max key
         max_key = curr;
+        key_bv[n_records] = 1; // sentinel
         // build the compressed bitvector
         sdsl::util::assign(key_cbv, sdsl::sd_vector<>(key_bv));
         key_bv.resize(0); // memory could be tight
@@ -279,17 +287,13 @@ public:
     }
 
     Key nth_key(size_t n) {
-        Key key;
         reader.seekg(n*record_size);
-        reader.read((char*)&key, sizeof(Key));
-        return key;
+        return get_key();
     }
 
     Value nth_value(size_t n) {
-        Value value;
         reader.seekg(n*record_size+sizeof(Key));
-        reader.read((char*)&value, sizeof(Value));
-        return value;
+        return get_value();
     }
 
     void for_each_pair(const std::function<void(const Key&, const Value&)>& lambda) {
@@ -305,14 +309,18 @@ public:
     }
 
     std::vector<Value> values(const Key& key) {
-        if (!reader.is_open()) open_reader();
         std::vector<Value> values;
-        size_t i = key_cbv_select(key);
-        size_t j = (key < max_key ? key_cbv_select(key+1) : record_count());
-        for ( ; i < j; ++i) {
-            values.push_back(nth_value(i));
-        }
+        for_values_of(key, [&values](const Value& v) { values.push_back(v); });
         return values;
+    }
+
+    void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
+        if (!reader.is_open()) open_reader();
+        size_t i = key_cbv_select(key);
+        size_t j = key_cbv_select(key+1);
+        for ( ; i < j; ++i) {
+            lambda(nth_value(i));
+        }
     }
 };
 
