@@ -6,12 +6,13 @@ namespace seqwish {
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
     dmultimap<uint64_t, pos_t>& aln_mm,
-    sdsl::bit_vector& q_seen_bv,
     const std::string& seq_v_file,
     dmultimap<uint64_t, pos_t>& node_mm,
     dmultimap<uint64_t, pos_t>& path_mm) {
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
+    // remember the elements of Q we've seen
+    sdsl::bit_vector q_seen_bv(seqidx.seq_length());
     //size_t seq_bytes = 0;
     // for each base in seqidx
     //   collect mapped bases

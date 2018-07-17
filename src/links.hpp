@@ -9,7 +9,11 @@
 
 namespace seqwish {
 
-void derive_links(seqindex_t& seqidx, size_t graph_length, dmultimap<uint64_t, pos_t>& path_mm, dmultimap<pos_t, pos_t>& link_mm);
+void derive_links(seqindex_t& seqidx,
+                  size_t graph_length,
+                  dmultimap<uint64_t, pos_t>& path_mm,
+                  dmultimap<pos_t, pos_t>& link_fwd_mm,
+                  dmultimap<pos_t, pos_t>& link_rev_mm);
 
 }
 

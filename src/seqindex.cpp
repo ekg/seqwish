@@ -207,6 +207,14 @@ char seqindex_t::at(size_t pos) {
     return c;
 }
 
+char seqindex_t::at_pos(pos_t pos) {
+    char c = at(offset(pos));
+    if (is_rev(pos)) {
+        c = dna_complement(c);
+    }
+    return c;
+}
+
 size_t seqindex_t::n_seqs(void) {
     return seq_count;
 }

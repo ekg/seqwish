@@ -30,7 +30,11 @@ void unpack_alignments(const std::string& paf_file,
             case 'M':
                 for (size_t i = 0; i < c.len; ++i) {
                     //std::cerr << q_pos << ":" << pos_to_string(t_pos) << "/" << t_pos << std::endl;
-                    aln_mm.append(q_pos, t_pos);
+                    // check if the base is actually the same
+                    if (seqidx.at_pos(make_pos_t(q_pos, false)) == seqidx.at_pos(t_pos)
+                        && q_pos != offset(t_pos)) {
+                        aln_mm.append(q_pos, t_pos);
+                    }
                     ++q_pos;
                     incr_pos(t_pos);
                 }

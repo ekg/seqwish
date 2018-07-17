@@ -1,3 +1,6 @@
+#ifndef TRANSCLOSURE_HPP_INCLUDED
+#define TRANSCLOSURE_HPP_INCLUDED
+
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -13,9 +16,10 @@ namespace seqwish {
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
     dmultimap<uint64_t, uint64_t>& aln_mm,
-    sdsl::bit_vector& q_seen_bv,
     const std::string& seq_v_file,
     dmultimap<uint64_t, uint64_t>& node_mm,
     dmultimap<uint64_t, uint64_t>& path_mm);
 
 }
+
+#endif

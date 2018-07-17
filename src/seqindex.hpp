@@ -9,6 +9,8 @@
 #include "sdsl/suffix_arrays.hpp"
 #include "sdsl/dac_vector.hpp"
 #include "gzstream.h"
+#include "pos.hpp"
+#include "dna.hpp"
 
 namespace seqwish {
 
@@ -54,6 +56,7 @@ public:
     size_t pos_in_all_seqs(size_t n, size_t pos, bool is_rev);
     size_t seq_length(void);
     char at(size_t pos);
+    char at_pos(pos_t pos);
     size_t n_seqs(void);
 
 };

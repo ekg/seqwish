@@ -314,6 +314,14 @@ public:
         return values;
     }
 
+    std::vector<Value> unique_values(const Key& key) {
+        std::vector<Value> values;
+        for_values_of(key, [&values](const Value& v) { values.push_back(v); });
+        std::sort(values.begin(), values.end());
+        values.erase(std::unique(values.begin(), values.end()), values.end());
+        return values;
+    }
+
     void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
         if (!reader.is_open()) open_reader();
         size_t i = key_cbv_select(key);

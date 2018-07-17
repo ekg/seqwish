@@ -3,11 +3,11 @@
 
 namespace seqwish {
 
-void derive_links(
-    seqindex_t& seqidx,
-    size_t graph_length,
-    dmultimap<uint64_t, pos_t>& path_mm,
-    dmultimap<pos_t, pos_t>& link_mm) {
+void derive_links(seqindex_t& seqidx,
+                  size_t graph_length,
+                  dmultimap<uint64_t, pos_t>& path_mm,
+                  dmultimap<pos_t, pos_t>& link_fwd_mm,
+                  dmultimap<pos_t, pos_t>& link_rev_mm) {
     // rewrite the sequences in seqidx as pairs of positions in S
     // for each sequence in seqidx
     size_t num_seqs = seqidx.n_seqs();
@@ -22,11 +22,14 @@ void derive_links(
             assert(v1.size() == v2.size() == 1);
             auto& p1 = v1.front();
             auto& p2 = v2.front();
-            link_mm.append(p1, p2);
-            link_mm.append(rev_pos_t(p2), rev_pos_t(p1));
+            link_fwd_mm.append(p1, p2);
+            link_fwd_mm.append(rev_pos_t(p2), rev_pos_t(p1));
+            link_rev_mm.append(p2, p1);
+            link_rev_mm.append(rev_pos_t(p1), rev_pos_t(p2));
         }
     }
-    link_mm.index(make_pos_t(graph_length, true));
+    link_fwd_mm.index(make_pos_t(graph_length, true));
+    link_rev_mm.index(make_pos_t(graph_length, true));
 }
 
 }
