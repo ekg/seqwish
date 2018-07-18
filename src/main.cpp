@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
     sdsl::util::assign(seq_id_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_id_cbv));
 
     // 6) emit the graph in GFA
-    emit_gfa(std::cout, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select);
+    emit_gfa(std::cout, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     
     return(0);
 }
