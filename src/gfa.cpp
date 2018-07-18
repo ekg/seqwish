@@ -93,18 +93,23 @@ void emit_gfa(std::ostream& out,
     // iterate over the sequence positions, emitting a node at every edge crossing
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
-        size_t j = seqidx.nth_seq_offset(i);
+        size_t j = seqidx.nth_seq_offset(i) + 1;
         size_t k = j+seqidx.nth_seq_length(i);
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         std::vector<pos_t> path_v;
         pos_t last_pos = 0;
         pos_t last_node = 0;
         for ( ; j < k; ++j) {
-            std::vector<pos_t> v = path_mm.values(j+1);
+            std::vector<pos_t> v = path_mm.values(j);
             // each input base should only map one place in the graph
             assert(v.size() == 1);
             auto& p = v.front();
-            //out << pos_to_string(p) << std::endl;
+            //std::cerr << j << " -> " << pos_to_string(p) << std::endl;
+            // validate the path
+            char c; seq_in.seekg(offset(p)-1); seq_in.read(&c, 1);
+            if (is_rev(p)) c = dna_reverse_complement(c);
+            //std::cerr << seqidx.at_pos(make_pos_t(j, false)) << " " << c << std::endl;
+            assert(seqidx.at_pos(make_pos_t(j, false)) == c);
             pos_t node = make_pos_t(seq_id_cbv_rank(offset(p)), is_rev(p));
             pos_t lp = last_pos; incr_pos(lp);
             //std::cerr << offset(last_node) << std::endl;
@@ -113,7 +118,6 @@ void emit_gfa(std::ostream& out,
                     || node != last_node)) { // or if we
                 //out << pos_to_string(last_node) << ",";
                 path_v.push_back(last_node);
-                last_node = node;
             }
             last_pos = p;
             last_node = node;

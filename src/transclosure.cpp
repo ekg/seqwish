@@ -47,15 +47,13 @@ size_t compute_transitive_closures(
             //assert(q_seen_bv[offset(j)-1]==1);
             node_mm.append(seq_v_length, j);
             path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
-            aln_mm.for_values_of(offset(j), [&](const pos_t& pos) {
-                    if (pos) {
-                        uint64_t k = offset(pos);
-                        //std::cerr << "looking " << k << std::endl;
-                        if (k && !q_seen_bv[k-1]) {
-                            //std::cerr << "closing " << k << std::endl;
-                            q_seen_bv[k-1] = 1;
-                            todo.insert(pos);
-                        }
+            aln_mm.for_unique_values_of(offset(j), [&](const pos_t& pos) {
+                    uint64_t k = offset(pos);
+                    //std::cerr << "looking " << k << std::endl;
+                    if (k && !q_seen_bv[k-1]) {
+                        //std::cerr << "closing " << k << std::endl;
+                        q_seen_bv[k-1] = 1;
+                        todo.insert(make_pos_t(offset(pos), is_rev(pos)^is_rev(j)));
                     }
                 });
             // get the values for each of the todo

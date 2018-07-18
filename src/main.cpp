@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     unpack_alignments(args::get(alns), aln_mm, seqidx); // yields array A
     if (args::get(debug)) {
         aln_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
-                std::cout << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
+                std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
     }
 
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays

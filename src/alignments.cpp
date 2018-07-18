@@ -23,24 +23,28 @@ void unpack_alignments(const std::string& paf_file,
         size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, paf.target_start, t_rev) - (t_rev?1:0);
         //std::cerr << "q_all_pos " << q_all_pos << std::endl;
         //std::cerr << "t_all_pos " << t_all_pos << std::endl;
-        uint64_t q_pos = q_all_pos;
+        pos_t q_pos = make_pos_t(q_all_pos, false);
         pos_t t_pos = make_pos_t(t_all_pos, t_rev);
         for (auto& c : paf.cigar) {
             switch (c.op) {
             case 'M':
                 for (size_t i = 0; i < c.len; ++i) {
-                    //std::cerr << q_pos << ":" << pos_to_string(t_pos) << "/" << t_pos << std::endl;
-                    // check if the base is actually the same
-                    if (seqidx.at_pos(make_pos_t(q_pos, false)) == seqidx.at_pos(t_pos)
-                        && q_pos != offset(t_pos)) {
-                        aln_mm.append(q_pos, t_pos);
+                    /*
+                    std::cerr << seqidx.at_pos(q_pos) << " vs " << seqidx.at_pos(t_pos) << " ... "
+                              << offset(q_pos) << " " << offset(t_pos)
+                              << std::endl;
+                    */
+                    if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
+                        && offset(q_pos) != offset(t_pos)) {
+                        aln_mm.append(offset(q_pos), t_pos);
+                        aln_mm.append(offset(t_pos), make_pos_t(offset(q_pos), t_rev));
                     }
-                    ++q_pos;
+                    incr_pos(q_pos);
                     incr_pos(t_pos);
                 }
-                break;
+            break;
             case 'I':
-                q_pos += c.len;
+                incr_pos(q_pos, c.len);
                 break;
             case 'D':
                 incr_pos(t_pos, c.len);
