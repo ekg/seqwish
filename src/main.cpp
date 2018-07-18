@@ -63,9 +63,10 @@ int main(int argc, char** argv) {
     std::string seq_v_file = args::get(base) + ".sqs";
     std::string node_mm_idx = args::get(base) + ".sqn";
     std::string path_mm_idx = args::get(base) + ".sqp";
+    std::remove(seq_v_file.c_str());
     std::remove(node_mm_idx.c_str());
-    dmultimap<uint64_t, pos_t> node_mm(node_mm_idx);
     std::remove(path_mm_idx.c_str());
+    dmultimap<uint64_t, pos_t> node_mm(node_mm_idx);
     dmultimap<uint64_t, pos_t> path_mm(path_mm_idx);
     size_t graph_length = compute_transitive_closures(seqidx, aln_mm, seq_v_file, node_mm, path_mm);
     if (args::get(debug)) {
@@ -77,10 +78,10 @@ int main(int argc, char** argv) {
 
     // 4) construct the links of the graph in L by rewriting the forward and reverse of Q in terms of pairs of basis in S
     std::string link_fwd_mm_idx = args::get(base) + ".sqlf";
-    std::remove(link_fwd_mm_idx.c_str());
-    dmultimap<pos_t, pos_t> link_fwd_mm(link_fwd_mm_idx);
     std::string link_rev_mm_idx = args::get(base) + ".sqlr";
+    std::remove(link_fwd_mm_idx.c_str());
     std::remove(link_rev_mm_idx.c_str());
+    dmultimap<pos_t, pos_t> link_fwd_mm(link_fwd_mm_idx);
     dmultimap<pos_t, pos_t> link_rev_mm(link_rev_mm_idx);
     derive_links(seqidx, graph_length, path_mm, link_fwd_mm, link_rev_mm);
     if (args::get(debug)) {

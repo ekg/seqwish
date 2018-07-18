@@ -24,6 +24,7 @@ size_t compute_transitive_closures(
         //std::cerr << "top " << i << std::endl;
         if (q_seen_bv[i-1]) continue;
         // write base
+        //std::cerr << "writing seq out " << seqidx.at(i-1) << std::endl;
         seq_v_out << seqidx.at(i-1);
         size_t seq_v_length = seq_v_out.tellp();
         // mark current

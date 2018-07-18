@@ -322,12 +322,18 @@ public:
         return values;
     }
 
+    void for_unique_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
+        std::vector<Value> values = unique_values(key);
+        std::for_each(values.begin(), values.end(), lambda);
+    }
+
     void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
         if (!reader.is_open()) open_reader();
         size_t i = key_cbv_select(key);
         size_t j = key_cbv_select(key+1);
         for ( ; i < j; ++i) {
-            lambda(nth_value(i));
+            Value value = nth_value(i);
+            if (value) { lambda(value); }
         }
     }
 };

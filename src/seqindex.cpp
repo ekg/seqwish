@@ -202,15 +202,17 @@ size_t seqindex_t::seq_length(void) {
 
 char seqindex_t::at(size_t pos) {
     char c;
+    assert(seqfile.good());
     seqfile.seekg(pos);
     seqfile.read(&c, 1);
     return c;
 }
 
 char seqindex_t::at_pos(pos_t pos) {
-    char c = at(offset(pos));
+    // assumes 1-based pos
+    char c = at(offset(pos)-1);
     if (is_rev(pos)) {
-        c = dna_complement(c);
+        c = dna_reverse_complement(c);
     }
     return c;
 }

@@ -56,7 +56,7 @@ public:
     size_t pos_in_all_seqs(size_t n, size_t pos, bool is_rev);
     size_t seq_length(void);
     char at(size_t pos);
-    char at_pos(pos_t pos);
+    char at_pos(pos_t pos); // assumes pos_t is 1-based
     size_t n_seqs(void);
 
 };
