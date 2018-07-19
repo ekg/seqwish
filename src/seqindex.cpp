@@ -11,8 +11,8 @@ void seqindex_t::set_base_filename(const std::string& filename) {
     seqnamefile = basefilename + ".sqi.seqnames.tmp"; // used during construction
 }
 
-void seqindex_t::build_index(const std::string& filename) {
-    set_base_filename(filename);
+void seqindex_t::build_index(const std::string& filename, const std::string& idxbasename) {
+    set_base_filename(idxbasename);
     // read the file
     igzstream in(filename.c_str());
     std::ofstream seqnames(seqnamefile.c_str());

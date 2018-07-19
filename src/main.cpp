@@ -39,14 +39,8 @@ int main(int argc, char** argv) {
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     seqindex_t seqidx;
-    seqidx.build_index(args::get(seqs));
+    seqidx.build_index(args::get(seqs), args::get(base));
     seqidx.save();
-
-    if (args::get(base).empty()
-        || args::get(alns).empty()) {
-        // nothing to do if we don't have a base name and an alignment input
-        return 0;
-    }
 
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = args::get(base) + ".sqa";
