@@ -72,7 +72,7 @@ rm -rf build bin
 ## TODO
 
 - [x] describe algorithm
-- [ ] implement rank/select dictionary class based on disk-backed radix sort of a binary array
-- [ ] implement squish graph induction algorithm
+- [x] implement rank/select dictionary class based on disk-backed radix sort of a binary array
+- [x] implement squish graph induction algorithm
 - [ ] explore extensions via graph rewriting and the handle graph concept
 - [ ] explore assembly problems via graph filtering and cleaning operations
