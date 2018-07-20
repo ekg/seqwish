@@ -5,7 +5,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    dmultimap<uint64_t, pos_t>& aln_mm,
+    dmultimap<uint64_t, aln_pos_t>& aln_mm,
     const std::string& seq_v_file,
     dmultimap<uint64_t, pos_t>& node_mm,
     dmultimap<uint64_t, pos_t>& path_mm,
@@ -50,7 +50,8 @@ size_t compute_transitive_closures(
             //assert(q_seen_bv[offset(j)-1]==1);
             node_mm.append(seq_v_length, j);
             path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
-            aln_mm.for_unique_values_of(offset(j), [&](const pos_t& pos) {
+            aln_mm.for_unique_values_of(offset(j), [&](const aln_pos_t& a) {
+                    auto& pos = a.pos;
                     uint64_t k = offset(pos);
                     //std::cerr << "looking " << k << std::endl;
                     if (k && !q_seen_bv[k-1]) {

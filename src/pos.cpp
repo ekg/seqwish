@@ -2,6 +2,14 @@
 
 namespace seqwish {
 
+bool operator<(const aln_pos_t& a, const aln_pos_t& b) {
+    return a.pos < b.pos && a.aln_length < b.aln_length;
+}
+
+bool operator==(const aln_pos_t& a, const aln_pos_t& b) {
+    return a.pos == b.pos && a.aln_length == b.aln_length;
+}
+
 pos_t make_pos_t(uint64_t offset, bool is_rev) {
     // top bit is reserved for is_rev flag
     // the rest is our offset in the input sequence vector

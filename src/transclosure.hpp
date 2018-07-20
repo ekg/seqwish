@@ -15,7 +15,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    dmultimap<uint64_t, uint64_t>& aln_mm,
+    dmultimap<uint64_t, aln_pos_t>& aln_mm,
     const std::string& seq_v_file,
     dmultimap<uint64_t, uint64_t>& node_mm,
     dmultimap<uint64_t, uint64_t>& path_mm,

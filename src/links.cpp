@@ -16,12 +16,13 @@ void derive_links(seqindex_t& seqidx,
         size_t k = j+seqidx.nth_seq_length(i);
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         for ( ; j < k-1; ++j) {
-            std::vector<pos_t> v1 = path_mm.values(j+1);
-            std::vector<pos_t> v2 = path_mm.values(j+2);
+            std::vector<pos_t> v1 = path_mm.unique_values(j+1);
+            std::vector<pos_t> v2 = path_mm.unique_values(j+2);
             // each input base should only map one place in the graph
             assert(v1.size() == v2.size() == 1);
             auto& p1 = v1.front();
             auto& p2 = v2.front();
+            //std::cerr << pos_to_string(p1) << " " << pos_to_string(p2) << std::endl;
             link_fwd_mm.append(p1, p2);
             link_fwd_mm.append(rev_pos_t(p2), rev_pos_t(p1));
             link_rev_mm.append(p2, p1);

@@ -47,12 +47,12 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = args::get(base) + ".sqa";
     std::remove(aln_idx.c_str());
-    dmultimap<uint64_t, pos_t> aln_mm(aln_idx);
+    dmultimap<uint64_t, aln_pos_t> aln_mm(aln_idx);
     if (args::get(debug)) dump_alignments(args::get(alns));
     unpack_alignments(args::get(alns), aln_mm, seqidx); // yields array A
     if (args::get(debug)) {
-        aln_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
-                std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
+        aln_mm.for_each_pair([&](const uint64_t& p1, const aln_pos_t& p2) {
+                std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2.pos) << "\t" << (is_rev(p2.pos)?"-":"+") << "\t" << p2.aln_length << std::endl; });
     }
 
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays

@@ -202,13 +202,13 @@ public:
         sorted = true;
     }
 
-    Key get_key(void) {
+    Key read_key(void) {
         Key k;
         reader.read((char*)&k, sizeof(Key));
-        return be64toh(k);
+        return be64toh(k); // sorting is big-endian
     }
 
-    Value get_value(void) {
+    Value read_value(void) {
         Value v;
         reader.read((char*)&v, sizeof(Value));
         return v;
@@ -232,8 +232,8 @@ public:
                 // handle the max record case
                 curr = max_key+1;
             } else {
-                curr = get_key();
-                value = get_value();
+                curr = read_key();
+                value = read_value();
             }
             //std::cerr << "seeing " << curr << " " << value << std::endl;
             while (prev+1 < curr) {
@@ -266,8 +266,8 @@ public:
         //reader.read((char*)&last, sizeof(Key));
         //key_bv[0] = 1;
         for (size_t i = 0; i < n_records; ++i) {
-            curr = get_key();
-            val = get_value();
+            curr = read_key();
+            val = read_value();
             if (curr != last) {
                 key_bv[i] = 1;
             }
@@ -287,12 +287,12 @@ public:
 
     Key nth_key(size_t n) {
         reader.seekg(n*record_size);
-        return get_key();
+        return read_key();
     }
 
     Value nth_value(size_t n) {
         reader.seekg(n*record_size+sizeof(Key));
-        return get_value();
+        return read_value();
     }
 
     void for_each_pair(const std::function<void(const Key&, const Value&)>& lambda) {
@@ -301,8 +301,8 @@ public:
         Value value;
         size_t n_records = record_count();
         for (size_t i = 0; i < n_records; ++i) {
-            key = get_key();
-            value = get_value();
+            key = read_key();
+            value = read_value();
             lambda(key, value);
         }
     }
@@ -326,13 +326,22 @@ public:
         std::for_each(values.begin(), values.end(), lambda);
     }
 
+    bool is_null(const Value& value) {
+        for (size_t i = 0; i < sizeof(Value); ++i) {
+            if (((uint8_t*)&value)[i] != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
         if (!reader.is_open()) open_reader();
         size_t i = key_cbv_select(key);
         size_t j = key_cbv_select(key+1);
         for ( ; i < j; ++i) {
             Value value = nth_value(i);
-            if (value) { lambda(value); }
+            if (!is_null(value)) { lambda(value); }
         }
     }
 };
