@@ -163,9 +163,8 @@ public:
         sorted = false; // assume we break the sort
         // write to the end of the file
         auto k_be = htobe64(k);
-        auto v_be = htobe64(v);
         writer.write((char*)&k_be, sizeof(Key));
-        writer.write((char*)&v_be, sizeof(Value));
+        writer.write((char*)&v, sizeof(Value));
     }
 
     /// get the record count
@@ -212,7 +211,7 @@ public:
     Value get_value(void) {
         Value v;
         reader.read((char*)&v, sizeof(Value));
-        return be64toh(v);
+        return v;
     }
 
     // pad our key space so that we can query it directly with select operations
