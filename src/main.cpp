@@ -12,6 +12,7 @@
 #include "links.hpp"
 #include "compact.hpp"
 #include "gfa.hpp"
+#include "pos.hpp"
 
 using namespace seqwish;
 
@@ -21,6 +22,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> alns(parser, "alns", "induce the graph from these alignments", {'a', "alns"});
     args::ValueFlag<std::string> seqs(parser, "seqs", "the sequences used to generate the alignments", {'s', "seqs"});
     args::ValueFlag<std::string> base(parser, "base", "build graph using this basename", {'b', "base"});
+    args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
         parser.ParseCLI(argc, argv);
@@ -62,7 +64,7 @@ int main(int argc, char** argv) {
     std::remove(path_mm_idx.c_str());
     dmultimap<uint64_t, pos_t> node_mm(node_mm_idx);
     dmultimap<uint64_t, pos_t> path_mm(path_mm_idx);
-    size_t graph_length = compute_transitive_closures(seqidx, aln_mm, seq_v_file, node_mm, path_mm);
+    size_t graph_length = compute_transitive_closures(seqidx, aln_mm, seq_v_file, node_mm, path_mm, args::get(repeat_max));
     if (args::get(debug)) {
         node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
                 std::cout << "node_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });

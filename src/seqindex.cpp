@@ -82,14 +82,21 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     sdsl::util::assign(seq_name_cbv, sdsl::sd_vector<>(seq_name_starts));
     sdsl::util::assign(seq_name_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_name_cbv));
     sdsl::util::assign(seq_name_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_name_cbv));
-    sdsl::util::assign(seq_offset_civ, sdsl::dac_vector<>(seq_offset));
+    // mark the seq begin vector, adding a terminating mark
+    sdsl::bit_vector seq_begin_bv(seq_offset.back()+1);
+    for (size_t i = 0; i < seq_offset.size(); ++i) {
+        seq_begin_bv[seq_offset[i]] = 1;
+    }
+    sdsl::util::assign(seq_begin_cbv, sdsl::sd_vector<>(seq_begin_bv));
+    sdsl::util::assign(seq_begin_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_begin_cbv));
+    sdsl::util::assign(seq_begin_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_begin_cbv));
     //std::cerr << seq_offset_civ << std::endl;
     // validate
     // look up each sequence by name
 }
 
 size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
-    assert(seq_name_csa.size() && seq_name_cbv.size() && seq_offset_civ.size());
+    //assert(seq_name_csa.size() && seq_name_cbv.size() && seq_offset_civ.size());
     sdsl::structure_tree_node* child = sdsl::structure_tree::add_child(s, name, sdsl::util::class_name(*this));
     // open the sdsl index
     std::ofstream out(seqidxfile.c_str());
@@ -102,7 +109,9 @@ size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
     written += seq_name_cbv.serialize(out, child, "seq_name_cbv");
     written += seq_name_cbv_rank.serialize(out, child, "seq_name_cbv_rank");
     written += seq_name_cbv_select.serialize(out, child, "seq_name_cbv_select");
-    written += seq_offset_civ.serialize(out, child, "seq_offset_civ");
+    written += seq_begin_cbv.serialize(out, child, "seq_begin_cbv");
+    written += seq_begin_cbv_rank.serialize(out, child, "seq_begin_cbv_rank");
+    written += seq_begin_cbv_select.serialize(out, child, "seq_begin_cbv_select");
     out.close();
     seqfile.open(seqfilename); // open the seq file
     return written;
@@ -121,7 +130,9 @@ void seqindex_t::load(const std::string& filename) {
     seq_name_cbv.load(in);
     seq_name_cbv_rank.load(in);
     seq_name_cbv_select.load(in);
-    seq_offset_civ.load(in);
+    seq_begin_cbv.load(in);
+    seq_begin_cbv_rank.load(in);
+    seq_begin_cbv_select.load(in);
     in.close(); // close the sdsl index input
     seqfile.open(seqfilename); // open the seq file
 }
@@ -161,11 +172,11 @@ size_t seqindex_t::rank_of_seq_named(const std::string& name) {
 
 size_t seqindex_t::nth_seq_length(size_t n) {
     //std::cerr << "trying for "  << n << std::endl;
-    return seq_offset_civ[n]-seq_offset_civ[n-1];
+    return seq_begin_cbv_select(n+1)-seq_begin_cbv_select(n);
 }
 
 size_t seqindex_t::nth_seq_offset(size_t n) {
-    return seq_offset_civ[n-1];
+    return seq_begin_cbv_select(n);
 }
 
 std::string seqindex_t::seq(const std::string& name) {
@@ -197,7 +208,7 @@ size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos, bool is_rev) {
 }
 
 size_t seqindex_t::seq_length(void) {
-    return seq_offset_civ[seq_offset_civ.size()-1];
+    return seq_begin_cbv.size()-1;
 }
 
 char seqindex_t::at(size_t pos) {
@@ -219,6 +230,10 @@ char seqindex_t::at_pos(pos_t pos) {
 
 size_t seqindex_t::n_seqs(void) {
     return seq_count;
+}
+
+size_t seqindex_t::seq_id_at(size_t pos) {
+    return seq_begin_cbv_rank(pos);
 }
 
 }

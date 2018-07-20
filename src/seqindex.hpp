@@ -26,7 +26,9 @@ private:
     // a file containing the concatenated sequences
     std::ifstream seqfile;
     // sequence offsets (for offset and length)
-    sdsl::dac_vector<> seq_offset_civ;
+    sdsl::sd_vector<> seq_begin_cbv;
+    sdsl::sd_vector<>::rank_1_type seq_begin_cbv_rank;
+    sdsl::sd_vector<>::select_1_type seq_begin_cbv_select;
     // seq name compressed suffix array
     sdsl::csa_wt<> seq_name_csa;
     // seq name index
@@ -58,6 +60,7 @@ public:
     char at(size_t pos);
     char at_pos(pos_t pos); // assumes pos_t is 1-based
     size_t n_seqs(void);
+    size_t seq_id_at(size_t pos);
 
 };
 

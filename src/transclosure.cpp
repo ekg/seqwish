@@ -8,7 +8,8 @@ size_t compute_transitive_closures(
     dmultimap<uint64_t, pos_t>& aln_mm,
     const std::string& seq_v_file,
     dmultimap<uint64_t, pos_t>& node_mm,
-    dmultimap<uint64_t, pos_t>& path_mm) {
+    dmultimap<uint64_t, pos_t>& path_mm,
+    uint64_t repeat_max) {
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
@@ -34,7 +35,9 @@ size_t compute_transitive_closures(
         //path_mm.append(i, make_pos_t(i,false));
         //std::cerr << "closure " << i << " to " << seq_v_length << std::endl;
         std::set<pos_t> todo;
+        std::unordered_map<uint64_t, uint64_t> seen_seqs;
         todo.insert(make_pos_t(i, false));
+        seen_seqs[seqidx.seq_id_at(offset(i))]++;
         while (!todo.empty()) {
             pos_t j = *todo.begin();
             /*
@@ -52,13 +55,26 @@ size_t compute_transitive_closures(
                     //std::cerr << "looking " << k << std::endl;
                     if (k && !q_seen_bv[k-1]) {
                         //std::cerr << "closing " << k << std::endl;
-                        q_seen_bv[k-1] = 1;
-                        todo.insert(make_pos_t(offset(pos), is_rev(pos)^is_rev(j)));
+                        //node_mm.append(seq_v_length, offset(pos));
+                        //path_mm.append(offset(pos), curr);
+                        uint64_t seq_id = seqidx.seq_id_at(offset(pos));
+                        //std::cerr << "seq id " << seq_id << std::endl;
+                        auto& c = seen_seqs[seq_id];
+                        if (!repeat_max || c < repeat_max) {
+                            ++c;
+                            q_seen_bv[k-1] = 1;
+                            todo.insert(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)));
+                        }
                     }
                 });
             // get the values for each of the todo
             // and add them to todo if we haven't done'm
         }
+        /*
+        for (auto& c : seen_seqs) {
+            std::cerr << "seen " << c.first << " " << c.second << std::endl;
+        }
+        */
     }
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
