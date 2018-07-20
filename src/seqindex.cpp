@@ -204,7 +204,8 @@ size_t seqindex_t::pos_in_all_seqs(const std::string& name, size_t pos, bool is_
 }
 
 size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos, bool is_rev) {
-    return nth_seq_offset(n) + (is_rev ? nth_seq_length(n)-pos : pos);
+    //std::cerr << "nth seq length " << nth_seq_length(n) << " offset " << nth_seq_offset(n) << std::endl;
+    return nth_seq_offset(n) + (is_rev ? nth_seq_length(n)-1-pos : pos);
 }
 
 size_t seqindex_t::seq_length(void) {

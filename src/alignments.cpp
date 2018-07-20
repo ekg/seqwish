@@ -18,9 +18,13 @@ void unpack_alignments(const std::string& paf_file,
         bool t_rev = !paf.query_target_same_strand;
         //std::cerr << "query_idx " << query_idx << " " << seqidx.nth_seq_length(query_idx) << std::endl;
         //std::cerr << "target_idx " << target_idx << " " << seqidx.nth_seq_length(target_idx) << std::endl;
+        size_t query_start = paf.query_start;
+        size_t target_start = t_rev ? seqidx.nth_seq_length(target_idx)-paf.target_end : paf.target_start;
+        //std::cerr << query_start << " " << target_start << std::endl;
+
         // these calls convert to 1-based positions as 0 has a special meaning in the dmultimap 
-        size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, paf.query_start, false);
-        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, paf.target_start, t_rev) - (t_rev?1:0);
+        size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, false);
+        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, target_start, t_rev);
         //std::cerr << "q_all_pos " << q_all_pos << std::endl;
         //std::cerr << "t_all_pos " << t_all_pos << std::endl;
         pos_t q_pos = make_pos_t(q_all_pos, false);
