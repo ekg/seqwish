@@ -61,4 +61,22 @@ void unpack_alignments(const std::string& paf_file,
     aln_mm.index(seqidx.seq_length());
 }
 
+void filter_alignments(dmultimap<pos_t, aln_pos_t>& aln_mm,
+                       dmultimap<pos_t, pos_t>& aln_filt_mm,
+                       uint64_t aln_min_length,
+                       uint64_t aln_keep_n_longest,
+                       seqindex_t& seqidx) {
+    for (size_t i = 1; i <= seqidx.seq_length(); ++i) {
+        std::vector<aln_pos_t> at_pos = aln_mm.unique_values(i);
+        std::sort(at_pos.begin(), at_pos.end(), [&](const aln_pos_t& a, const aln_pos_t& b){ return a.aln_length > b.aln_length; });
+        uint64_t to_keep = (aln_keep_n_longest ? std::min(aln_keep_n_longest, (uint64_t)at_pos.size()) : at_pos.size());
+        for (size_t j = 0; j < to_keep; ++j) {
+            auto& a = at_pos[j];
+            if (a.aln_length < aln_min_length) break;
+            aln_filt_mm.append(i, at_pos[j].pos);
+        }
+    }
+    aln_filt_mm.index(seqidx.seq_length());
+}
+
 }

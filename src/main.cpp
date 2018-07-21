@@ -19,10 +19,12 @@ using namespace seqwish;
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
-    args::ValueFlag<std::string> alns(parser, "alns", "induce the graph from these alignments", {'a', "alns"});
-    args::ValueFlag<std::string> seqs(parser, "seqs", "the sequences used to generate the alignments", {'s', "seqs"});
-    args::ValueFlag<std::string> base(parser, "base", "build graph using this basename", {'b', "base"});
+    args::ValueFlag<std::string> alns(parser, "FILE", "induce the graph from these alignments", {'a', "alns"});
+    args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments", {'s', "seqs"});
+    args::ValueFlag<std::string> base(parser, "FILE", "build graph using this basename", {'b', "base"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
+    args::ValueFlag<uint64_t> aln_keep_n_longest(parser, "N", "keep up to the N-longest alignments overlapping each query position", {'k', "aln-keep-n-longest"});
+    args::ValueFlag<uint64_t> aln_min_length(parser, "N", "ignore alignments shorter than this", {'m', "aln-min-length"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
         parser.ParseCLI(argc, argv);
@@ -55,6 +57,12 @@ int main(int argc, char** argv) {
                 std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2.pos) << "\t" << (is_rev(p2.pos)?"-":"+") << "\t" << p2.aln_length << std::endl; });
     }
 
+    // 2.1) filter the alignments
+    std::string aln_filt_idx = args::get(base) + ".sqaf";
+    std::remove(aln_filt_idx.c_str());
+    dmultimap<uint64_t, pos_t> aln_filt_mm(aln_filt_idx);
+    filter_alignments(aln_mm, aln_filt_mm, args::get(aln_min_length), args::get(aln_keep_n_longest), seqidx);
+
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays
     std::string seq_v_file = args::get(base) + ".sqs";
     std::string node_mm_idx = args::get(base) + ".sqn";
@@ -64,7 +72,7 @@ int main(int argc, char** argv) {
     std::remove(path_mm_idx.c_str());
     dmultimap<uint64_t, pos_t> node_mm(node_mm_idx);
     dmultimap<uint64_t, pos_t> path_mm(path_mm_idx);
-    size_t graph_length = compute_transitive_closures(seqidx, aln_mm, seq_v_file, node_mm, path_mm, args::get(repeat_max));
+    size_t graph_length = compute_transitive_closures(seqidx, aln_filt_mm, seq_v_file, node_mm, path_mm, args::get(repeat_max));
     if (args::get(debug)) {
         node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
                 std::cout << "node_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
