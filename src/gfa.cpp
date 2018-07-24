@@ -86,7 +86,7 @@ void emit_gfa(std::ostream& out,
         link_rev_mm.for_unique_values_of(node_start_fwd, print_to_link);
         //std::cerr << "fwd end" << std::endl;
         link_fwd_mm.for_unique_values_of(node_end_fwd, print_from_link);
-        
+
     }
 
     // write the paths
