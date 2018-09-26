@@ -3,7 +3,7 @@
 namespace seqwish {
 
 void unpack_alignments(const std::string& paf_file,
-                       dmultimap<uint64_t, aln_pos_t>& aln_mm,
+                       dmultimap<uint64_t, pos_t>& aln_mm,
                        seqindex_t& seqidx) {
     // go through the PAF file
     std::ifstream paf_in(paf_file.c_str());
@@ -42,8 +42,10 @@ void unpack_alignments(const std::string& paf_file,
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
                         && offset(q_pos) != offset(t_pos)) {
                         assert(offset(q_pos) && offset(t_pos));
-                        aln_mm.append(offset(q_pos), { make_pos_t(offset(t_pos), q_rev), paf.bases_in_mapping });
-                        aln_mm.append(offset(t_pos), { make_pos_t(offset(q_pos), q_rev), paf.bases_in_mapping });
+                        //aln_mm.append(offset(q_pos), { make_pos_t(offset(t_pos), q_rev), paf.bases_in_mapping });
+                        //aln_mm.append(offset(t_pos), { make_pos_t(offset(q_pos), q_rev), paf.bases_in_mapping });
+                        aln_mm.append(offset(q_pos), make_pos_t(offset(t_pos), q_rev));
+                        aln_mm.append(offset(t_pos), make_pos_t(offset(q_pos), q_rev));
                         //} else {
                         //std::cerr << "mismatch" << std::endl;
                     }

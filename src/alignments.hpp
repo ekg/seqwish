@@ -12,7 +12,7 @@
 namespace seqwish {
 
 void unpack_alignments(const std::string& paf_file,
-                       dmultimap<pos_t, aln_pos_t>& aln_mm,
+                       dmultimap<pos_t, pos_t>& aln_mm,
                        seqindex_t& seqidx);
 
 void filter_alignments(dmultimap<pos_t, aln_pos_t>& aln_mm,
