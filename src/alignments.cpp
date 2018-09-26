@@ -8,7 +8,13 @@ void unpack_alignments(const std::string& paf_file,
     // go through the PAF file
     std::ifstream paf_in(paf_file.c_str());
     std::string line;
+    std::vector<std::string> lines;
     while (std::getline(paf_in, line)) {
+        lines.push_back(line);
+    }
+#pragma omp parallel for 
+    for (size_t i = 0; i < lines.size(); ++i) {
+        auto& line = lines[i];
         paf_row_t paf(line);
         //std::cerr << paf << std::endl;
         size_t query_idx = seqidx.rank_of_seq_named(paf.query_sequence_name);

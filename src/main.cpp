@@ -13,6 +13,7 @@
 #include "compact.hpp"
 #include "gfa.hpp"
 #include "pos.hpp"
+#include "threads.hpp"
 
 using namespace seqwish;
 
@@ -22,6 +23,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> alns(parser, "FILE", "induce the graph from these alignments", {'a', "alns"});
     args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments", {'s', "seqs"});
     args::ValueFlag<std::string> base(parser, "FILE", "build graph using this basename", {'b', "base"});
+    args::ValueFlag<uint64_t> num_threads(parser, "N", "use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     //args::ValueFlag<uint64_t> aln_keep_n_longest(parser, "N", "keep up to the N-longest alignments overlapping each query position", {'k', "aln-keep-n-longest"});
     //args::ValueFlag<uint64_t> aln_min_length(parser, "N", "ignore alignments shorter than this", {'m', "aln-min-length"});
@@ -39,6 +41,13 @@ int main(int argc, char** argv) {
     if (argc==1) {
         std::cout << parser;
         return 1;
+    }
+
+    size_t n_threads = args::get(num_threads);
+    if (n_threads) {
+        omp_set_num_threads(args::get(num_threads));
+    } else {
+        omp_set_num_threads(1);
     }
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file

@@ -5,6 +5,14 @@ cmake_minimum_required(VERSION 3.1)
 # We build using c++11
 set(CMAKE_CXX_STANDARD 11)
 
+# We use OpenMP for parallelism
+#find_package(OpenMP)
+#if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fopenmp")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fopenmp")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+#endif()
+
 # Project's name
 project(seqwish)
 
@@ -76,6 +84,7 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/compact.cpp
   ${CMAKE_SOURCE_DIR}/src/dna.cpp
   ${CMAKE_SOURCE_DIR}/src/gfa.cpp
+  ${CMAKE_SOURCE_DIR}/src/threads.cpp
   )
 add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)

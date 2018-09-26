@@ -11,6 +11,7 @@ void derive_links(seqindex_t& seqidx,
     // rewrite the sequences in seqidx as pairs of positions in S
     // for each sequence in seqidx
     size_t num_seqs = seqidx.n_seqs();
+#pragma omp parallel for
     for (size_t i = 1; i <= num_seqs; ++i) {
         size_t j = seqidx.nth_seq_offset(i);
         size_t k = j+seqidx.nth_seq_length(i);

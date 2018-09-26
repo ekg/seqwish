@@ -13,6 +13,7 @@ void compact_nodes(
     // do we have any links from the first that don't go to the second?
     // do we have any links to the second that don't come from the first?
     seq_id_bv[0] = 1; // set first node start
+#pragma omp parallel for
     for (size_t i = 1; i < graph_size; ++i) {
         size_t j = i+1;
         pos_t from = make_pos_t(i, false);

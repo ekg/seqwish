@@ -113,8 +113,23 @@ size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
     written += seq_begin_cbv_rank.serialize(out, child, "seq_begin_cbv_rank");
     written += seq_begin_cbv_select.serialize(out, child, "seq_begin_cbv_select");
     out.close();
-    seqfile.open(seqfilename); // open the seq file
+    open_seqfiles(seqfilename);
     return written;
+}
+
+void seqindex_t::open_seqfiles(const std::string& name) {
+    seqfiles.resize(get_thread_count());
+    for (auto& seqfile : seqfiles) {
+        seqfile.open(name); // open the seq file
+    }
+}
+
+void seqindex_t::close_seqfiles(void) {
+    seqfiles.clear();
+}
+
+std::ifstream& seqindex_t::get_seqfile(void) {
+    return seqfiles[omp_get_thread_num()];
 }
 
 void seqindex_t::load(const std::string& filename) {
@@ -134,7 +149,7 @@ void seqindex_t::load(const std::string& filename) {
     seq_begin_cbv_rank.load(in);
     seq_begin_cbv_select.load(in);
     in.close(); // close the sdsl index input
-    seqfile.open(seqfilename); // open the seq file
+    open_seqfiles(filename);
 }
 
 void seqindex_t::to_fasta(std::ostream& out, size_t linewidth) {
@@ -193,6 +208,7 @@ std::string seqindex_t::subseq(size_t n, size_t pos, size_t count) {
 }
 
 std::string seqindex_t::subseq(size_t pos, size_t count) {
+    auto& seqfile = get_seqfile();
     char s[count];
     seqfile.seekg(pos);
     seqfile.read(s, count);
@@ -213,6 +229,7 @@ size_t seqindex_t::seq_length(void) {
 }
 
 char seqindex_t::at(size_t pos) {
+    auto& seqfile = get_seqfile();
     char c;
     assert(seqfile.good());
     seqfile.seekg(pos);

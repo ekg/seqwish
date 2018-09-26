@@ -6,6 +6,7 @@
 #include <functional>
 #include "bsort.hpp"
 #include "sdsl/bit_vectors.hpp"
+#include "threads.hpp"
 
 namespace seqwish {
 
@@ -29,7 +30,7 @@ template <typename Key, typename Value> class dmultimap {
 private:
 
     std::ofstream writer;
-    std::ifstream reader;
+    std::vector<std::ifstream> readers;
     std::string filename;
     std::string index_filename;
     bool sorted = false;
@@ -76,7 +77,7 @@ public:
 
     // load from base file name
     void load(const std::string& f) {
-        open_reader();
+        open_readers();
         set_base_filename(f);
         std::ifstream in(index_filename.c_str());
         std::string magic;
@@ -133,17 +134,27 @@ public:
         }
     }
 
-    void open_reader(void) {
-        if (reader.is_open()) {
-            reader.seekg(0); // reset to start
+    void open_readers(void) {
+        if (readers.size()) {
+            for (auto& reader : readers) {
+                reader.seekg(0); // reset to start
+            }
             return;
+        } else {
+            readers.resize(get_thread_count());
         }
         assert(!filename.empty());
         // open in binary mode as we are reading from this interface
-        reader.open(filename, std::ios::binary);
-        if (reader.fail()) {
-            throw std::ios_base::failure(std::strerror(errno));
+        for (auto& reader : readers) {
+            reader.open(filename, std::ios::binary);
+            if (reader.fail()) {
+                throw std::ios_base::failure(std::strerror(errno));
+            }
         }
+    }
+
+    std::ifstream& get_reader(void) {
+        return readers[omp_get_thread_num()];
     }
 
     void close_writer(void) {
@@ -152,24 +163,26 @@ public:
         }
     }
 
-    void close_reader(void) {
-        if (reader.is_open()) {
-            reader.close();
-        }
+    void close_readers(void) {
+        readers.clear();
     }
 
     /// write the pair to end of backing file
     void append(const Key& k, const Value& v) {
         sorted = false; // assume we break the sort
         // write to the end of the file
-        auto k_be = htobe64(k);
-        writer.write((char*)&k_be, sizeof(Key));
-        writer.write((char*)&v, sizeof(Value));
+#pragma omp critical (dmultimap_append)
+        {
+            auto k_be = htobe64(k);
+            writer.write((char*)&k_be, sizeof(Key));
+            writer.write((char*)&v, sizeof(Value));
+        }
     }
 
     /// get the record count
     size_t record_count(void) {
-        open_reader();
+        open_readers();
+        auto& reader = get_reader();
         auto pos = reader.tellg();
         reader.seekg(0, std::ios_base::end); // seek to the end
         assert(reader.tellg() % record_size == 0); // must be even records
@@ -182,7 +195,7 @@ public:
     void sort(void) {
         if (sorted) return;
         //std::cerr << "sorting!" << std::endl;
-        close_reader();
+        close_readers();
         close_writer();
         struct bsort::sort sort;
         if (-1==bsort::open_sort((char*)filename.c_str(), &sort)) {
@@ -204,12 +217,14 @@ public:
 
     Key read_key(void) {
         Key k;
+        auto& reader = get_reader();
         reader.read((char*)&k, sizeof(Key));
         return be64toh(k); // sorting is big-endian
     }
 
     Value read_value(void) {
         Value v;
+        auto& reader = get_reader();
         reader.read((char*)&v, sizeof(Value));
         return v;
     }
@@ -217,23 +232,26 @@ public:
     // pad our key space so that we can query it directly with select operations
     void pad(void) {
         assert(sorted);
-        open_reader();
+        open_readers();
         // open the same file for append output
         open_writer();
         // get the number of records
         size_t n_records = record_count();
         // we need to record the max value and record state during the iteration
-        Key curr=0, prev=0;
+        //Key curr=0, prev=0;
         Value value;
         bool missing_records = false;
         // go through the records of the file and write records [k_i, 0x0] for each k_i that we don't see up to the max record
-        for (size_t i = 0; i < n_records+1; ++i) {
+#pragma omp parallel for
+        for (size_t i = 1; i < n_records+1; ++i) {
+            Key curr=0, prev=0;
             if (i == n_records) {
                 // handle the max record case
                 curr = max_key+1;
             } else {
-                curr = read_key();
-                value = read_value();
+                prev=nth_key(i-1);
+                curr = nth_key(i);
+                //value = nth_value(i);
             }
             //std::cerr << "seeing " << curr << " " << value << std::endl;
             while (prev+1 < curr) {
@@ -257,24 +275,26 @@ public:
         if (new_max) max_key = new_max;
         sort();
         pad();
-        open_reader();
+        open_readers();
         size_t n_records = record_count();
         sdsl::bit_vector key_bv(n_records+1);
         // record the key starts
-        Key last = nullkey, curr = nullkey;
-        Value val = nullvalue;
+        //Key last = nullkey, curr = nullkey;
+        //Value val = nullvalue;
         //reader.read((char*)&last, sizeof(Key));
-        //key_bv[0] = 1;
-        for (size_t i = 0; i < n_records; ++i) {
-            curr = read_key();
-            val = read_value();
+        key_bv[0] = 1;
+#pragma omp parallel for
+        for (size_t i = 1; i < n_records; ++i) {
+            Key last = nth_key(i-1);
+            Key curr = nth_key(i);
+            //val = nth_value(i);
             if (curr != last) {
                 key_bv[i] = 1;
             }
-            last = curr;
+            //last = curr;
         }
         // the last key in the sort is our max key
-        max_key = curr;
+        max_key = nth_key(n_records-1);
         key_bv[n_records] = 1; // sentinel
         // build the compressed bitvector
         sdsl::util::assign(key_cbv, sdsl::sd_vector<>(key_bv));
@@ -286,20 +306,23 @@ public:
     }
 
     Key nth_key(size_t n) {
+        auto& reader = get_reader();
         reader.seekg(n*record_size);
         return read_key();
     }
 
     Value nth_value(size_t n) {
+        auto& reader = get_reader();
         reader.seekg(n*record_size+sizeof(Key));
         return read_value();
     }
 
     void for_each_pair(const std::function<void(const Key&, const Value&)>& lambda) {
-        open_reader(); // open or seek to beginning
+        open_readers(); // open or seek to beginning
         Key key;
         Value value;
         size_t n_records = record_count();
+#pragma omp parallel for
         for (size_t i = 0; i < n_records; ++i) {
             key = read_key();
             value = read_value();
@@ -336,7 +359,7 @@ public:
     }
 
     void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
-        if (!reader.is_open()) open_reader();
+        if (!readers.size()) open_readers();
         size_t i = key_cbv_select(key);
         size_t j = key_cbv_select(key+1);
         for ( ; i < j; ++i) {
