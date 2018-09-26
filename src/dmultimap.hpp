@@ -171,9 +171,9 @@ public:
     void append(const Key& k, const Value& v) {
         sorted = false; // assume we break the sort
         // write to the end of the file
+        auto k_be = htobe64(k);
 #pragma omp critical (dmultimap_append)
         {
-            auto k_be = htobe64(k);
             writer.write((char*)&k_be, sizeof(Key));
             writer.write((char*)&v, sizeof(Value));
         }
@@ -238,20 +238,17 @@ public:
         // get the number of records
         size_t n_records = record_count();
         // we need to record the max value and record state during the iteration
-        //Key curr=0, prev=0;
+        Key curr=0, prev=0;
         Value value;
         bool missing_records = false;
         // go through the records of the file and write records [k_i, 0x0] for each k_i that we don't see up to the max record
-#pragma omp parallel for
-        for (size_t i = 1; i < n_records+1; ++i) {
-            Key curr=0, prev=0;
+        for (size_t i = 0; i < n_records+1; ++i) {
             if (i == n_records) {
                 // handle the max record case
                 curr = max_key+1;
             } else {
-                prev=nth_key(i-1);
-                curr = nth_key(i);
-                //value = nth_value(i);
+                curr = read_key();
+                value = read_value();
             }
             //std::cerr << "seeing " << curr << " " << value << std::endl;
             while (prev+1 < curr) {
@@ -279,19 +276,17 @@ public:
         size_t n_records = record_count();
         sdsl::bit_vector key_bv(n_records+1);
         // record the key starts
-        //Key last = nullkey, curr = nullkey;
-        //Value val = nullvalue;
+        Key last = nullkey, curr = nullkey;
+        Value val = nullvalue;
         //reader.read((char*)&last, sizeof(Key));
-        key_bv[0] = 1;
-#pragma omp parallel for
-        for (size_t i = 1; i < n_records; ++i) {
-            Key last = nth_key(i-1);
-            Key curr = nth_key(i);
-            //val = nth_value(i);
+        //key_bv[0] = 1;
+        for (size_t i = 0; i < n_records; ++i) {
+            curr = read_key();
+            val = read_value();
             if (curr != last) {
                 key_bv[i] = 1;
             }
-            //last = curr;
+            last = curr;
         }
         // the last key in the sort is our max key
         max_key = nth_key(n_records-1);
