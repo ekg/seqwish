@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <string>
+#include <sstream>
 #include <functional>
 #include "bsort.hpp"
 #include "sdsl/bit_vectors.hpp"
@@ -30,6 +31,7 @@ template <typename Key, typename Value> class dmultimap {
 private:
 
     std::ofstream writer;
+    std::vector<std::ofstream> writers;
     std::vector<std::ifstream> readers;
     std::string filename;
     std::string index_filename;
@@ -66,9 +68,9 @@ public:
     // constructor
     dmultimap(void) { init(); }
 
-    dmultimap(const std::string& f) : filename(f) { init(); open_writer(f); }
+    dmultimap(const std::string& f) : filename(f) { init(); open_writers(f); }
 
-    ~dmultimap(void) { }
+    ~dmultimap(void) { close_writers(); }
 
     void set_base_filename(const std::string& f) {
         filename = f;
@@ -116,12 +118,7 @@ public:
     }
 
     // close/open backing file
-    void open_writer(const std::string& f) {
-        set_base_filename(f);
-        open_writer();
-    }
-
-    void open_writer(void) {
+    void open_main_writer(void) {
         if (writer.is_open()) {
             writer.seekp(0, std::ios_base::end); // seek to the end for appending
             return;
@@ -132,6 +129,31 @@ public:
         if (writer.fail()) {
             throw std::ios_base::failure(std::strerror(errno));
         }
+    }
+
+    // per-thread writers
+    void open_writers(const std::string& f) {
+        set_base_filename(f);
+        open_writers();
+    }
+
+    void open_writers(void) {
+        assert(!filename.empty());
+        writers.clear();
+        writers.resize(get_thread_count());
+        for (size_t i = 0; i < writers.size(); ++i) {
+            auto& writer = writers[i];
+            writer.open(writer_filename(i), std::ios::binary | std::ios::app);
+            if (writer.fail()) {
+                throw std::ios_base::failure(std::strerror(errno));
+            }
+        }
+    }
+
+    std::string writer_filename(size_t i) {
+        std::stringstream wf;
+        wf << filename << ".tmp_write" << "." << i;
+        return wf.str();
     }
 
     void open_readers(void) {
@@ -157,12 +179,30 @@ public:
         return readers[omp_get_thread_num()];
     }
 
-    void close_writer(void) {
-        if (writer.is_open()) {
-            writer.close();
+    std::ofstream& get_writer(void) {
+        return writers[omp_get_thread_num()];
+    }
+    
+    void sync_writers(void) {
+        // close the temp writers and cat them onto the end of the main file
+        open_main_writer();
+        for (size_t i = 0; i < writers.size(); ++i) {
+            writers[i].close();
+            std::ifstream if_w(writer_filename(i), std::ios_base::binary);
+            writer << if_w.rdbuf();
+            if_w.close();
+            std::remove(writer_filename(i).c_str());
         }
+        writers.clear();
+        writer.close();
     }
 
+    void close_writers(void) {
+        for (size_t i = 0; i < writers.size(); ++i) {
+            std::remove(writer_filename(i).c_str());
+        }
+    }
+    
     void close_readers(void) {
         readers.clear();
     }
@@ -172,11 +212,9 @@ public:
         sorted = false; // assume we break the sort
         // write to the end of the file
         auto k_be = htobe64(k);
-#pragma omp critical (dmultimap_append)
-        {
-            writer.write((char*)&k_be, sizeof(Key));
-            writer.write((char*)&v, sizeof(Value));
-        }
+        auto& writer = get_writer();
+        writer.write((char*)&k_be, sizeof(Key));
+        writer.write((char*)&v, sizeof(Value));
     }
 
     /// get the record count
@@ -196,7 +234,7 @@ public:
         if (sorted) return;
         //std::cerr << "sorting!" << std::endl;
         close_readers();
-        close_writer();
+        sync_writers();
         struct bsort::sort sort;
         if (-1==bsort::open_sort((char*)filename.c_str(), &sort)) {
             assert(false);
@@ -234,7 +272,7 @@ public:
         assert(sorted);
         open_readers();
         // open the same file for append output
-        open_writer();
+        open_writers();
         // get the number of records
         size_t n_records = record_count();
         // we need to record the max value and record state during the iteration
