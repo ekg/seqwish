@@ -395,8 +395,11 @@ public:
         if (!readers.size()) open_readers();
         size_t i = key_cbv_select(key);
         size_t j = key_cbv_select(key+1);
+        auto& reader = get_reader();
+        reader.seekg(i*record_size);
         for ( ; i < j; ++i) {
-            Value value = nth_value(i);
+            Key key = read_key();
+            Value value = read_value();
             if (!is_null(value)) { lambda(value); }
         }
     }
