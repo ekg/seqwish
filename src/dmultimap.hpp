@@ -246,8 +246,10 @@ public:
                         0,
                         char_start,
                         char_stop,
+                        // size of the whole record
                         record_size,
-                        key_size,
+                        // size of the key we sort by
+                        record_size, // sort by the whole record so we can find unique values easily
                         stack_size,
                         cut_off);
         bsort::close_sort(&sort);
@@ -377,11 +379,13 @@ public:
     }
 
     void for_unique_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
-        std::unordered_set<Value> seen;
-        for_values_of(key, [&seen, &lambda](const Value& value) {
-                if (!seen.count(value)) {
+        // quirk: if we've sorted by the whole binary record,
+        // then we can do a simple 'uniq' operation to get the unique values
+        Value last = nullvalue;
+        for_values_of(key, [&lambda,&last](const Value& value) {
+                if (value != last) {
                     lambda(value);
-                    seen.insert(value);
+                    last = value;
                 }
             });
     }
