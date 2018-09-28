@@ -12,7 +12,7 @@ void unpack_alignments(const std::string& paf_file,
     while (std::getline(paf_in, line)) {
         lines.push_back(line);
     }
-#pragma omp parallel for 
+#pragma omp parallel for
     for (size_t i = 0; i < lines.size(); ++i) {
         auto& line = lines[i];
         paf_row_t paf(line);
@@ -74,6 +74,7 @@ void unpack_alignments(const std::string& paf_file,
     aln_mm.index(seqidx.seq_length());
 }
 
+/*
 void filter_alignments(dmultimap<pos_t, aln_pos_t>& aln_mm,
                        dmultimap<pos_t, pos_t>& aln_filt_mm,
                        uint64_t aln_min_length,
@@ -93,5 +94,6 @@ void filter_alignments(dmultimap<pos_t, aln_pos_t>& aln_mm,
     }
     aln_filt_mm.index(seqidx.seq_length());
 }
+*/
 
 }

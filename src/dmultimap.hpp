@@ -5,6 +5,7 @@
 #include <string>
 #include <sstream>
 #include <functional>
+#include <unordered_set>
 #include "bsort.hpp"
 #include "sdsl/bit_vectors.hpp"
 #include "threads.hpp"
@@ -371,15 +372,18 @@ public:
 
     std::vector<Value> unique_values(const Key& key) {
         std::vector<Value> values;
-        for_values_of(key, [&values](const Value& v) { values.push_back(v); });
-        std::sort(values.begin(), values.end());
-        values.erase(std::unique(values.begin(), values.end()), values.end());
+        for_unique_values_of(key, [&values](const Value& v) { values.push_back(v); });
         return values;
     }
 
     void for_unique_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
-        std::vector<Value> values = unique_values(key);
-        std::for_each(values.begin(), values.end(), lambda);
+        std::unordered_set<Value> seen;
+        for_values_of(key, [&seen, &lambda](const Value& value) {
+                if (!seen.count(value)) {
+                    lambda(value);
+                    seen.insert(value);
+                }
+            });
     }
 
     bool is_null(const Value& value) {
@@ -398,9 +402,12 @@ public:
         auto& reader = get_reader();
         reader.seekg(i*record_size);
         for ( ; i < j; ++i) {
-            Key key = read_key();
-            Value value = read_value();
-            if (!is_null(value)) { lambda(value); }
+            reader.ignore(sizeof(Key));
+            Value value;
+            reader.read((char*)&value, sizeof(Value));
+            if (!is_null(value)) {
+                lambda(value);
+            }
         }
     }
 };
