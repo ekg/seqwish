@@ -12,7 +12,7 @@ void unpack_alignments(const std::string& paf_file,
     while (std::getline(paf_in, line)) {
         lines.push_back(line);
     }
-#pragma omp parallel for
+#pragma omp parallel for schedule(guided)
     for (size_t i = 0; i < lines.size(); ++i) {
         auto& line = lines[i];
         paf_row_t paf(line);

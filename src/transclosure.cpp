@@ -1,5 +1,6 @@
 #include "transclosure.hpp"
 #include "dmultimap.hpp"
+#include "spinlock.hpp"
 
 namespace seqwish {
 
@@ -34,7 +35,7 @@ size_t compute_transitive_closures(
         //node_mm.append(i, make_pos_t(i,false));
         //path_mm.append(i, make_pos_t(i,false));
         //std::cerr << "closure " << i << " to " << seq_v_length << std::endl;
-        std::set<pos_t> todo;
+        std::unordered_set<pos_t> todo;
         std::unordered_map<uint64_t, uint64_t> seen_seqs;
         todo.insert(make_pos_t(i, false));
         seen_seqs[seqidx.seq_id_at(offset(i))]++;

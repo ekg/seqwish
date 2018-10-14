@@ -358,7 +358,7 @@ public:
         Key key;
         Value value;
         size_t n_records = record_count();
-#pragma omp parallel for
+#pragma omp parallel for schedule(guided)
         for (size_t i = 0; i < n_records; ++i) {
             key = read_key();
             value = read_value();
