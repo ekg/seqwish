@@ -2,19 +2,18 @@
 
 cmake_minimum_required(VERSION 3.1)
 
+# Project's name
+project(seqwish)
 # We build using c++11
 set(CMAKE_CXX_STANDARD 11)
 
 # We use OpenMP for parallelism
-#find_package(OpenMP)
-#if (OPENMP_FOUND)
+find_package(OpenMP)
+if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fopenmp")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fopenmp")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-#endif()
-
-# Project's name
-project(seqwish)
+endif()
 
 # Set the output folder where your program will be created
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
