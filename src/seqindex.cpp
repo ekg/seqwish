@@ -38,8 +38,8 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
         seq_offset.push_back(seq_bytes_written);
         line[0] = '>';
         line = line.substr(0, line.find(" "));
-        seqnames << line;
-        seq_names_bytes_written += line.size();
+        seqnames << line << " ";
+        seq_names_bytes_written += line.size() + 1;
         std::string seq;
         // get the sequence
         if (input_is_fasta) {
@@ -177,7 +177,7 @@ std::string seqindex_t::nth_name(size_t n) {
 }
 
 size_t seqindex_t::rank_of_seq_named(const std::string& name) {
-    std::string query = ">" + name;
+    std::string query = ">" + name + " ";
     //std::cerr << query << std::endl;
     auto occs = locate(seq_name_csa, query);
     //std::cerr << "occurs " << occs << std::endl;
