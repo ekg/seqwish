@@ -7,6 +7,7 @@
 #include "paf.hpp"
 #include "dmultimap.hpp"
 #include "seqindex.hpp"
+#include "gzstream.h"
 #include "pos.hpp"
 
 namespace seqwish {

@@ -6,7 +6,7 @@ void unpack_alignments(const std::string& paf_file,
                        dmultimap<uint64_t, pos_t>& aln_mm,
                        seqindex_t& seqidx) {
     // go through the PAF file
-    std::ifstream paf_in(paf_file.c_str());
+    igzstream paf_in(paf_file.c_str());
     std::string line;
     std::vector<std::string> lines;
     while (std::getline(paf_in, line)) {
