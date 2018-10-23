@@ -234,8 +234,6 @@ public:
     void sort(void) {
         if (sorted) return;
         //std::cerr << "sorting!" << std::endl;
-        close_readers();
-        sync_writers();
         struct bsort::sort sort;
         if (-1==bsort::open_sort((char*)filename.c_str(), &sort)) {
             assert(false);
@@ -270,49 +268,23 @@ public:
         return v;
     }
 
-    // pad our key space so that we can query it directly with select operations
-    void pad(void) {
-        assert(sorted);
-        open_readers();
-        // open the same file for append output
+    // pad our key space with empty records so that we can query it directly with select operations
+    void padsort(void) {
+        close_readers();
+        // blindly fill with a single key/value pair for each entity in the key space
         open_writers();
-        // get the number of records
-        size_t n_records = record_count();
-        // we need to record the max value and record state during the iteration
-        Key curr=0, prev=0;
-        Value value;
-        bool missing_records = false;
-        // go through the records of the file and write records [k_i, 0x0] for each k_i that we don't see up to the max record
-        for (size_t i = 0; i < n_records+1; ++i) {
-            if (i == n_records) {
-                // handle the max record case
-                curr = max_key+1;
-            } else {
-                curr = read_key();
-                value = read_value();
-            }
-            //std::cerr << "seeing " << curr << " " << value << std::endl;
-            while (prev+1 < curr) {
-                ++prev;
-                //std::cerr << "appending " << prev << " " << nullvalue << std::endl;
-                missing_records = true;
-                append(prev, nullvalue);
-            }
-            //append(curr, value); // no need to append as we already have it!
-            prev = curr;
+#pragma omp parallel for schedule(guided)
+        for (size_t i = 1; i <= max_key; ++i) {
+            append(i, nullvalue);
         }
-        // 
-        // we have to sort again if we found any empty records
-        if (missing_records) {
-            sort();
-        }
+        sync_writers();
+        sort();
     }
 
     // index
-    void index(Key new_max = 0) {
-        if (new_max) max_key = new_max;
-        sort();
-        pad();
+    void index(Key new_max) {
+        max_key = new_max;
+        padsort();
         open_readers();
         size_t n_records = record_count();
         sdsl::bit_vector key_bv(n_records+1);
@@ -382,8 +354,8 @@ public:
         // quirk: if we've sorted by the whole binary record,
         // then we can do a simple 'uniq' operation to get the unique values
         Value last = nullvalue;
-        for_values_of(key, [&lambda,&last](const Value& value) {
-                if (value != last) {
+        for_values_of(key, [this,&lambda,&last](const Value& value) {
+                if (!is_null(value) && value != last) {
                     lambda(value);
                     last = value;
                 }
