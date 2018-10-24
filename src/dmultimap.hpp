@@ -273,7 +273,7 @@ public:
         close_readers();
         // blindly fill with a single key/value pair for each entity in the key space
         open_writers();
-#pragma omp parallel for schedule(guided)
+#pragma omp parallel for schedule(dynamic)
         for (size_t i = 1; i <= max_key; ++i) {
             append(i, nullvalue);
         }
@@ -330,7 +330,7 @@ public:
         Key key;
         Value value;
         size_t n_records = record_count();
-#pragma omp parallel for schedule(guided)
+#pragma omp parallel for schedule(dynamic)
         for (size_t i = 0; i < n_records; ++i) {
             key = read_key();
             value = read_value();
