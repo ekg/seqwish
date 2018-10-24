@@ -14,6 +14,7 @@
 #include "gfa.hpp"
 #include "pos.hpp"
 #include "threads.hpp"
+#include "exists.hpp"
 
 using namespace seqwish;
 
@@ -48,6 +49,15 @@ int main(int argc, char** argv) {
         omp_set_num_threads(args::get(num_threads));
     } else {
         omp_set_num_threads(1);
+    }
+
+    if (!args::get(seqs).empty() && !file_exists(args::get(seqs))) {
+        std::cerr << "[seqwish] ERROR: input sequence file " << args::get(seqs) << " does not exist" << std::endl;
+        return 2;
+    }
+    if (!args::get(alns).empty() && !file_exists(args::get(alns))) {
+        std::cerr << "[seqwish] ERROR: input alignment file " << args::get(alns) << " does not exist" << std::endl;
+        return 4;
     }
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
