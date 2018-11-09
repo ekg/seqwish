@@ -4,6 +4,9 @@
 #include <iostream>
 #include <cstdio>
 #include <string>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "sdsl/bit_vectors.hpp"
 #include "sdsl/csa_wt.hpp"
 #include "sdsl/suffix_arrays.hpp"
@@ -25,10 +28,13 @@ private:
     std::string seqidxfile;
     size_t seq_count = 0;
     // a file containing the concatenated sequences
-    std::vector<std::ifstream> seqfiles;
-    void open_seqfiles(const std::string& name);
-    void close_seqfiles(void);
-    std::ifstream& get_seqfile(void);
+    //std::vector<std::ifstream> seqfiles;
+    char* seq_buf;
+    int seq_fd;
+    size_t seq_size;
+    void open_seq(const std::string& name);
+    void close_seq(void);
+    //std::ifstream& get_seqfile(void);
     // sequence offsets (for offset and length)
     sdsl::sd_vector<> seq_begin_cbv;
     sdsl::sd_vector<>::rank_1_type seq_begin_cbv_rank;
@@ -44,7 +50,7 @@ private:
 public:
 
     seqindex_t(void) { }
-    ~seqindex_t(void) { }
+    ~seqindex_t(void) { close_seq(); }
     void set_base_filename(const std::string& filename);
     void build_index(const std::string& filename, const std::string& idxbasename);
     size_t save(sdsl::structure_tree_node* s = NULL, std::string name = "");

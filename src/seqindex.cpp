@@ -113,23 +113,44 @@ size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
     written += seq_begin_cbv_rank.serialize(out, child, "seq_begin_cbv_rank");
     written += seq_begin_cbv_select.serialize(out, child, "seq_begin_cbv_select");
     out.close();
-    open_seqfiles(seqfilename);
+    open_seq(seqfilename);
     return written;
 }
 
-void seqindex_t::open_seqfiles(const std::string& name) {
-    seqfiles.resize(get_thread_count());
-    for (auto& seqfile : seqfiles) {
-        seqfile.open(name); // open the seq file
+void seqindex_t::open_seq(const std::string& filename) {
+    if (seq_fd) return; //open
+    assert(!filename.empty());
+    // open in binary mode as we are reading from this interface
+    seq_fd = open(filename.c_str(), O_RDWR);
+    if (seq_fd == -1) {
+        assert(false);
     }
+    struct stat stats;
+    if (-1 == fstat(seq_fd, &stats)) {
+        assert(false);
+    }
+    seq_size = stats.st_size;
+    if (!(seq_buf =
+          (char*) mmap(NULL,
+                       seq_size,
+                       PROT_READ | PROT_WRITE,
+                       MAP_SHARED,
+                       seq_fd,
+                       0))) {
+        assert(false);
+    }
+    madvise((void*)seq_buf, seq_size, POSIX_MADV_WILLNEED | POSIX_MADV_SEQUENTIAL);
 }
 
-void seqindex_t::close_seqfiles(void) {
-    seqfiles.clear();
-}
-
-std::ifstream& seqindex_t::get_seqfile(void) {
-    return seqfiles[omp_get_thread_num()];
+void seqindex_t::close_seq(void) {
+    if (seq_buf) {
+        munmap(seq_buf, seq_size);
+        seq_buf = 0;
+    }
+    if (seq_fd) {
+        close(seq_fd);
+        seq_fd = 0;
+    }
 }
 
 void seqindex_t::load(const std::string& filename) {
@@ -149,7 +170,7 @@ void seqindex_t::load(const std::string& filename) {
     seq_begin_cbv_rank.load(in);
     seq_begin_cbv_select.load(in);
     in.close(); // close the sdsl index input
-    open_seqfiles(filename);
+    open_seq(filename);
 }
 
 void seqindex_t::to_fasta(std::ostream& out, size_t linewidth) {
@@ -208,10 +229,8 @@ std::string seqindex_t::subseq(size_t n, size_t pos, size_t count) {
 }
 
 std::string seqindex_t::subseq(size_t pos, size_t count) {
-    auto& seqfile = get_seqfile();
     char s[count];
-    seqfile.seekg(pos);
-    seqfile.read(s, count);
+    memcpy(&s[0], &seq_buf[pos], count);
     return std::string(s, count);
 }
 
@@ -229,12 +248,7 @@ size_t seqindex_t::seq_length(void) {
 }
 
 char seqindex_t::at(size_t pos) {
-    auto& seqfile = get_seqfile();
-    char c;
-    assert(seqfile.good());
-    seqfile.seekg(pos);
-    seqfile.read(&c, 1);
-    return c;
+    return seq_buf[pos];
 }
 
 char seqindex_t::at_pos(pos_t pos) {

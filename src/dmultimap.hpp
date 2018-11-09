@@ -31,9 +31,11 @@ template <typename Key, typename Value> class dmultimap {
 
 private:
 
+    typedef struct { Key key; Value value; } Entry;
     std::ofstream writer;
     std::vector<std::ofstream> writers;
-    std::vector<std::ifstream> readers;
+    char* reader;
+    int reader_fd;
     std::string filename;
     std::string index_filename;
     bool sorted = false;
@@ -80,7 +82,7 @@ public:
 
     // load from base file name
     void load(const std::string& f) {
-        open_readers();
+        open_reader();
         set_base_filename(f);
         std::ifstream in(index_filename.c_str());
         std::string magic;
@@ -157,27 +159,28 @@ public:
         return wf.str();
     }
 
-    void open_readers(void) {
-        if (readers.size()) {
-            for (auto& reader : readers) {
-                reader.seekg(0); // reset to start
-            }
-            return;
-        } else {
-            readers.resize(get_thread_count());
-        }
+    void open_reader(void) {
+        if (reader_fd) return; //open
         assert(!filename.empty());
         // open in binary mode as we are reading from this interface
-        for (auto& reader : readers) {
-            reader.open(filename, std::ios::binary);
-            if (reader.fail()) {
-                throw std::ios_base::failure(std::strerror(errno));
-            }
+        reader_fd = open(filename.c_str(), O_RDWR);
+        if (reader_fd == -1) {
+            assert(false);
         }
-    }
-
-    std::ifstream& get_reader(void) {
-        return readers[omp_get_thread_num()];
+        struct stat stats;
+        if (-1 == fstat(reader_fd, &stats)) {
+            assert(false);
+        }
+        if (!(reader =
+              (char*) mmap(NULL,
+                           stats.st_size,
+                           PROT_READ | PROT_WRITE,
+                           MAP_SHARED,
+                           reader_fd,
+                           0))) {
+            assert(false);
+        }
+        madvise((void*)reader, stats.st_size, POSIX_MADV_WILLNEED | POSIX_MADV_SEQUENTIAL);
     }
 
     std::ofstream& get_writer(void) {
@@ -204,8 +207,16 @@ public:
         }
     }
     
-    void close_readers(void) {
-        readers.clear();
+    void close_reader(void) {
+        if (reader) {
+            size_t c = record_count();
+            munmap(reader, c);
+            reader = 0;
+        }
+        if (reader_fd) {
+            close(reader_fd);
+            reader_fd = 0;
+        }
     }
 
     /// write the pair to end of backing file
@@ -220,13 +231,16 @@ public:
 
     /// get the record count
     size_t record_count(void) {
-        open_readers();
-        auto& reader = get_reader();
-        auto pos = reader.tellg();
-        reader.seekg(0, std::ios_base::end); // seek to the end
-        assert(reader.tellg() % record_size == 0); // must be even records
-        size_t count = reader.tellg() / record_size;
-        reader.seekg(pos);
+        int fd = open(filename.c_str(), O_RDWR);
+        if (fd == -1) {
+            assert(false);
+        }
+        struct stat stats;
+        if (-1 == fstat(fd, &stats)) {
+            assert(false);
+        }
+        assert(stats.st_size % record_size == 0); // must be even records
+        size_t count = stats.st_size / record_size;
         return count;
     }
 
@@ -254,23 +268,18 @@ public:
         sorted = true;
     }
 
-    Key read_key(void) {
-        Key k;
-        auto& reader = get_reader();
-        reader.read((char*)&k, sizeof(Key));
-        return be64toh(k); // sorting is big-endian
-    }
-
-    Value read_value(void) {
-        Value v;
-        auto& reader = get_reader();
-        reader.read((char*)&v, sizeof(Value));
-        return v;
+    Entry read_entry(size_t i) {
+        Entry e;
+        //auto& reader = get_reader();
+        memcpy(&e.key, &reader[i*record_size], sizeof(Key));
+        memcpy(&e.value, &reader[i*record_size]+sizeof(Key), sizeof(Value));
+        e.key = be64toh(e.key);
+        return e;
     }
 
     // pad our key space with empty records so that we can query it directly with select operations
     void padsort(void) {
-        close_readers();
+        close_reader();
         // blindly fill with a single key/value pair for each entity in the key space
         open_writers();
 #pragma omp parallel for schedule(dynamic)
@@ -285,17 +294,19 @@ public:
     void index(Key new_max) {
         max_key = new_max;
         padsort();
-        open_readers();
+        open_reader();
         size_t n_records = record_count();
         sdsl::bit_vector key_bv(n_records+1);
         // record the key starts
         Key last = nullkey, curr = nullkey;
         Value val = nullvalue;
+        Entry entry;
         //reader.read((char*)&last, sizeof(Key));
         //key_bv[0] = 1;
         for (size_t i = 0; i < n_records; ++i) {
-            curr = read_key();
-            val = read_value();
+            entry = read_entry(i);
+            curr = entry.key;
+            val = entry.value;
             if (curr != last) {
                 key_bv[i] = 1;
             }
@@ -314,26 +325,26 @@ public:
     }
 
     Key nth_key(size_t n) {
-        auto& reader = get_reader();
-        reader.seekg(n*record_size);
-        return read_key();
+        Entry e = read_entry(n);
+        return e.key;
     }
 
     Value nth_value(size_t n) {
-        auto& reader = get_reader();
-        reader.seekg(n*record_size+sizeof(Key));
-        return read_value();
+        Entry e = read_entry(n);
+        return e.value;
     }
 
     void for_each_pair(const std::function<void(const Key&, const Value&)>& lambda) {
-        open_readers(); // open or seek to beginning
+        open_reader(); // open or seek to beginning
         Key key;
         Value value;
+        Entry entry;
         size_t n_records = record_count();
 #pragma omp parallel for schedule(dynamic)
         for (size_t i = 0; i < n_records; ++i) {
-            key = read_key();
-            value = read_value();
+            entry = read_entry(i);
+            key = entry.key;
+            value = entry.value;
             lambda(key, value);
         }
     }
@@ -372,17 +383,13 @@ public:
     }
 
     void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
-        if (!readers.size()) open_readers();
+        open_reader();
         size_t i = key_cbv_select(key);
         size_t j = key_cbv_select(key+1);
-        auto& reader = get_reader();
-        reader.seekg(i*record_size);
         for ( ; i < j; ++i) {
-            reader.ignore(sizeof(Key));
-            Value value;
-            reader.read((char*)&value, sizeof(Value));
-            if (!is_null(value)) {
-                lambda(value);
+            Entry entry = read_entry(i);
+            if (!is_null(entry.value)) {
+                lambda(entry.value);
             }
         }
     }
