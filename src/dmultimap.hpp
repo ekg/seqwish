@@ -322,6 +322,8 @@ public:
         // build the select supports on the key bitvector
         sdsl::util::assign(key_cbv_select, sdsl::sd_vector<>::select_1_type(&key_cbv));
         indexed = true;
+        close_reader();
+        open_reader();
     }
 
     Key nth_key(size_t n) {
@@ -335,7 +337,6 @@ public:
     }
 
     void for_each_pair(const std::function<void(const Key&, const Value&)>& lambda) {
-        open_reader(); // open or seek to beginning
         Key key;
         Value value;
         Entry entry;
@@ -383,7 +384,6 @@ public:
     }
 
     void for_values_of(const Key& key, const std::function<void(const Value&)>& lambda) {
-        open_reader();
         size_t i = key_cbv_select(key);
         size_t j = key_cbv_select(key+1);
         for ( ; i < j; ++i) {

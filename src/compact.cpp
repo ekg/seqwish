@@ -26,6 +26,7 @@ void compact_nodes(
             && to_second.size() == 1 && to_second.front() == from) {
         } else {
             // mark a node start
+#pragma omp critical (seq_id_bv)
             seq_id_bv[i] = 1;
         }
     }
