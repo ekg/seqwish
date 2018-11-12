@@ -15,7 +15,6 @@ void emit_gfa(std::ostream& out,
               seqindex_t& seqidx) {
 
     out << "H" << "\t" << "VN:Z:1.0" << std::endl;
-    //std::ifstream seq_in(seq_v_file.c_str());
     int seq_v_fd = -1;
     char* seq_v_buf = nullptr;
     size_t seq_v_filesize = mmap_open(seq_v_file, seq_v_buf, seq_v_fd);
@@ -30,9 +29,6 @@ void emit_gfa(std::ostream& out,
         char seqc[node_length];
         memcpy(&seqc[0], &seq_v_buf[node_start], node_length);
         std::string seq(seqc, node_length);
-        //char seq[node_length+1]; seq[node_length]='\0';
-        //seq_in.seekg(node_start);
-        //seq_in.read(seq, node_length);
         out << "S" << "\t" << id << "\t" << seq << std::endl;
         // get the links of this node
         // to the forward or reverse start
@@ -112,7 +108,7 @@ void emit_gfa(std::ostream& out,
             auto& p = v.front();
             //std::cerr << j << " -> " << pos_to_string(p) << std::endl;
             // validate the path
-            char c = seq_v_buf[offset(p)-1];// seq_in.seekg(offset(p)-1); seq_in.read(&c, 1);
+            char c = seq_v_buf[offset(p)-1];
             if (is_rev(p)) c = dna_reverse_complement(c);
             //std::cerr << seqidx.at_pos(make_pos_t(j, false)) << " " << c << std::endl;
             assert(seqidx.at_pos(make_pos_t(j, false)) == c);
