@@ -44,6 +44,7 @@ private:
     int char_stop = 255;
     int stack_size = 32;
     int cut_off = 32;
+    int switch_to_shell = 256;
     size_t record_size = 0;
     // key information
     Key max_key = 0;
@@ -252,7 +253,7 @@ public:
         if (-1==bsort::open_sort((char*)filename.c_str(), &sort)) {
             assert(false);
         }
-        size_t key_size = sizeof(Key);
+        //size_t key_size = sizeof(Key);
         bsort::radixify((unsigned char*)sort.buffer,
                         sort.size / record_size,
                         0,
@@ -263,7 +264,8 @@ public:
                         // size of the key we sort by
                         record_size, // sort by the whole record so we can find unique values easily
                         stack_size,
-                        cut_off);
+                        cut_off,
+                        switch_to_shell);
         bsort::close_sort(&sort);
         sorted = true;
     }
