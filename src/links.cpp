@@ -30,8 +30,14 @@ void derive_links(seqindex_t& seqidx,
             link_rev_mm.append(rev_pos_t(p1), rev_pos_t(p2));
         }
     }
-    link_fwd_mm.index(make_pos_t(graph_length, true));
-    link_rev_mm.index(make_pos_t(graph_length, true));
+#pragma omp parallel
+#pragma omp single nowait
+    {
+#pragma omp task
+        link_fwd_mm.index(make_pos_t(graph_length, true));
+#pragma omp task
+        link_rev_mm.index(make_pos_t(graph_length, true));
+    }
 }
 
 }
