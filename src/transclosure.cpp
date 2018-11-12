@@ -81,14 +81,8 @@ size_t compute_transitive_closures(
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
     // build node_mm and path_mm indexes
-#pragma omp parallel
-#pragma omp single nowait
-    {
-#pragma omp task
-        node_mm.index(seq_bytes);
-#pragma omp task
-        path_mm.index(input_seq_length);
-    }
+    node_mm.index(seq_bytes);
+    path_mm.index(input_seq_length);
     return seq_bytes;
 }
 

@@ -47,7 +47,7 @@ set(sdsl-lite-divsufsort_LIB "${INSTALL_DIR}/src/sdsl-lite-build/external/libdiv
 # bsort (header-only, so here we just check if we can build it)
 ExternalProject_Add(bsort
   GIT_REPOSITORY "https://github.com/ekg/bsort.git"
-  GIT_TAG "28f409038fd1d216f3e77734e46e245c05aa126f"
+  GIT_TAG "e3e09e3e25e08353606f0f85773f801e69123cb7"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(bsort SOURCE_DIR)
