@@ -1,0 +1,12 @@
+#!/bin/bash
+
+for x in $@;
+do
+    minimap2 -DP $x $x
+done
+
+while [[ "$@" != "" ]];
+do
+    minimap2 -cx asm20 $@
+    shift
+done
