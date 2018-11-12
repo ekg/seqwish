@@ -6,6 +6,7 @@
 #include "dmultimap.hpp"
 #include "seqindex.hpp"
 #include "pos.hpp"
+#include "mmap.hpp"
 
 namespace seqwish {
 
