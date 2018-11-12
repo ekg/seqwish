@@ -89,6 +89,7 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/gfa.cpp
   ${CMAKE_SOURCE_DIR}/src/threads.cpp
   ${CMAKE_SOURCE_DIR}/src/exists.cpp
+  ${CMAKE_SOURCE_DIR}/src/mmap.cpp
   )
 add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)
