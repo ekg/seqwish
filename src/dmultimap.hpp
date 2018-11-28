@@ -34,8 +34,8 @@ private:
     typedef struct { Key key; Value value; } Entry;
     std::ofstream writer;
     std::vector<std::ofstream> writers;
-    char* reader;
-    int reader_fd;
+    char* reader = nullptr;
+    int reader_fd = 0;
     std::string filename;
     std::string index_filename;
     bool sorted = false;

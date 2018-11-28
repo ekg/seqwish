@@ -30,8 +30,8 @@ private:
     // a file containing the concatenated sequences
     //std::vector<std::ifstream> seqfiles;
     char* seq_buf;
-    int seq_fd;
-    size_t seq_size;
+    int seq_fd = 0;
+    size_t seq_size = 0;
     void open_seq(const std::string& name);
     void close_seq(void);
     //std::ifstream& get_seqfile(void);
