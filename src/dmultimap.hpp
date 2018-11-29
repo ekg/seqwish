@@ -284,7 +284,8 @@ public:
         close_reader();
         // blindly fill with a single key/value pair for each entity in the key space
         open_writers();
-#pragma omp parallel for schedule(dynamic)
+        // running this in parallel causes a strange race condition and segfaults at high thread counts
+        // and it does not provide any performance benefit
         for (size_t i = 1; i <= max_key; ++i) {
             append(i, nullvalue);
         }
