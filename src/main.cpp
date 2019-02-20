@@ -128,6 +128,7 @@ int main(int argc, char** argv) {
     sdsl::sd_vector<>::rank_1_type seq_id_cbv_rank;
     sdsl::sd_vector<>::select_1_type seq_id_cbv_select;
     sdsl::util::assign(seq_id_cbv, sdsl::sd_vector<>(seq_id_bv));
+    seq_id_bv = sdsl::bit_vector(); // clear bitvector
     sdsl::util::assign(seq_id_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_id_cbv));
     sdsl::util::assign(seq_id_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_id_cbv));
 
