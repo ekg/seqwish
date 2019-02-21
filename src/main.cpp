@@ -12,6 +12,7 @@
 #include "links.hpp"
 #include "compact.hpp"
 #include "gfa.hpp"
+#include "vgp.hpp"
 #include "pos.hpp"
 #include "threads.hpp"
 #include "exists.hpp"
@@ -149,6 +150,8 @@ int main(int argc, char** argv) {
     if (!args::get(gfa_out).empty()) {
         std::ofstream out(args::get(gfa_out).c_str());
         emit_gfa(out, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
+    } else if (!args::get(vgp_base).empty()) {
+        emit_vgp(args::get(vgp_base), graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     } else {
         emit_gfa(std::cout, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     }
