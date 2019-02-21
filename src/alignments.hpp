@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "paf.hpp"
+#include "sxs.hpp"
 #include "dmultimap.hpp"
 #include "seqindex.hpp"
 #include "gzstream.h"
@@ -12,9 +13,13 @@
 
 namespace seqwish {
 
-void unpack_alignments(const std::string& paf_file,
-                       dmultimap<pos_t, pos_t>& aln_mm,
-                       seqindex_t& seqidx);
+void unpack_paf_alignments(const std::string& paf_file,
+                           dmultimap<pos_t, pos_t>& aln_mm,
+                           seqindex_t& seqidx);
+
+void unpack_sxs_alignments(const std::string& sxs_file,
+                           dmultimap<pos_t, pos_t>& aln_mm,
+                           seqindex_t& seqidx);
 
 /*
 void filter_alignments(dmultimap<pos_t, aln_pos_t>& aln_mm,

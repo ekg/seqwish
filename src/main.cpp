@@ -21,13 +21,15 @@ using namespace seqwish;
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
-    args::ValueFlag<std::string> alns(parser, "FILE", "induce the graph from these alignments", {'a', "alns"});
-    args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments", {'s', "seqs"});
-    args::ValueFlag<std::string> base(parser, "FILE", "build graph using this basename", {'b', "base"});
+    args::ValueFlag<std::string> sxs_alns(parser, "FILE", "induce the graph from these .sxs formatted alignments", {'a', "sxs-alns"});
+    args::ValueFlag<std::string> paf_alns(parser, "FILE", "induce the graph from these PAF formatted alignments", {'p', "paf-alns"});
+    args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
+    args::ValueFlag<std::string> base(parser, "BASE", "build graph using this basename", {'b', "base"});
+    args::ValueFlag<std::string> gfa_out(parser, "FILE", "write the graph in GFA to FILE", {'g', "gfa"});
+    args::ValueFlag<std::string> sml_in(parser, "FILE", "use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
+    args::ValueFlag<std::string> vgp_base(parser, "BASE", "write the graph in VGP format with basename FILE", {'o', "vgp-out"});
     args::ValueFlag<uint64_t> num_threads(parser, "N", "use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
-    //args::ValueFlag<uint64_t> aln_keep_n_longest(parser, "N", "keep up to the N-longest alignments overlapping each query position", {'k', "aln-keep-n-longest"});
-    //args::ValueFlag<uint64_t> aln_min_length(parser, "N", "ignore alignments shorter than this", {'m', "aln-min-length"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
         parser.ParseCLI(argc, argv);
@@ -55,8 +57,12 @@ int main(int argc, char** argv) {
         std::cerr << "[seqwish] ERROR: input sequence file " << args::get(seqs) << " does not exist" << std::endl;
         return 2;
     }
-    if (!args::get(alns).empty() && !file_exists(args::get(alns))) {
-        std::cerr << "[seqwish] ERROR: input alignment file " << args::get(alns) << " does not exist" << std::endl;
+    if (!args::get(sxs_alns).empty() && !file_exists(args::get(sxs_alns))) {
+        std::cerr << "[seqwish] ERROR: input alignment file " << args::get(sxs_alns) << " does not exist" << std::endl;
+        return 4;
+    }
+    if (!args::get(paf_alns).empty() && !file_exists(args::get(paf_alns))) {
+        std::cerr << "[seqwish] ERROR: input alignment file " << args::get(paf_alns) << " does not exist" << std::endl;
         return 4;
     }
 
@@ -69,8 +75,15 @@ int main(int argc, char** argv) {
     std::string aln_idx = args::get(base) + ".sqa";
     std::remove(aln_idx.c_str());
     dmultimap<uint64_t, pos_t> aln_mm(aln_idx);
-    if (args::get(debug)) dump_alignments(args::get(alns));
-    unpack_alignments(args::get(alns), aln_mm, seqidx); // yields array A
+    if (!args::get(sxs_alns).empty()) {
+        unpack_sxs_alignments(args::get(sxs_alns), aln_mm, seqidx); // yields array A
+        if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));
+    } else if (!args::get(paf_alns).empty()) {
+        unpack_paf_alignments(args::get(paf_alns), aln_mm, seqidx); // yields array A
+        if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
+    } else {
+        assert(false);
+    }
     if (args::get(debug)) {
         aln_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
                 std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
@@ -133,7 +146,12 @@ int main(int argc, char** argv) {
     sdsl::util::assign(seq_id_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_id_cbv));
 
     // 6) emit the graph in GFA
-    emit_gfa(std::cout, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
+    if (!args::get(gfa_out).empty()) {
+        std::ofstream out(args::get(gfa_out).c_str());
+        emit_gfa(out, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
+    } else {
+        emit_gfa(std::cout, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
+    }
     
     return(0);
 }

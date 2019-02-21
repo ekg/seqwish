@@ -15,8 +15,8 @@ paf_row_t::paf_row_t(const std::string& line) {
     target_sequence_length = std::stol(fields[6]);
     target_start = std::stol(fields[7]);
     target_end = std::stol(fields[8]);
-    bases_in_mapping = std::stol(fields[9]);
-    bases_and_gaps_in_mapping = std::stol(fields[10]);
+    num_matches = std::stol(fields[9]);
+    alignment_block_length = std::stol(fields[10]);
     mapping_quality = std::stoi(fields[11]);
     // find the cigar in the last fields
     for (size_t i = 12; i < fields.size(); ++i) {
@@ -41,14 +41,14 @@ std::ostream& operator<<(std::ostream& out, const paf_row_t& pafrow) {
         << pafrow.target_sequence_length << "\t"
         << pafrow.target_start << "\t"
         << pafrow.target_end << "\t"
-        << pafrow.bases_in_mapping << "\t"
-        << pafrow.bases_and_gaps_in_mapping << "\t"
+        << pafrow.num_matches << "\t"
+        << pafrow.alignment_block_length << "\t"
         << pafrow.mapping_quality << "\t"
         << "cg:Z:" << cigar_to_string(pafrow.cigar);
     return out;
 }
 
-void dump_alignments(const std::string& filename) {
+void dump_paf_alignments(const std::string& filename) {
     std::ifstream in(filename.c_str());
     std::string line;
     while (std::getline(in, line)) {
