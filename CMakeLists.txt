@@ -79,6 +79,7 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/main.cpp
   ${CMAKE_SOURCE_DIR}/src/seqindex.cpp
   ${CMAKE_SOURCE_DIR}/src/paf.cpp
+  ${CMAKE_SOURCE_DIR}/src/sxs.cpp
   ${CMAKE_SOURCE_DIR}/src/cigar.cpp
   ${CMAKE_SOURCE_DIR}/src/alignments.cpp
   ${CMAKE_SOURCE_DIR}/src/pos.cpp
