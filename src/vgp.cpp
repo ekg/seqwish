@@ -157,7 +157,6 @@ void emit_vgp(const std::string& basename,
                     << "I" << "\t"
                     << 0 << "\t" << node_length << "\t"
                     << start_pos << "\t" << end_pos << "\n";
-            
             pos_in_b += node_length;
         }
         //pathss.seekp(-1, pathss.cur); pathss << '\t';

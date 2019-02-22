@@ -55,6 +55,7 @@ public:
     void build_index(const std::string& filename, const std::string& idxbasename);
     size_t save(sdsl::structure_tree_node* s = NULL, std::string name = "");
     void load(const std::string& filename);
+    void remove_index_files(void);
     void to_fasta(std::ostream& out, size_t linewidth = 60);
     std::string nth_name(size_t n);
     size_t rank_of_seq_named(const std::string& name);

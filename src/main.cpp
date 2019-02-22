@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "write the graph in VGP format with basename FILE", {'o', "vgp-out"});
     args::ValueFlag<uint64_t> num_threads(parser, "N", "use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
+    args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'k', "keep-temp"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
         parser.ParseCLI(argc, argv);
@@ -146,7 +147,7 @@ int main(int argc, char** argv) {
     sdsl::util::assign(seq_id_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_id_cbv));
     sdsl::util::assign(seq_id_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_id_cbv));
 
-    // 6) emit the graph in GFA
+    // 6) emit the graph in GFA or VGP format
     if (!args::get(gfa_out).empty()) {
         std::ofstream out(args::get(gfa_out).c_str());
         emit_gfa(out, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
@@ -155,6 +156,16 @@ int main(int argc, char** argv) {
     } else {
         emit_gfa(std::cout, graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     }
-    
+
+    if (!args::get(keep_temp_files)) {
+        seqidx.remove_index_files();
+        std::remove(aln_idx.c_str());
+        std::remove(seq_v_file.c_str());
+        std::remove(node_mm_idx.c_str());
+        std::remove(path_mm_idx.c_str());
+        std::remove(link_fwd_mm_idx.c_str());
+        std::remove(link_rev_mm_idx.c_str());
+    }
+
     return(0);
 }
