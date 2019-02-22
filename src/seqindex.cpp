@@ -117,6 +117,11 @@ size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
     return written;
 }
 
+void seqindex_t::remove_index_files(void) {
+    std::remove(seqfilename.c_str());
+    std::remove(seqidxfile.c_str());
+}
+
 void seqindex_t::open_seq(const std::string& filename) {
     if (seq_fd) return; //open
     assert(!filename.empty());
