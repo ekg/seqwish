@@ -114,7 +114,7 @@ void unpack_sxs_alignments(const std::string& sxs_file,
         //std::cerr << "query_idx " << query_idx << " " << seqidx.nth_seq_length(query_idx) << std::endl;
         //std::cerr << "target_idx " << target_idx << " " << seqidx.nth_seq_length(target_idx) << std::endl;
         size_t target_start = sxs.target_start;
-        size_t query_start = q_rev ? seqidx.nth_seq_length(query_idx)-sxs.query_start : sxs.query_start;
+        size_t query_start = q_rev ? sxs.query_end : sxs.query_start;
         //std::cerr << query_start << " " << target_start << std::endl;
         // these calls convert to 1-based positions as 0 has a special meaning in the dmultimap 
         size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, q_rev);
