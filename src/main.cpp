@@ -91,14 +91,6 @@ int main(int argc, char** argv) {
                 std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
     }
 
-    // 2.1) filter the alignments
-    /*
-    std::string aln_filt_idx = args::get(base) + ".sqaf";
-    std::remove(aln_filt_idx.c_str());
-    dmultimap<uint64_t, pos_t> aln_filt_mm(aln_filt_idx);
-    filter_alignments(aln_mm, aln_filt_mm, args::get(aln_min_length), args::get(aln_keep_n_longest), seqidx);
-    */
-
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays
     std::string seq_v_file = args::get(base) + ".sqs";
     std::string node_mm_idx = args::get(base) + ".sqn";
