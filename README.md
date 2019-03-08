@@ -78,7 +78,7 @@ It writes [GFA1](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md#the-gf
 
 ```
 minimap2 x.fa.gz x.fa.gz -c -X >x.paf
-seqwish -s x.fa.gz -a x.paf -b x.graph >x.gfa
+seqwish -s x.fa.gz -p x.paf -b x.graph -g x.gfa
 ```
 
 ## TODO
