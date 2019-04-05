@@ -26,9 +26,8 @@ void emit_gfa(std::ostream& out,
         size_t node_start = seq_id_cbv_select(id);
         size_t node_length = (id==n_nodes ? seq_id_cbv.size() : seq_id_cbv_select(id+1)) - node_start;
         //std::cerr << id << " "  << node_start << " " << node_length << std::endl;
-        char seqc[node_length];
-        memcpy(&seqc[0], &seq_v_buf[node_start], node_length);
-        std::string seq(seqc, node_length);
+        std::string seq; seq.resize(node_length);
+        memcpy((void*)seq.c_str(), &seq_v_buf[node_start], node_length);
         out << "S" << "\t" << id << "\t" << seq << std::endl;
         // get the links of this node
         // to the forward or reverse start
