@@ -234,9 +234,9 @@ std::string seqindex_t::subseq(size_t n, size_t pos, size_t count) {
 }
 
 std::string seqindex_t::subseq(size_t pos, size_t count) {
-    char s[count];
-    memcpy(&s[0], &seq_buf[pos], count);
-    return std::string(s, count);
+    std::string s; s.resize(count);
+    memcpy((void*)s.c_str(), &seq_buf[pos], count);
+    return s;
 }
 
 size_t seqindex_t::pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev) {
