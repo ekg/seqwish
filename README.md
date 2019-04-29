@@ -69,6 +69,11 @@ To clean up simply remove `build/` and `bin/`:
 rm -rf build bin
 ```
 
+Alternatively, you may build a Docker image that contains seqwish.
+```
+docker build -t seqwish .
+```
+
 ## usage
 
 `seqwish` supports minimap2's PAF format output. It requires the CIGAR string of the alignment to be provided in the `cg:z:` optional field.
