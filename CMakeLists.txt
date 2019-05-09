@@ -4,19 +4,28 @@ cmake_minimum_required(VERSION 3.1)
 
 # Project's name
 project(seqwish)
-# We build using c++11
-set(CMAKE_CXX_STANDARD 11)
+# We build using c++14
+set(CMAKE_CXX_STANDARD 14)
 
 # Use all standard-compliant optimizations
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3 -g")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -g")
 
 # We use OpenMP for parallelism
+# Use openmp for parallelism, but it's configured differently on OSX
 find_package(OpenMP)
 if (OPENMP_FOUND)
+  if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fopenmp")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fopenmp")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+  elseif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    # assumes clang build
+    # we can't reliably detect when we're using clang, so for the time being we assume
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Xpreprocessor -fopenmp")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Xpreprocessor -fopenmp")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS} -lomp")
+  endif()
 endif()
 
 # Set the output folder where your program will be created
@@ -47,7 +56,7 @@ set(sdsl-lite-divsufsort_LIB "${INSTALL_DIR}/src/sdsl-lite-build/external/libdiv
 # bsort (header-only, so here we just check if we can build it)
 ExternalProject_Add(bsort
   GIT_REPOSITORY "https://github.com/ekg/bsort.git"
-  GIT_TAG "7891aae69ed685f982cfa04a1274170225fc1013"
+  GIT_TAG "c3ab0d3308424030e0a000645a26d2c10a59a124"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(bsort SOURCE_DIR)
@@ -71,6 +80,26 @@ ExternalProject_Add(gzipreader
   INSTALL_COMMAND "")
 ExternalProject_Get_property(gzipreader SOURCE_DIR)
 set(gzipreader_INCLUDE "${SOURCE_DIR}")
+
+# mmmultimap (memory mapped multimap)
+ExternalProject_Add(mmmultimap
+  GIT_REPOSITORY "https://github.com/ekg/mmmultimap.git"
+  GIT_TAG "fb8914912b1cb04874a71f1dc5042c2f5c8a0836"
+  BUILD_COMMAND ""
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND "")
+ExternalProject_Get_property(mmmultimap SOURCE_DIR)
+set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
+
+# In-place Parallel Super Scalar Samplesort (IPS⁴o), header only
+ExternalProject_Add(ips4o
+  GIT_REPOSITORY "https://github.com/SaschaWitt/ips4o.git"
+  GIT_TAG "bff3ccf0bf349497f2bb10f825d160b792236367"
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(ips4o SOURCE_DIR)
+set(ips4o_INCLUDE "${SOURCE_DIR}")
 
 set(CMAKE_BUILD_TYPE Debug) 
 
@@ -97,16 +126,21 @@ add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
 add_dependencies(seqwish gzipreader)
+add_dependencies(seqwish mmmultimap)
+add_dependencies(seqwish ips4o)
 target_include_directories(seqwish PUBLIC
   "${bsort_INCLUDE}"
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
   "${tayweeargs_INCLUDE}"
-  "${gzipreader_INCLUDE}")
+  "${gzipreader_INCLUDE}"
+  "${ips4o_INCLUDE}"
+  "${mmmultimap_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
   "${bsort_LIB}/libbsort.a"
+  "-latomic"
   z)
 set(CMAKE_EXE_LINKER_FLAGS "-static")

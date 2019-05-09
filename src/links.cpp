@@ -1,13 +1,13 @@
 #include "links.hpp"
-#include "dmultimap.hpp"
+#include "mmmultimap.hpp"
 
 namespace seqwish {
 
 void derive_links(seqindex_t& seqidx,
                   size_t graph_length,
-                  dmultimap<uint64_t, pos_t>& path_mm,
-                  dmultimap<pos_t, pos_t>& link_fwd_mm,
-                  dmultimap<pos_t, pos_t>& link_rev_mm) {
+                  multimap<uint64_t, pos_t>& path_mm,
+                  multimap<pos_t, pos_t>& link_fwd_mm,
+                  multimap<pos_t, pos_t>& link_rev_mm) {
     // rewrite the sequences in seqidx as pairs of positions in S
     // for each sequence in seqidx
     size_t num_seqs = seqidx.n_seqs();
