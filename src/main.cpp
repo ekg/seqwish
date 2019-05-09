@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 #include "args.hxx"
-#include "dmultimap.hpp"
+#include "mmmultimap.hpp"
 #include "sdsl/bit_vectors.hpp"
 #include "seqindex.hpp"
 #include "paf.hpp"
@@ -18,6 +18,7 @@
 #include "exists.hpp"
 
 using namespace seqwish;
+using mmmultimap::multimap;
 
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
@@ -76,7 +77,7 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = args::get(base) + ".sqa";
     std::remove(aln_idx.c_str());
-    dmultimap<uint64_t, pos_t> aln_mm(aln_idx);
+    multimap<uint64_t, pos_t> aln_mm(aln_idx);
     if (!args::get(sxs_alns).empty()) {
         unpack_sxs_alignments(args::get(sxs_alns), aln_mm, seqidx); // yields array A
         if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));
@@ -98,8 +99,8 @@ int main(int argc, char** argv) {
     std::remove(seq_v_file.c_str());
     std::remove(node_mm_idx.c_str());
     std::remove(path_mm_idx.c_str());
-    dmultimap<uint64_t, pos_t> node_mm(node_mm_idx);
-    dmultimap<uint64_t, pos_t> path_mm(path_mm_idx);
+    multimap<uint64_t, pos_t> node_mm(node_mm_idx);
+    multimap<uint64_t, pos_t> path_mm(path_mm_idx);
     size_t graph_length = compute_transitive_closures(seqidx, aln_mm, seq_v_file, node_mm, path_mm, args::get(repeat_max));
     if (args::get(debug)) {
         node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
@@ -113,8 +114,8 @@ int main(int argc, char** argv) {
     std::string link_rev_mm_idx = args::get(base) + ".sqlr";
     std::remove(link_fwd_mm_idx.c_str());
     std::remove(link_rev_mm_idx.c_str());
-    dmultimap<pos_t, pos_t> link_fwd_mm(link_fwd_mm_idx);
-    dmultimap<pos_t, pos_t> link_rev_mm(link_rev_mm_idx);
+    multimap<pos_t, pos_t> link_fwd_mm(link_fwd_mm_idx);
+    multimap<pos_t, pos_t> link_rev_mm(link_rev_mm_idx);
     derive_links(seqidx, graph_length, path_mm, link_fwd_mm, link_rev_mm);
     if (args::get(debug)) {
         link_fwd_mm.for_each_pair([&](const pos_t& p1, const pos_t& p2) {

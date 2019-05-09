@@ -1,12 +1,12 @@
 #include "compact.hpp"
-#include "dmultimap.hpp"
+#include "mmmultimap.hpp"
 
 namespace seqwish {
 
 void compact_nodes(
     size_t graph_size,
-    dmultimap<pos_t, pos_t>& link_fwd_mm,
-    dmultimap<pos_t, pos_t>& link_rev_mm,
+    multimap<pos_t, pos_t>& link_fwd_mm,
+    multimap<pos_t, pos_t>& link_rev_mm,
     sdsl::bit_vector& seq_id_bv) {
     //seq_id_bv;
     // for each pair of positions in the graph base seq

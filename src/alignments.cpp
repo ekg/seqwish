@@ -3,7 +3,7 @@
 namespace seqwish {
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           dmultimap<uint64_t, pos_t>& aln_mm,
+                           multimap<uint64_t, pos_t>& aln_mm,
                            seqindex_t& seqidx) {
     // go through the PAF file
     igzstream paf_in(paf_file.c_str());
@@ -31,7 +31,7 @@ void unpack_paf_alignments(const std::string& paf_file,
         size_t query_start = q_rev ? seqidx.nth_seq_length(query_idx)-paf.query_end : paf.query_start;
         //std::cerr << query_start << " " << target_start << std::endl;
 
-        // these calls convert to 1-based positions as 0 has a special meaning in the dmultimap 
+        // these calls convert to 1-based positions as 0 has a special meaning in the multimap 
         size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, q_rev);
         size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, target_start, false);
         //std::cerr << "q_all_pos " << q_all_pos << std::endl;
@@ -78,7 +78,7 @@ void unpack_paf_alignments(const std::string& paf_file,
 }
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           dmultimap<uint64_t, pos_t>& aln_mm,
+                           multimap<uint64_t, pos_t>& aln_mm,
                            seqindex_t& seqidx) {
     // go through the PAF file
     igzstream sxs_in1(sxs_file.c_str());
@@ -116,7 +116,7 @@ void unpack_sxs_alignments(const std::string& sxs_file,
         size_t target_start = sxs.target_start;
         size_t query_start = q_rev ? sxs.query_end : sxs.query_start;
         //std::cerr << query_start << " " << target_start << std::endl;
-        // these calls convert to 1-based positions as 0 has a special meaning in the dmultimap 
+        // these calls convert to 1-based positions as 0 has a special meaning in the multimap 
         size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, q_rev);
         size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, target_start, false);
         //std::cerr << "q_all_pos " << q_all_pos << std::endl;
@@ -164,8 +164,8 @@ void unpack_sxs_alignments(const std::string& sxs_file,
 
 
 /*
-void filter_alignments(dmultimap<pos_t, aln_pos_t>& aln_mm,
-                       dmultimap<pos_t, pos_t>& aln_filt_mm,
+void filter_alignments(multimap<pos_t, aln_pos_t>& aln_mm,
+                       multimap<pos_t, pos_t>& aln_filt_mm,
                        uint64_t aln_min_length,
                        uint64_t aln_keep_n_longest,
                        seqindex_t& seqidx) {
