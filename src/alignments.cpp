@@ -3,7 +3,7 @@
 namespace seqwish {
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           multimap<uint64_t, pos_t>& aln_mm,
+                           mmmulti::map<uint64_t, pos_t>& aln_mm,
                            seqindex_t& seqidx) {
     // go through the PAF file
     igzstream paf_in(paf_file.c_str());
@@ -78,7 +78,7 @@ void unpack_paf_alignments(const std::string& paf_file,
 }
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           multimap<uint64_t, pos_t>& aln_mm,
+                           mmmulti::map<uint64_t, pos_t>& aln_mm,
                            seqindex_t& seqidx) {
     // go through the PAF file
     igzstream sxs_in1(sxs_file.c_str());
@@ -164,8 +164,8 @@ void unpack_sxs_alignments(const std::string& sxs_file,
 
 
 /*
-void filter_alignments(multimap<pos_t, aln_pos_t>& aln_mm,
-                       multimap<pos_t, pos_t>& aln_filt_mm,
+void filter_alignments(mmmulti::map<pos_t, aln_pos_t>& aln_mm,
+                       mmmulti::map<pos_t, pos_t>& aln_filt_mm,
                        uint64_t aln_min_length,
                        uint64_t aln_keep_n_longest,
                        seqindex_t& seqidx) {

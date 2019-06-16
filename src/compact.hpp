@@ -9,12 +9,11 @@
 
 namespace seqwish {
 
-using mmmultimap::multimap;
 
 void compact_nodes(
     size_t graph_size,
-    multimap<pos_t, pos_t>& link_fwd_mm,
-    multimap<pos_t, pos_t>& link_rev_mm,
+    mmmulti::map<pos_t, pos_t>& link_fwd_mm,
+    mmmulti::map<pos_t, pos_t>& link_rev_mm,
     sdsl::bit_vector& seq_id_bv);
 
 }

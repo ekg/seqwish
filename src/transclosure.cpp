@@ -6,10 +6,10 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    multimap<uint64_t, pos_t>& aln_mm,
+    mmmulti::map<uint64_t, pos_t>& aln_mm,
     const std::string& seq_v_file,
-    multimap<uint64_t, pos_t>& node_mm,
-    multimap<uint64_t, pos_t>& path_mm,
+    mmmulti::map<uint64_t, pos_t>& node_mm,
+    mmmulti::map<uint64_t, pos_t>& path_mm,
     uint64_t repeat_max) {
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
