@@ -66,7 +66,7 @@ void emit_gfa(std::ostream& out,
                 out << "L" << "\t"
                     << offset(node) << "\t" << (is_rev(node)?"-":"+") << "\t"
                     << id << "\t" << "+" << "\t"
-                    << "OM" << std::endl;
+                    << "0M" << std::endl;
             }
         };
 
@@ -79,7 +79,7 @@ void emit_gfa(std::ostream& out,
                 out << "L" << "\t"
                     << id << "\t" << "+" << "\t"
                     << offset(node) << "\t" << (is_rev(node)?"-":"+") << "\t"
-                    << "OM" << std::endl;
+                    << "0M" << std::endl;
             }
         };
         
