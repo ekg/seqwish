@@ -13,19 +13,18 @@
 
 namespace seqwish {
 
-using mmmultimap::multimap;
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           multimap<pos_t, pos_t>& aln_mm,
+                           mmmulti::map<pos_t, pos_t>& aln_mm,
                            seqindex_t& seqidx);
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           multimap<pos_t, pos_t>& aln_mm,
+                           mmmulti::map<pos_t, pos_t>& aln_mm,
                            seqindex_t& seqidx);
 
 /*
-void filter_alignments(multimap<pos_t, aln_pos_t>& aln_mm,
-                       multimap<pos_t, pos_t>& aln_filt_mm,
+void filter_alignments(mmmulti::map<pos_t, aln_pos_t>& aln_mm,
+                       mmmulti::map<pos_t, pos_t>& aln_filt_mm,
                        uint64_t aln_min_length,
                        uint64_t aln_keep_n_longest,
                        seqindex_t& seqidx);

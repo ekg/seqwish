@@ -9,13 +9,12 @@
 
 namespace seqwish {
 
-using mmmultimap::multimap;
 
 void derive_links(seqindex_t& seqidx,
                   size_t graph_length,
-                  multimap<uint64_t, pos_t>& path_mm,
-                  multimap<pos_t, pos_t>& link_fwd_mm,
-                  multimap<pos_t, pos_t>& link_rev_mm);
+                  mmmulti::map<uint64_t, pos_t>& path_mm,
+                  mmmulti::map<pos_t, pos_t>& link_fwd_mm,
+                  mmmulti::map<pos_t, pos_t>& link_rev_mm);
 
 }
 
