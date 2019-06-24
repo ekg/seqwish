@@ -11,7 +11,8 @@ size_t compute_transitive_closures(
     const std::string& seq_v_file,
     mmmulti::map<uint64_t, pos_t>& node_mm,
     mmmulti::map<uint64_t, pos_t>& path_mm,
-    uint64_t repeat_max) {
+    uint64_t repeat_max,
+    uint64_t min_transclose_len) {
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
@@ -36,12 +37,13 @@ size_t compute_transitive_closures(
         //node_mm.append(i, make_pos_t(i,false));
         //path_mm.append(i, make_pos_t(i,false));
         //std::cerr << "closure " << i << " to " << seq_v_length << std::endl;
-        std::unordered_set<pos_t> todo;
+        std::set<std::pair<pos_t, uint64_t>> todo;
         std::unordered_map<uint64_t, uint64_t> seen_seqs;
-        todo.insert(make_pos_t(i, false));
+        todo.insert(std::make_pair(make_pos_t(i, false), min_transclose_len));
         seen_seqs[seqidx.seq_id_at(offset(i))]++;
         while (!todo.empty()) {
-            pos_t j = *todo.begin();
+            pos_t j = todo.begin()->first;
+            uint64_t match_len = todo.begin()->second;
             /*
             std::cerr << seq_v_length << "\t"
                       << offset(j) << "\t"
@@ -53,7 +55,9 @@ size_t compute_transitive_closures(
             node_mm.append(seq_v_length, j);
             path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
             // todo rip this out
-
+            if (min_transclose_len && match_len < min_transclose_len) {
+                continue;
+            }
             std::vector<size_t> ovlp;
             uint64_t n = offset(j);
             aln_iitree.overlap(n, n+1, ovlp);
@@ -69,15 +73,14 @@ size_t compute_transitive_closures(
                 uint64_t k = offset(pos);
                 if (k && !q_seen_bv[k-1]) {
                     //std::cerr << "closing " << k << std::endl;
-                    //node_mm.append(seq_v_length, offset(pos));
-                    //path_mm.append(offset(pos), curr);
                     uint64_t seq_id = seqidx.seq_id_at(offset(pos));
                     //std::cerr << "seq id " << seq_id << std::endl;
                     auto& c = seen_seqs[seq_id];
-                    if (!repeat_max || c < repeat_max) {
+                    if ((!repeat_max || c < repeat_max)) {
+                        //&& (!min_transclose_len || end - start >= min_transclose_len)) {
                         ++c;
                         q_seen_bv[k-1] = 1;
-                        todo.insert(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)));
+                        todo.insert(std::make_pair(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)), end - start));
                     }
                 }
             }

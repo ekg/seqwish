@@ -4,7 +4,8 @@ namespace seqwish {
 
 void unpack_paf_alignments(const std::string& paf_file,
                            mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
-                           seqindex_t& seqidx) {
+                           seqindex_t& seqidx,
+                           uint64_t min_match_len) {
     // go through the PAF file
     igzstream paf_in(paf_file.c_str());
     if (!paf_in.good()) assert("PAF is not good!");
@@ -58,7 +59,7 @@ void unpack_paf_alignments(const std::string& paf_file,
                         incr_pos(q_pos);
                         incr_pos(t_pos);
                     } else {
-                        if (match_len) {
+                        if (match_len && match_len >= min_match_len) {
                             aln_iitree.add(offset(q_pos_match_start), offset(q_pos), std::make_pair(make_pos_t(offset(t_pos_match_start), q_rev), match_len));
                             aln_iitree.add(offset(t_pos_match_start), offset(t_pos), std::make_pair(make_pos_t(offset(q_pos_match_start), q_rev), match_len));
                         }
@@ -89,7 +90,8 @@ void unpack_paf_alignments(const std::string& paf_file,
 
 void unpack_sxs_alignments(const std::string& sxs_file,
                            mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
-                           seqindex_t& seqidx) {
+                           seqindex_t& seqidx,
+                           uint64_t min_match_len) {
     // go through the PAF file
     igzstream sxs_in1(sxs_file.c_str());
     if (!sxs_in1.good()) assert("SXS is not good!");
@@ -154,7 +156,7 @@ void unpack_sxs_alignments(const std::string& sxs_file,
                         incr_pos(q_pos);
                         incr_pos(t_pos);
                     } else {
-                        if (match_len) {
+                        if (match_len && match_len >= min_match_len) {
                             aln_iitree.add(offset(q_pos_match_start), offset(q_pos), std::make_pair(make_pos_t(offset(t_pos_match_start), q_rev), match_len));
                             aln_iitree.add(offset(t_pos_match_start), offset(t_pos), std::make_pair(make_pos_t(offset(q_pos_match_start), q_rev), match_len));
                         }
