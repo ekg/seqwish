@@ -21,7 +21,8 @@ size_t compute_transitive_closures(
     const std::string& seq_v_file,
     mmmulti::map<uint64_t, uint64_t>& node_mm,
     mmmulti::map<uint64_t, uint64_t>& path_mm,
-    uint64_t repeat_max);
+    uint64_t repeat_max,
+    uint64_t min_transclose_len);
 
 }
 

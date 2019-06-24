@@ -32,7 +32,9 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "write the graph in VGP format with basename FILE", {'o', "vgp-out"});
     args::ValueFlag<uint64_t> num_threads(parser, "N", "use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
-    args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'k', "keep-temp"});
+    args::ValueFlag<uint64_t> min_match_len(parser, "N", "filter exact matches below this length", {'L', "min-match-len"});
+    args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
+    args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
         parser.ParseCLI(argc, argv);
@@ -79,10 +81,10 @@ int main(int argc, char** argv) {
     std::remove(aln_idx.c_str());
     mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>> aln_iitree(aln_idx);
     if (!args::get(sxs_alns).empty()) {
-        unpack_sxs_alignments(args::get(sxs_alns), aln_iitree, seqidx); // yields array A
+        unpack_sxs_alignments(args::get(sxs_alns), aln_iitree, seqidx, args::get(min_match_len)); // yields array A
         if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));
     } else if (!args::get(paf_alns).empty()) {
-        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx); // yields array A
+        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len)); // yields array A
         if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     } else {
         assert(false);
@@ -104,7 +106,7 @@ int main(int argc, char** argv) {
     std::remove(path_mm_idx.c_str());
     mmmulti::map<uint64_t, pos_t> node_mm(node_mm_idx);
     mmmulti::map<uint64_t, pos_t> path_mm(path_mm_idx);
-    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_mm, path_mm, args::get(repeat_max));
+    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_mm, path_mm, args::get(repeat_max), args::get(min_transclose_len));
     if (args::get(debug)) {
         node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
                 std::cout << "node_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
