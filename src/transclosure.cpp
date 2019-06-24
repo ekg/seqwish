@@ -77,7 +77,6 @@ size_t compute_transitive_closures(
                     //std::cerr << "seq id " << seq_id << std::endl;
                     auto& c = seen_seqs[seq_id];
                     if ((!repeat_max || c < repeat_max)) {
-                        //&& (!min_transclose_len || end - start >= min_transclose_len)) {
                         ++c;
                         q_seen_bv[k-1] = 1;
                         todo.insert(std::make_pair(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)), end - start));
