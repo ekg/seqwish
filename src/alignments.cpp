@@ -3,7 +3,7 @@
 namespace seqwish {
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           mmmulti::map<uint64_t, pos_t>& aln_mm,
+                           mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
                            seqindex_t& seqidx) {
     // go through the PAF file
     igzstream paf_in(paf_file.c_str());
@@ -31,7 +31,6 @@ void unpack_paf_alignments(const std::string& paf_file,
         size_t query_start = q_rev ? seqidx.nth_seq_length(query_idx)-paf.query_end : paf.query_start;
         //std::cerr << query_start << " " << target_start << std::endl;
 
-        // these calls convert to 1-based positions as 0 has a special meaning in the multimap 
         size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, q_rev);
         size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, target_start, false);
         //std::cerr << "q_all_pos " << q_all_pos << std::endl;
@@ -41,7 +40,11 @@ void unpack_paf_alignments(const std::string& paf_file,
         for (auto& c : paf.cigar) {
             switch (c.op) {
             case 'M':
+            {
                 //std::cerr << "match " << c.len << std::endl;
+                pos_t q_pos_match_start = q_pos;
+                pos_t t_pos_match_start = t_pos;
+                uint64_t match_len = 0;
                 for (size_t i = 0; i < c.len; ++i) {
                     /*
                     std::cerr << seqidx.at_pos(t_pos) << " vs " << seqidx.at_pos(q_pos) << " ... "
@@ -51,17 +54,24 @@ void unpack_paf_alignments(const std::string& paf_file,
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
                         && offset(q_pos) != offset(t_pos)) {
                         assert(offset(q_pos) && offset(t_pos));
-                        //aln_mm.append(offset(q_pos), { make_pos_t(offset(t_pos), q_rev), paf.bases_in_mapping });
-                        //aln_mm.append(offset(t_pos), { make_pos_t(offset(q_pos), q_rev), paf.bases_in_mapping });
-                        aln_mm.append(offset(q_pos), make_pos_t(offset(t_pos), q_rev));
-                        aln_mm.append(offset(t_pos), make_pos_t(offset(q_pos), q_rev));
-                        //} else {
-                        //std::cerr << "mismatch" << std::endl;
+                        ++match_len;
+                        incr_pos(q_pos);
+                        incr_pos(t_pos);
+                    } else {
+                        if (match_len) {
+                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), std::make_pair(make_pos_t(offset(t_pos_match_start), q_rev), match_len));
+                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), std::make_pair(make_pos_t(offset(q_pos_match_start), q_rev), match_len));
+                        }
+                        incr_pos(q_pos);
+                        incr_pos(t_pos);
+                        q_pos_match_start = q_pos;
+                        t_pos_match_start = t_pos;
+                        match_len = 0;
+                        // break out the last match
                     }
-                    incr_pos(q_pos);
-                    incr_pos(t_pos);
                 }
-            break;
+            }
+                break;
             case 'I':
                 //std::cerr << "ins " << c.len << std::endl;
                 incr_pos(q_pos, c.len);
@@ -74,11 +84,11 @@ void unpack_paf_alignments(const std::string& paf_file,
             }
         }
     }
-    aln_mm.index(seqidx.seq_length());
+    aln_iitree.index();
 }
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           mmmulti::map<uint64_t, pos_t>& aln_mm,
+                           mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
                            seqindex_t& seqidx) {
     // go through the PAF file
     igzstream sxs_in1(sxs_file.c_str());
@@ -126,7 +136,11 @@ void unpack_sxs_alignments(const std::string& sxs_file,
         for (auto& c : sxs.cigar) {
             switch (c.op) {
             case 'M':
+            {
                 //std::cerr << "match " << c.len << std::endl;
+                pos_t q_pos_match_start = q_pos;
+                pos_t t_pos_match_start = t_pos;
+                uint64_t match_len = 0;
                 for (size_t i = 0; i < c.len; ++i) {
                     /*
                     std::cerr << seqidx.at_pos(t_pos) << " vs " << seqidx.at_pos(q_pos) << " ... "
@@ -136,17 +150,24 @@ void unpack_sxs_alignments(const std::string& sxs_file,
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
                         && offset(q_pos) != offset(t_pos)) {
                         assert(offset(q_pos) && offset(t_pos));
-                        //aln_mm.append(offset(q_pos), { make_pos_t(offset(t_pos), q_rev), paf.bases_in_mapping });
-                        //aln_mm.append(offset(t_pos), { make_pos_t(offset(q_pos), q_rev), paf.bases_in_mapping });
-                        aln_mm.append(offset(q_pos), make_pos_t(offset(t_pos), q_rev));
-                        aln_mm.append(offset(t_pos), make_pos_t(offset(q_pos), q_rev));
-                        //} else {
-                        //std::cerr << "mismatch" << std::endl;
+                        ++match_len;
+                        incr_pos(q_pos);
+                        incr_pos(t_pos);
+                    } else {
+                        if (match_len) {
+                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), std::make_pair(make_pos_t(offset(t_pos_match_start), q_rev), match_len));
+                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), std::make_pair(make_pos_t(offset(q_pos_match_start), q_rev), match_len));
+                        }
+                        incr_pos(q_pos);
+                        incr_pos(t_pos);
+                        q_pos_match_start = q_pos;
+                        t_pos_match_start = t_pos;
+                        match_len = 0;
+                        // break out the last match
                     }
-                    incr_pos(q_pos);
-                    incr_pos(t_pos);
                 }
-            break;
+            }
+                break;
             case 'I':
                 //std::cerr << "ins " << c.len << std::endl;
                 incr_pos(q_pos, c.len);
@@ -159,7 +180,7 @@ void unpack_sxs_alignments(const std::string& sxs_file,
             }
         }
     }
-    aln_mm.index(seqidx.seq_length());
+    aln_iitree.index();
 }
 
 

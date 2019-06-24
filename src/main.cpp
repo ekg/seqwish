@@ -4,6 +4,7 @@
 #include <string>
 #include "args.hxx"
 #include "mmmultimap.hpp"
+#include "mmiitree.hpp"
 #include "sdsl/bit_vectors.hpp"
 #include "seqindex.hpp"
 #include "paf.hpp"
@@ -76,20 +77,23 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = args::get(base) + ".sqa";
     std::remove(aln_idx.c_str());
-    mmmulti::map<uint64_t, pos_t> aln_mm(aln_idx);
+    mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>> aln_iitree(aln_idx);
     if (!args::get(sxs_alns).empty()) {
-        unpack_sxs_alignments(args::get(sxs_alns), aln_mm, seqidx); // yields array A
+        unpack_sxs_alignments(args::get(sxs_alns), aln_iitree, seqidx); // yields array A
         if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));
     } else if (!args::get(paf_alns).empty()) {
-        unpack_paf_alignments(args::get(paf_alns), aln_mm, seqidx); // yields array A
+        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx); // yields array A
         if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     } else {
         assert(false);
     }
+    /*
     if (args::get(debug)) {
-        aln_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
-                std::cout << "aln_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });
+        aln_iitree.for_each_value([&](const mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>::Interval& interval) {
+                std::cout << interval.st << "\t" << interval.en << "\t" << interval.max << "\t" << offset(interval.data.first) << (is_rev(interval.data.first) ? "-" : "+") << "\t" << interval.data.second << std::endl;
+            });
     }
+    */
 
     // 3) find the transitive closures via the alignments and construct S, N, and P indexed arrays
     std::string seq_v_file = args::get(base) + ".sqs";
@@ -100,7 +104,7 @@ int main(int argc, char** argv) {
     std::remove(path_mm_idx.c_str());
     mmmulti::map<uint64_t, pos_t> node_mm(node_mm_idx);
     mmmulti::map<uint64_t, pos_t> path_mm(path_mm_idx);
-    size_t graph_length = compute_transitive_closures(seqidx, aln_mm, seq_v_file, node_mm, path_mm, args::get(repeat_max));
+    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_mm, path_mm, args::get(repeat_max));
     if (args::get(debug)) {
         node_mm.for_each_pair([&](const uint64_t& p1, const pos_t& p2) {
                 std::cout << "node_mm" << "\t" << p1 << "\t" << offset(p2) << "\t" << (is_rev(p2)?"-":"+") << std::endl; });

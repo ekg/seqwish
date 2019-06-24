@@ -9,6 +9,7 @@
 #include "sdsl/bit_vectors.hpp"
 #include "seqindex.hpp"
 #include "mmmultimap.hpp"
+#include "mmiitree.hpp"
 #include "pos.hpp"
 
 namespace seqwish {
@@ -16,7 +17,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::map<uint64_t, pos_t>& aln_mm,
+    mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
     const std::string& seq_v_file,
     mmmulti::map<uint64_t, uint64_t>& node_mm,
     mmmulti::map<uint64_t, uint64_t>& path_mm,

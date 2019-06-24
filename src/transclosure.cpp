@@ -1,12 +1,13 @@
 #include "transclosure.hpp"
 #include "mmmultimap.hpp"
+#include "mmiitree.hpp"
 #include "spinlock.hpp"
 
 namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::map<uint64_t, pos_t>& aln_mm,
+    mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
     const std::string& seq_v_file,
     mmmulti::map<uint64_t, pos_t>& node_mm,
     mmmulti::map<uint64_t, pos_t>& path_mm,
@@ -51,25 +52,35 @@ size_t compute_transitive_closures(
             //assert(q_seen_bv[offset(j)-1]==1);
             node_mm.append(seq_v_length, j);
             path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
-            aln_mm.for_unique_values_of(offset(j), [&](const pos_t& pos) {
-                    uint64_t k = offset(pos);
-                    //std::cerr << "looking " << k << std::endl;
-                    if (k && !q_seen_bv[k-1]) {
-                        //std::cerr << "closing " << k << std::endl;
-                        //node_mm.append(seq_v_length, offset(pos));
-                        //path_mm.append(offset(pos), curr);
-                        uint64_t seq_id = seqidx.seq_id_at(offset(pos));
-                        //std::cerr << "seq id " << seq_id << std::endl;
-                        auto& c = seen_seqs[seq_id];
-                        if (!repeat_max || c < repeat_max) {
-                            ++c;
-                            q_seen_bv[k-1] = 1;
-                            todo.insert(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)));
-                        }
+            // todo rip this out
+
+            std::vector<size_t> ovlp;
+            uint64_t n = offset(j);
+            aln_iitree.overlap(n, n+1, ovlp);
+            for (auto& s : ovlp) {
+                uint64_t start = aln_iitree.start(s);
+                uint64_t end = aln_iitree.end(s);
+                const std::pair<pos_t, uint64_t>& interval = aln_iitree.data(s);
+                // if it's long enough, include it
+                // todo, use paramater for local smoothing
+                // find the position in the match
+                pos_t pos = interval.first;
+                incr_pos(pos, n - start);
+                uint64_t k = offset(pos);
+                if (k && !q_seen_bv[k-1]) {
+                    //std::cerr << "closing " << k << std::endl;
+                    //node_mm.append(seq_v_length, offset(pos));
+                    //path_mm.append(offset(pos), curr);
+                    uint64_t seq_id = seqidx.seq_id_at(offset(pos));
+                    //std::cerr << "seq id " << seq_id << std::endl;
+                    auto& c = seen_seqs[seq_id];
+                    if (!repeat_max || c < repeat_max) {
+                        ++c;
+                        q_seen_bv[k-1] = 1;
+                        todo.insert(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)));
                     }
-                });
-            // get the values for each of the todo
-            // and add them to todo if we haven't done'm
+                }
+            }
         }
         /*
         for (auto& c : seen_seqs) {
