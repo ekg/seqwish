@@ -7,7 +7,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
+    mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
     const std::string& seq_v_file,
     mmmulti::map<uint64_t, pos_t>& node_mm,
     mmmulti::map<uint64_t, pos_t>& path_mm,
@@ -64,11 +64,10 @@ size_t compute_transitive_closures(
             for (auto& s : ovlp) {
                 uint64_t start = aln_iitree.start(s);
                 uint64_t end = aln_iitree.end(s);
-                const std::pair<pos_t, uint64_t>& interval = aln_iitree.data(s);
+                pos_t pos = aln_iitree.data(s);
                 // if it's long enough, include it
                 // todo, use paramater for local smoothing
                 // find the position in the match
-                pos_t pos = interval.first;
                 incr_pos(pos, n - start);
                 uint64_t k = offset(pos);
                 if (k && !q_seen_bv[k-1]) {
