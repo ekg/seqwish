@@ -24,11 +24,11 @@ size_t compute_transitive_closures(
     //   emit the base
     //   record entries in node_mm and path_mm
     uint64_t input_seq_length = seqidx.seq_length();
+    //std::cerr << "input seq len " << input_seq_length << std::endl;
     for (uint64_t i = 1; i <= input_seq_length; ++i) {
-        //std::cerr << "top " << i << std::endl;
+        //std::cerr << q_seen_bv << std::endl;
         if (q_seen_bv[i-1]) continue;
         // write base
-        //std::cerr << "writing seq out " << seqidx.at(i-1) << std::endl;
         seq_v_out << seqidx.at(i-1);
         size_t seq_v_length = seq_v_out.tellp();
         // mark current
@@ -50,7 +50,7 @@ size_t compute_transitive_closures(
                       << (is_rev(j)?"-":"+") << std::endl;
             */
             todo.erase(todo.begin());
-            //std::cerr << todo.size() << std::endl;
+            //std::cerr << "todo size " << todo.size() << std::endl;
             //assert(q_seen_bv[offset(j)-1]==1);
             node_mm.append(seq_v_length, j);
             path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
@@ -65,11 +65,14 @@ size_t compute_transitive_closures(
                 uint64_t start = aln_iitree.start(s);
                 uint64_t end = aln_iitree.end(s);
                 pos_t pos = aln_iitree.data(s);
+                //std::cerr << " with overlap " << start << "-" << end << std::endl;
+                //std::cerr << "and position offset " << pos << (is_rev(pos)?"-":"+") << std::endl;
                 // if it's long enough, include it
                 // todo, use paramater for local smoothing
                 // find the position in the match
                 incr_pos(pos, n - start);
                 uint64_t k = offset(pos);
+                //std::cerr << "got k " << k << std::endl;
                 if (k && !q_seen_bv[k-1]) {
                     //std::cerr << "closing " << k << std::endl;
                     uint64_t seq_id = seqidx.seq_id_at(offset(pos));

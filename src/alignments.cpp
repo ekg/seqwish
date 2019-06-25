@@ -54,14 +54,19 @@ void unpack_paf_alignments(const std::string& paf_file,
                     */
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
                         && offset(q_pos) != offset(t_pos)) {
-                        assert(offset(q_pos) && offset(t_pos));
+                        //assert(offset(q_pos) && offset(t_pos));
                         ++match_len;
                         incr_pos(q_pos);
                         incr_pos(t_pos);
                     } else {
                         if (match_len && match_len >= min_match_len) {
-                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), make_pos_t(offset(t_pos_match_start), q_rev));
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), q_rev));
+                            if (is_rev(q_pos)) {
+                                aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            } else {
+                                aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            }
                         }
                         incr_pos(q_pos);
                         incr_pos(t_pos);
@@ -151,14 +156,19 @@ void unpack_sxs_alignments(const std::string& sxs_file,
                     */
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
                         && offset(q_pos) != offset(t_pos)) {
-                        assert(offset(q_pos) && offset(t_pos));
+                        //assert(offset(q_pos) && offset(t_pos));
                         ++match_len;
                         incr_pos(q_pos);
                         incr_pos(t_pos);
                     } else {
                         if (match_len && match_len >= min_match_len) {
-                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), make_pos_t(offset(t_pos_match_start), q_rev));
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), q_rev));
+                            if (is_rev(q_pos)) {
+                                aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            } else {
+                                aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            }
                         }
                         incr_pos(q_pos);
                         incr_pos(t_pos);
