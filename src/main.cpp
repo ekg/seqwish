@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = args::get(base) + ".sqa";
     std::remove(aln_idx.c_str());
-    mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>> aln_iitree(aln_idx);
+    mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
     if (!args::get(sxs_alns).empty()) {
         unpack_sxs_alignments(args::get(sxs_alns), aln_iitree, seqidx, args::get(min_match_len)); // yields array A
         if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));

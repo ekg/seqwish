@@ -16,12 +16,12 @@ namespace seqwish {
 
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
+                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                            seqindex_t& seqidx,
                            uint64_t min_match_len);
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           mmmulti::iitree<uint64_t, std::pair<pos_t, uint64_t>>& aln_iitree,
+                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                            seqindex_t& seqidx,
                            uint64_t min_match_len);
 
