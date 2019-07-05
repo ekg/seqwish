@@ -24,11 +24,24 @@ size_t compute_transitive_closures(
     //   emit the base
     //   record entries in node_mm and path_mm
     uint64_t input_seq_length = seqidx.seq_length();
+    /*
+    std::cerr << "all overlaps" << std::endl;
+    std::vector<size_t> all_ovlp;
+    aln_iitree.overlap(0, input_seq_length, all_ovlp);
+    for (auto& s : all_ovlp) {
+        uint64_t start = aln_iitree.start(s);
+        uint64_t end = aln_iitree.end(s);
+        pos_t pos = aln_iitree.data(s);
+        std::cerr << "overlap " << start << "-" << end
+                  << " position offset " << offset(pos) << (is_rev(pos)?"-":"+") << std::endl;
+    }
+    */
     //std::cerr << "input seq len " << input_seq_length << std::endl;
     for (uint64_t i = 1; i <= input_seq_length; ++i) {
         //std::cerr << q_seen_bv << std::endl;
         if (q_seen_bv[i-1]) continue;
         // write base
+        char base = seqidx.at(i-1);
         seq_v_out << seqidx.at(i-1);
         size_t seq_v_length = seq_v_out.tellp();
         // mark current
@@ -60,19 +73,32 @@ size_t compute_transitive_closures(
             }
             std::vector<size_t> ovlp;
             uint64_t n = offset(j);
+            //std::cerr << "offset j " << n << std::endl;
             aln_iitree.overlap(n, n+1, ovlp);
             for (auto& s : ovlp) {
                 uint64_t start = aln_iitree.start(s);
                 uint64_t end = aln_iitree.end(s);
                 pos_t pos = aln_iitree.data(s);
                 //std::cerr << " with overlap " << start << "-" << end << std::endl;
-                //std::cerr << "and position offset " << pos << (is_rev(pos)?"-":"+") << std::endl;
+                //std::cerr << "and position offset " << offset(pos) << (is_rev(pos)?"-":"+") << std::endl;
                 // if it's long enough, include it
                 // todo, use paramater for local smoothing
                 // find the position in the match
+                /*
+                if (is_rev(pos)) {
+                    incr_pos(pos, end - n);
+                    std::cerr << "after pos increment " << offset(pos) << std::endl;
+                } else {
+
+                }
+                */
+                //std::cerr << "n " << n << " start " << start << std::endl;
                 incr_pos(pos, n - start);
                 uint64_t k = offset(pos);
-                //std::cerr << "got k " << k << std::endl;
+                //std::cerr << "got k " << k << " " << base << " ==? " << seqidx.at_pos(pos) << std::endl;
+                // TODO check that the base is right --- in any case this is done at the end of the process when checking paths
+                //assert(base == seqidx.at_pos(pos));
+                //assert(dna_reverse_complement(base) == seqidx.at_pos(pos));
                 if (k && !q_seen_bv[k-1]) {
                     //std::cerr << "closing " << k << std::endl;
                     uint64_t seq_id = seqidx.seq_id_at(offset(pos));

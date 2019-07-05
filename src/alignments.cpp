@@ -15,67 +15,58 @@ void unpack_paf_alignments(const std::string& paf_file,
     paf_in.open(paf_file.c_str());
 #pragma omp parallel for schedule(dynamic)
     for (size_t i = 0; i < lines; ++i) {
-        //auto& line = lines[i];
         std::string line;
 #pragma omp critical (paf_in)
         std::getline(paf_in, line);
         paf_row_t paf(line);
-        //std::cerr << paf << std::endl;
         size_t query_idx = seqidx.rank_of_seq_named(paf.query_sequence_name);
         size_t query_len = seqidx.nth_seq_length(query_idx);
         size_t target_idx = seqidx.rank_of_seq_named(paf.target_sequence_name);
         size_t target_len = seqidx.nth_seq_length(target_idx);
         bool q_rev = !paf.query_target_same_strand;
-        //std::cerr << "query_idx " << query_idx << " " << seqidx.nth_seq_length(query_idx) << std::endl;
-        //std::cerr << "target_idx " << target_idx << " " << seqidx.nth_seq_length(target_idx) << std::endl;
-        size_t target_start = paf.target_start;
-        size_t query_start = q_rev ? seqidx.nth_seq_length(query_idx)-paf.query_end : paf.query_start;
-        //std::cerr << query_start << " " << target_start << std::endl;
-
-        size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, q_rev);
-        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, target_start, false);
-        //std::cerr << "q_all_pos " << q_all_pos << std::endl;
-        //std::cerr << "t_all_pos " << t_all_pos << std::endl;
+        size_t q_all_pos = 1 + (q_rev ? seqidx.pos_in_all_seqs(query_idx, paf.query_end, false) - 1
+                            : seqidx.pos_in_all_seqs(query_idx, paf.query_start, false));
+        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, paf.target_start, false);
         pos_t q_pos = make_pos_t(q_all_pos, q_rev);
         pos_t t_pos = make_pos_t(t_all_pos, false);
         for (auto& c : paf.cigar) {
             switch (c.op) {
             case 'M':
             {
-                //std::cerr << "match " << c.len << std::endl;
                 pos_t q_pos_match_start = q_pos;
                 pos_t t_pos_match_start = t_pos;
                 uint64_t match_len = 0;
+                auto add_match = [&](void) {
+                    if (match_len && match_len >= min_match_len) {
+                        if (is_rev(q_pos)) {
+                            aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
+                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
+                        } else {
+                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
+                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                        }
+                    }
+                };
                 for (size_t i = 0; i < c.len; ++i) {
-                    /*
-                    std::cerr << seqidx.at_pos(t_pos) << " vs " << seqidx.at_pos(q_pos) << " ... "
-                              << offset(t_pos) << " " << offset(q_pos)
-                              << std::endl;
-                    */
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
-                        && offset(q_pos) != offset(t_pos)) {
-                        //assert(offset(q_pos) && offset(t_pos));
+                        && offset(q_pos) != offset(t_pos)) { // guard against self mappings
+                        if (match_len == 0) {
+                            q_pos_match_start = q_pos;
+                            t_pos_match_start = t_pos;
+                        }
                         ++match_len;
                         incr_pos(q_pos);
                         incr_pos(t_pos);
                     } else {
-                        if (match_len && match_len >= min_match_len) {
-                            if (is_rev(q_pos)) {
-                                aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
-                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
-                            } else {
-                                aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
-                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
-                            }
-                        }
+                        add_match();
                         incr_pos(q_pos);
                         incr_pos(t_pos);
-                        q_pos_match_start = q_pos;
-                        t_pos_match_start = t_pos;
                         match_len = 0;
                         // break out the last match
                     }
                 }
+                // handle any last match
+                add_match();
             }
                 break;
             case 'I':
@@ -128,56 +119,49 @@ void unpack_sxs_alignments(const std::string& sxs_file,
         size_t target_idx = seqidx.rank_of_seq_named(sxs.target_sequence_name);
         size_t target_len = seqidx.nth_seq_length(target_idx);
         bool q_rev = sxs.b_rev();
-        //std::cerr << "query_idx " << query_idx << " " << seqidx.nth_seq_length(query_idx) << std::endl;
-        //std::cerr << "target_idx " << target_idx << " " << seqidx.nth_seq_length(target_idx) << std::endl;
-        size_t target_start = sxs.target_start;
-        size_t query_start = q_rev ? sxs.query_end : sxs.query_start;
-        //std::cerr << query_start << " " << target_start << std::endl;
-        // these calls convert to 1-based positions as 0 has a special meaning in the multimap 
-        size_t q_all_pos = 1 + seqidx.pos_in_all_seqs(query_idx, query_start, q_rev);
-        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, target_start, false);
-        //std::cerr << "q_all_pos " << q_all_pos << std::endl;
-        //std::cerr << "t_all_pos " << t_all_pos << std::endl;
+        size_t q_all_pos = 1 + (q_rev ? seqidx.pos_in_all_seqs(query_idx, sxs.query_end, false) - 1
+                                : seqidx.pos_in_all_seqs(query_idx, sxs.query_start, false));
+        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, sxs.target_start, false);
         pos_t q_pos = make_pos_t(q_all_pos, q_rev);
         pos_t t_pos = make_pos_t(t_all_pos, false);
         for (auto& c : sxs.cigar) {
             switch (c.op) {
             case 'M':
             {
-                //std::cerr << "match " << c.len << std::endl;
                 pos_t q_pos_match_start = q_pos;
                 pos_t t_pos_match_start = t_pos;
                 uint64_t match_len = 0;
+                auto add_match = [&](void) {
+                    if (match_len && match_len >= min_match_len) {
+                        if (is_rev(q_pos)) {
+                            aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
+                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
+                        } else {
+                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
+                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                        }
+                    }
+                };
                 for (size_t i = 0; i < c.len; ++i) {
-                    /*
-                    std::cerr << seqidx.at_pos(t_pos) << " vs " << seqidx.at_pos(q_pos) << " ... "
-                              << offset(t_pos) << " " << offset(q_pos)
-                              << std::endl;
-                    */
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
-                        && offset(q_pos) != offset(t_pos)) {
-                        //assert(offset(q_pos) && offset(t_pos));
+                        && offset(q_pos) != offset(t_pos)) { // guard against self mappings
+                        if (match_len == 0) {
+                            q_pos_match_start = q_pos;
+                            t_pos_match_start = t_pos;
+                        }
                         ++match_len;
                         incr_pos(q_pos);
                         incr_pos(t_pos);
                     } else {
-                        if (match_len && match_len >= min_match_len) {
-                            if (is_rev(q_pos)) {
-                                aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
-                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
-                            } else {
-                                aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
-                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
-                            }
-                        }
+                        add_match();
                         incr_pos(q_pos);
                         incr_pos(t_pos);
-                        q_pos_match_start = q_pos;
-                        t_pos_match_start = t_pos;
                         match_len = 0;
                         // break out the last match
                     }
                 }
+                // handle any last match
+                add_match();
             }
                 break;
             case 'I':
@@ -194,7 +178,6 @@ void unpack_sxs_alignments(const std::string& sxs_file,
     }
     aln_iitree.index();
 }
-
 
 /*
 void filter_alignments(mmmulti::map<pos_t, aln_pos_t>& aln_mm,
