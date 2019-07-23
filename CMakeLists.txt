@@ -143,4 +143,6 @@ target_link_libraries(seqwish
   "${bsort_LIB}/libbsort.a"
   "-latomic"
   z)
-set(CMAKE_EXE_LINKER_FLAGS "-static")
+if (BUILD_STATIC)
+  set(CMAKE_EXE_LINKER_FLAGS "-static")
+endif()
