@@ -197,7 +197,7 @@ void seqindex_t::to_fasta(std::ostream& out, size_t linewidth) {
 std::string seqindex_t::nth_name(size_t n) {
     // get the extents from our seq name dictionary
     size_t begin = seq_name_cbv_select(n)+1; // step past '>' delimiter
-    size_t end = seq_name_cbv_select(n+1)-1;
+    size_t end = seq_name_cbv_select(n+1)-2; // step back past added ' '
     std::string name = sdsl::extract(seq_name_csa, begin, end);
     return name;
 }
