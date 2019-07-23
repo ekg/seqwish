@@ -74,6 +74,15 @@ Alternatively, you may build a Docker image that contains seqwish.
 docker build -t seqwish .
 ```
 
+A static build can be obtained by setting a flag in the cmake build setup.
+
+```
+cmake -DBUILD_STATIC=1 -H. -Bbuild && cmake --build build -- -j 3
+```
+
+You'll need to set this flag to 0 or remove and rebuild your build directory if you want to unset this behavior.
+Static builds are unlikely to be supported on OSX, and require appropriate static libraries on linux.
+
 ## usage
 
 `seqwish` supports minimap2's PAF format output. It requires the CIGAR string of the alignment to be provided in the `cg:z:` optional field.
