@@ -95,43 +95,32 @@ void emit_gfa(std::ostream& out,
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
         size_t j = seqidx.nth_seq_offset(i) + 1;
-        size_t k = j+seqidx.nth_seq_length(i);
+        size_t k = j + seqidx.nth_seq_length(i);
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         std::vector<pos_t> path_v;
-        pos_t last_pos = 0;
-        pos_t last_node = 0;
         for ( ; j < k; ++j) {
             std::vector<pos_t> v = path_mm.values(j);
             // each input base should only map one place in the graph
             assert(v.size() == 1);
             auto& p = v.front();
-            //std::cerr << j << " -> " << pos_to_string(p) << std::endl;
             // validate the path
             char c = seq_v_buf[offset(p)-1];
             if (is_rev(p)) c = dna_reverse_complement(c);
-            //std::cerr << seqidx.at_pos(make_pos_t(j, false)) << " " << c << std::endl;
             assert(seqidx.at_pos(make_pos_t(j, false)) == c);
-            pos_t node = make_pos_t(seq_id_cbv_rank(offset(p)), is_rev(p));
-            pos_t lp = last_pos; incr_pos(lp);
-            //std::cerr << offset(last_node) << std::endl;
-            if (offset(last_node)
-                && (p != lp
-                    || node != last_node)) { // or if we
-                //out << pos_to_string(last_node) << ",";
-                path_v.push_back(last_node);
+            // are we at the start of a node?
+            // if so, write to the path
+            if (seq_id_cbv[offset(p)-1] == 1) {
+                path_v.push_back(make_pos_t(seq_id_cbv_rank(offset(p)), is_rev(p)));
             }
-            last_pos = p;
-            last_node = node;
         }
-        path_v.push_back(last_node);
         std::stringstream cigarss;
         std::stringstream pathss;
         for (auto& p : path_v) {
             pathss << pos_to_string(p) << ",";
-            uint64_t id = offset(p);
-            size_t node_start = seq_id_cbv_select(id);
-            size_t node_length = (id==n_nodes ? seq_id_cbv.size() : seq_id_cbv_select(id+1)) - node_start;
-            cigarss << node_length << "M" << ",";
+        }
+        cigarss << "*";
+        for (uint64_t q = 0; q < path_v.size()-2; ++q) {
+            cigarss << ",*";
         }
         pathss.seekp(-1, pathss.cur); pathss << '\t';
         cigarss.seekp(-1, cigarss.cur); cigarss << std::endl;
