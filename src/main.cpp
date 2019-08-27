@@ -134,8 +134,8 @@ int main(int argc, char** argv) {
     }
 
     // 5) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
-    sdsl::bit_vector seq_id_bv(graph_length);
-    compact_nodes(graph_length, link_fwd_mm, link_rev_mm, seq_id_bv);
+    sdsl::bit_vector seq_id_bv(graph_length+1);
+    compact_nodes(seqidx, graph_length, path_mm, link_fwd_mm, link_rev_mm, seq_id_bv);
     if (args::get(debug)) std::cerr << seq_id_bv << std::endl;
     sdsl::sd_vector<> seq_id_cbv;
     sdsl::sd_vector<>::rank_1_type seq_id_cbv_rank;
