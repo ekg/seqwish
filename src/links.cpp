@@ -13,10 +13,11 @@ void derive_links(seqindex_t& seqidx,
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
         size_t j = seqidx.nth_seq_offset(i);
-        size_t k = j+seqidx.nth_seq_length(i);
+        size_t k = j+seqidx.nth_seq_length(i)-1;
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
 #pragma omp parallel for schedule(dynamic)
-        for (size_t q = j; q < k-1; ++q) {
+        for (size_t q = j; q < k; ++q) {
+            //std::cerr << q << std::endl;
             std::vector<pos_t> v1 = path_mm.unique_values(q+1);
             std::vector<pos_t> v2 = path_mm.unique_values(q+2);
             // each input base should only map one place in the graph
