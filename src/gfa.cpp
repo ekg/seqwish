@@ -142,15 +142,20 @@ void emit_gfa(std::ostream& out,
         }
         std::stringstream cigarss;
         std::stringstream pathss;
+
         for (auto& p : path_v) {
             pathss << pos_to_string(p) << ",";
         }
+        pathss.seekp(-1, pathss.cur); // trim the last ","
         cigarss << "*";
-        for (uint64_t q = 0; q < path_v.size()-2; ++q) {
-            cigarss << ",*";
+        if (path_v.size() > 2) {
+            for (uint64_t q = 0; q < path_v.size()-2; ++q) {
+                cigarss << ",*";
+            }
         }
-        pathss.seekp(-1, pathss.cur); pathss << '\t';
-        cigarss.seekp(-1, cigarss.cur); cigarss << std::endl;
+        pathss << '\t';
+        //cigarss.seekp(-1, cigarss.cur);
+        cigarss << std::endl;
         out << "P" << "\t"
             << seqidx.nth_name(i) << "\t"
             << pathss.str()
