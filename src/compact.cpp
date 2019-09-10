@@ -16,7 +16,7 @@ void compact_nodes(
     // do we have any links to the second that don't come from the first?
     seq_id_bv[0] = 1; // set first node start
 #pragma omp parallel for schedule(dynamic)
-    for (size_t i = 0; i < graph_size-1; ++i) {
+    for (size_t i = 0; i < graph_size; ++i) {
         size_t j = i+1;
         pos_t from = make_pos_t(i, false);
         pos_t to = make_pos_t(j, false);
