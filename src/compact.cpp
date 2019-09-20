@@ -6,9 +6,8 @@ namespace seqwish {
 void compact_nodes(
     seqindex_t& seqidx,
     size_t graph_size,
-    mmmulti::map<uint64_t, pos_t>& path_mm,
-    mmmulti::map<pos_t, pos_t>& link_fwd_mm,
-    mmmulti::map<pos_t, pos_t>& link_rev_mm,
+    mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+    mmmulti::iitree<uint64_t, pos_t>& path_iitree,
     sdsl::bit_vector& seq_id_bv) {
     //seq_id_bv;
     // for each pair of positions in the graph base seq
@@ -20,12 +19,14 @@ void compact_nodes(
         size_t j = i+1;
         pos_t from = make_pos_t(i, false);
         pos_t to = make_pos_t(j, false);
-        std::vector<pos_t> from_first = link_fwd_mm.unique_values(from);
-        std::vector<pos_t> to_second = link_rev_mm.unique_values(to);
+
+        std::vector<size_t> from_ovlp, to_ovlp;
+        node_iitree.overlap(from, from+1, from_ovlp);
+        node_iitree.overlap(to, to+1, to_ovlp);
+        // query intervals overlapping this position in the node_iitree
         //std::cerr << "in compact " << pos_to_string(from) << " -> " << pos_to_string(to) << std::endl;
         //std::cerr << from_first.size() << " " << to_second.size() << std::endl;
-        if (from_first.size() == 1 && from_first.front() == to
-            && to_second.size() == 1 && to_second.front() == from) {
+        if (from_ovlp ==  to_ovlp) {
         } else {
             // mark a node start
 #pragma omp critical (seq_id_bv)
@@ -33,6 +34,7 @@ void compact_nodes(
         }
     }
     seq_id_bv[graph_size] = 1;
+    // TODO this is mad broken now with the iitree rewrite
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
         size_t j = seqidx.nth_seq_offset(i);

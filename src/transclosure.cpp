@@ -1,16 +1,14 @@
 #include "transclosure.hpp"
-#include "mmmultimap.hpp"
-#include "mmiitree.hpp"
 #include "spinlock.hpp"
 
 namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+    mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
-    mmmulti::map<uint64_t, pos_t>& node_mm,
-    mmmulti::map<uint64_t, pos_t>& path_mm,
+    mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
+    mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
     uint64_t repeat_max,
     uint64_t min_transclose_len) {
     // open seq_v_file
@@ -65,8 +63,20 @@ size_t compute_transitive_closures(
         while (it != range_buffer.end()) {
             if (it->second.first + it->second.second != s_pos) {
                 // flush
-                std::cerr << "would flush " << offset(it->first) << ":" << (is_rev(it->first) ? "-" : "+")
+                std::cerr << "flushing " << offset(it->first) << ":" << (is_rev(it->first) ? "-" : "+")
                           << " -> " << it->second.first << ":" << it->second.second << std::endl;
+                //node_mm.append(seq_v_length, j);
+                //path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
+                uint64_t match_length = it->second.second;
+                uint64_t match_start_in_s = it->second.first;
+                uint64_t match_end_in_s = match_start_in_s + match_length;
+                pos_t match_pos_in_q = it->first;
+                uint64_t match_start_in_q = offset(match_pos_in_q);
+                uint64_t match_end_in_q = match_start_in_q + match_length;
+                pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev(match_pos_in_q));
+                if (is_rev(match_pos_in_q)) std::swap(match_start_in_q, match_end_in_q);
+                node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
+                path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
                 it = range_buffer.erase(it);
             } else {
                 ++it;
@@ -102,8 +112,6 @@ size_t compute_transitive_closures(
             uint64_t match_len = todo.begin()->second;
             todo.erase(todo.begin());
             //assert(q_seen_bv[offset(j)-1]==1);
-            node_mm.append(seq_v_length, j);
-            path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
             extend_range(seq_v_length, j);
             // todo rip this out
             if (min_transclose_len && match_len < min_transclose_len) {
@@ -139,8 +147,8 @@ size_t compute_transitive_closures(
     seq_v_out.close();
     flush_ranges(seq_bytes+2);
     // build node_mm and path_mm indexes
-    node_mm.index(seq_bytes);
-    path_mm.index(input_seq_length);
+    node_iitree.index();
+    path_iitree.index();
     return seq_bytes;
 }
 
