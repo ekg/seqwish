@@ -34,22 +34,23 @@ void compact_nodes(
         }
     }
     seq_id_bv[graph_size] = 1;
-    // TODO this is mad broken now with the iitree rewrite
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
-        size_t j = seqidx.nth_seq_offset(i);
-        size_t k = j+seqidx.nth_seq_length(i)-1;
-        std::vector<pos_t> v1 = path_mm.unique_values(j+1);
-        assert(v1.size() == 1);
-        auto& p1 = v1.front();
+        size_t j = seqidx.nth_seq_offset(i)+1;
+        size_t k = j+seqidx.nth_seq_length(i);
+        std::vector<size_t> ovlp_start;
+        path_iitree.overlap(j, j+1, ovlp_start);
+        assert(ovlp_start.size() == 1);
+        auto& p1 = ovlp_start.front();
         if (is_rev(p1)) {
             seq_id_bv[offset(p1)] = 1;
         } else {
             seq_id_bv[offset(p1)-1] = 1;
         }
-        std::vector<pos_t> v2 = path_mm.unique_values(k+1);
-        assert(v2.size() == 1);
-        auto& p2 = v2.front();
+        std::vector<size_t> ovlp_end;
+        path_iitree.overlap(k, k+1, ovlp_end);
+        assert(ovlp_end.size() == 1);
+        auto& p2 = ovlp_end.front();
         if (is_rev(p2)) {
             seq_id_bv[offset(p2)-1] = 1;
         } else {

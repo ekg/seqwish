@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
     // 5) determine links between nodes
     std::string link_mm_idx = args::get(base) + ".sql";
     std::remove(link_mm_idx.c_str());
-    mmmulti::set<std::tuple<uint64_t, bool, uint64_t, bool>> link_mmset(link_mm_idx);
+    mmmulti::set<std::pair<pos_t, pos_t>> link_mmset(link_mm_idx);
     derive_links(seqidx, path_iitree, node_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset);
     
     // 6) emit the graph in GFA or VGP format
@@ -125,6 +125,7 @@ int main(int argc, char** argv) {
         std::ofstream out(args::get(gfa_out).c_str());
         emit_gfa(out, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);
     } else if (!args::get(vgp_base).empty()) {
+        assert(false);
         //emit_vgp(args::get(vgp_base), graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     } else {
         emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);

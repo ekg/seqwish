@@ -84,7 +84,7 @@ set(gzipreader_INCLUDE "${SOURCE_DIR}")
 # mmmultimap (memory mapped multimap)
 ExternalProject_Add(mmmultimap
   GIT_REPOSITORY "https://github.com/ekg/mmmultimap.git"
-  GIT_TAG "14a2ef8cbf02652675e88ff6be56af18a5405933"
+  GIT_TAG "d9ea42a5306cb1ccb9157e6ee6080202e59dfb30"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")

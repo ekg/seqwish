@@ -11,7 +11,7 @@ void emit_gfa(std::ostream& out,
               const sdsl::sd_vector<>::rank_1_type& seq_id_cbv_rank,
               const sdsl::sd_vector<>::select_1_type& seq_id_cbv_select,
               seqindex_t& seqidx,
-              mmmulti::set<std::tuple<uint64_t, bool, uint64_t, bool>>& link_mmset) {
+              mmmulti::set<std::pair<pos_t, pos_t>>& link_mmset) {
 
     out << "H" << "\t" << "VN:Z:1.0" << std::endl;
     int seq_v_fd = -1;
@@ -58,40 +58,17 @@ void emit_gfa(std::ostream& out,
         std::cerr << std::endl;
         */
 
-        auto print_to_link = [&out, &id, &seq_id_cbv, &seq_id_cbv_rank](const pos_t& p) {
-            size_t i = offset(p);
-            // internal links which do not go to the head or tail of a compacted node
-            if (!is_rev(p) && seq_id_cbv[i]
-                || is_rev(p) && seq_id_cbv[i-1]) {
-                pos_t node = make_pos_t(seq_id_cbv_rank(i), is_rev(p));
-                out << "L" << "\t"
-                    << offset(node) << "\t" << (is_rev(node)?"-":"+") << "\t"
-                    << id << "\t" << "+" << "\t"
-                    << "0M" << std::endl;
-            }
-        };
-
-        auto print_from_link = [&out, &id, &seq_id_cbv, &seq_id_cbv_rank](const pos_t& p) {
-            size_t i = offset(p);
-            // internal links which do not go to the head or tail of a compacted node
-            if (!is_rev(p) && seq_id_cbv[i-1]
-                || is_rev(p) && seq_id_cbv[i]) {
-                pos_t node = make_pos_t(seq_id_cbv_rank(i), is_rev(p));
-                out << "L" << "\t"
-                    << id << "\t" << "+" << "\t"
-                    << offset(node) << "\t" << (is_rev(node)?"-":"+") << "\t"
-                    << "0M" << std::endl;
-            }
-        };
-        
-        //std::cerr << "fwd start" << std::endl;
-        link_rev_mm.for_unique_values_of(node_start_fwd, print_to_link);
-        //std::cerr << "fwd end" << std::endl;
-        link_fwd_mm.for_unique_values_of(node_end_fwd, print_from_link);
-        //pos_t node_start_rev = make_pos_t(node_start+node_length, true);
-        //pos_t node_end_rev = make_pos_t(node_start+1, true);
-
     }
+
+    auto print_link = [&out](const std::pair<pos_t, pos_t>& p) {
+        auto& from = p.first;
+        auto& to = p.second;
+        out << "L" << "\t"
+            << offset(from) << "\t" << (is_rev(from)?"-":"+") << "\t"
+            << offset(to) << "\t" << (is_rev(to)?"-":"+") << "\t"
+            << "0M" << std::endl;
+    };
+    link_mmset.for_each_unique_value(print_link);
 
     // write the paths
     // iterate over the sequence positions, emitting a node at every edge crossing
@@ -105,10 +82,11 @@ void emit_gfa(std::ostream& out,
         uint64_t seen_bp = 0;
         uint64_t accumulated_bp = 0;
         for ( ; j < k; ++j) {
-            std::vector<pos_t> v = path_mm.values(j+1);
+            std::vector<size_t> ovlp;
+            path_iitree.overlap(j+1, j+2, ovlp);
             // each input base should only map one place in the graph
-            assert(v.size() == 1);
-            auto& p = v.front();
+            assert(ovlp.size() == 1);
+            auto& p = ovlp.front();
             // validate the path
             char c = seq_v_buf[offset(p)-1];
             if (is_rev(p)) c = dna_reverse_complement(c);
