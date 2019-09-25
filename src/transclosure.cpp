@@ -70,7 +70,7 @@ size_t compute_transitive_closures(
                 uint64_t match_start_in_s = it->second.first;
                 uint64_t match_end_in_s = match_start_in_s + match_length;
                 pos_t match_end_pos_in_q = it->first;
-                uint64_t match_end_in_q = offset(match_end_pos_in_q);
+                uint64_t match_end_in_q = offset(match_end_pos_in_q) + 1;
                 uint64_t match_start_in_q = match_end_in_q - match_length;
                 bool is_rev_match = is_rev(match_end_pos_in_q);
                 pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev_match);
