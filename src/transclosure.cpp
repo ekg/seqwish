@@ -38,6 +38,7 @@ size_t compute_transitive_closures(
     //
     // this maps from a position in Q (our input seqs concatenated, offset and orientation)
     // to a range (start and length) in S (our graph sequence vector)
+    // we are mapping from the /last/ position in the matched range, not the first
     std::map<pos_t, std::pair<uint64_t, uint64_t>> range_buffer;
     // here we try to find a growing range to extend
     auto extend_range = [&](const uint64_t& s_pos, const pos_t& q_pos) {
@@ -65,16 +66,16 @@ size_t compute_transitive_closures(
                 // flush
                 std::cerr << "flushing " << offset(it->first) << ":" << (is_rev(it->first) ? "-" : "+")
                           << " -> " << it->second.first << ":" << it->second.second << std::endl;
-                //node_mm.append(seq_v_length, j);
-                //path_mm.append(offset(j), make_pos_t(seq_v_length,is_rev(j)));
                 uint64_t match_length = it->second.second;
                 uint64_t match_start_in_s = it->second.first;
                 uint64_t match_end_in_s = match_start_in_s + match_length;
-                pos_t match_pos_in_q = it->first;
-                uint64_t match_start_in_q = offset(match_pos_in_q);
-                uint64_t match_end_in_q = match_start_in_q + match_length;
-                pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev(match_pos_in_q));
-                if (is_rev(match_pos_in_q)) std::swap(match_start_in_q, match_end_in_q);
+                pos_t match_end_pos_in_q = it->first;
+                uint64_t match_end_in_q = offset(match_end_pos_in_q);
+                uint64_t match_start_in_q = match_end_in_q - match_length;
+                bool is_rev_match = is_rev(match_end_pos_in_q);
+                pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev_match);
+                pos_t match_pos_in_q = make_pos_t(match_start_in_q, is_rev_match);
+                if (is_rev_match) std::swap(match_start_in_q, match_end_in_q);
                 node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
                 path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
                 it = range_buffer.erase(it);
@@ -146,6 +147,7 @@ size_t compute_transitive_closures(
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
     flush_ranges(seq_bytes+2);
+    assert(range_buffer.empty());
     // build node_mm and path_mm indexes
     node_iitree.index();
     path_iitree.index();
