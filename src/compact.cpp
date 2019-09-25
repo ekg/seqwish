@@ -17,20 +17,23 @@ void compact_nodes(
 #pragma omp parallel for schedule(dynamic)
     for (size_t i = 0; i < graph_size; ++i) {
         size_t j = i+1;
-        pos_t from = make_pos_t(i, false);
-        pos_t to = make_pos_t(j, false);
-
+        uint64_t from = i;
+        uint64_t to = j;
         std::vector<size_t> from_ovlp, to_ovlp;
         node_iitree.overlap(from, from+1, from_ovlp);
         node_iitree.overlap(to, to+1, to_ovlp);
         // query intervals overlapping this position in the node_iitree
-        //std::cerr << "in compact " << pos_to_string(from) << " -> " << pos_to_string(to) << std::endl;
-        //std::cerr << from_first.size() << " " << to_second.size() << std::endl;
+        std::cerr << "in compact " << from << " -> " << to << std::endl;
+        std::cerr << from_ovlp.size() << " " << to_ovlp.size() << std::endl;
         if (from_ovlp ==  to_ovlp) {
+            std::cerr << "continuing" << std::endl;
         } else {
             // mark a node start
 #pragma omp critical (seq_id_bv)
-            seq_id_bv[i] = 1;
+            {
+                std::cerr << "marking node start" << std::endl;
+                seq_id_bv[i] = 1;
+            }
         }
     }
     seq_id_bv[graph_size] = 1;
