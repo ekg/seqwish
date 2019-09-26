@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
     std::string link_mm_idx = args::get(base) + ".sql";
     std::remove(link_mm_idx.c_str());
     mmmulti::set<std::pair<pos_t, pos_t>> link_mmset(link_mm_idx);
-    derive_links(seqidx, path_iitree, node_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset);
+    derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset);
     
     // 6) emit the graph in GFA or VGP format
     if (!args::get(gfa_out).empty()) {
