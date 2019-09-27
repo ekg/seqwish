@@ -71,6 +71,7 @@ size_t compute_transitive_closures(
                 uint64_t match_end_in_s = match_start_in_s + match_length;
                 pos_t match_end_pos_in_q = it->first;
                 bool is_rev_match = is_rev(match_end_pos_in_q);
+                // TODO appreciate why you're doing this here, presumably it's because of how we're running the transclosure
                 if (!is_rev_match) incr_pos(match_end_pos_in_q, 1);
                 //incr_pos(match_end_pos_in_q, 1);
                 pos_t match_start_pos_in_q = match_end_pos_in_q;
@@ -80,6 +81,8 @@ size_t compute_transitive_closures(
                 pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev_match);
                 pos_t match_pos_in_q = make_pos_t(match_start_in_q, is_rev_match);
                 if (is_rev_match) {
+                    // go form transclosure model to the same pattern we have in the alignment iitree
+                    // 1-based half open intervals, positions map to start and orientation in S and Q
                     std::swap(match_start_in_q, match_end_in_q);
                     incr_pos(match_pos_in_q, 1);
                     decr_pos(match_pos_in_s, match_length - 1);
