@@ -9,31 +9,54 @@ void compact_nodes(
     mmmulti::iitree<uint64_t, pos_t>& node_iitree,
     mmmulti::iitree<uint64_t, pos_t>& path_iitree,
     sdsl::bit_vector& seq_id_bv) {
-    //seq_id_bv;
     // for each pair of positions in the graph base seq
     // do we have any links from the first that don't go to the second?
     // do we have any links to the second that don't come from the first?
     seq_id_bv[0] = 1; // set first node start
+    size_t num_seqs = seqidx.n_seqs();
 #pragma omp parallel for schedule(dynamic)
-    for (size_t i = 1; i <= graph_size; ++i) {
-        uint64_t from = i;
-        uint64_t to = i + 1;
-        std::vector<size_t> from_ovlp, to_ovlp;
-        node_iitree.overlap(from, from+1, from_ovlp);
-        node_iitree.overlap(to, to+1, to_ovlp);
-        // query intervals overlapping this position in the node_iitree
-        std::cerr << "in compact " << from << " -> " << to << std::endl;
-        std::cerr << from_ovlp.size() << " " << to_ovlp.size() << std::endl;
-        // this won't work in the case of loops or empty graphs!
-        if (from_ovlp ==  to_ovlp) {
-            std::cerr << "continuing" << std::endl;
-        } else {
-            // mark a node start
+    for (size_t i = 1; i <= num_seqs; ++i) {
+        size_t j = seqidx.nth_seq_offset(i)+1;
+        size_t seq_len = seqidx.nth_seq_length(i);
+        size_t k = j + seq_len;
+        std::cerr << "compact " << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
+        while (j < k) {
+            std::vector<size_t> ovlp;
+            path_iitree.overlap(j, j+1, ovlp);
+            // each input base should only map one place in the graph
+            assert(ovlp.size() == 1);
+            size_t idx = ovlp.front();
+            uint64_t ovlp_start_in_q = path_iitree.start(idx);
+            uint64_t ovlp_end_in_q = path_iitree.end(idx);
+            pos_t pos_start_in_s = path_iitree.data(idx);
+            bool match_is_rev = is_rev(pos_start_in_s);
+            // mark a node start and end
+            pos_t pos_end_in_s = pos_start_in_s;
+            incr_pos(pos_end_in_s, ovlp_end_in_q - ovlp_start_in_q);
+            if (!match_is_rev) {
 #pragma omp critical (seq_id_bv)
-            {
-                std::cerr << "marking node start " << i << " of " << seq_id_bv.size() << std::endl;
-                seq_id_bv[i] = 1;
+                {
+                    std::cerr << "marking node+ start " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    seq_id_bv[offset(pos_start_in_s)-1] = 1;
+                }
+#pragma omp critical (seq_id_bv)
+                {
+                    std::cerr << "marking node+ end " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    seq_id_bv[offset(pos_end_in_s)-1] = 1;
+                }
+            } else {
+#pragma omp critical (seq_id_bv)
+                {
+                    std::cerr << "marking node- start " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    seq_id_bv[offset(pos_end_in_s)] = 1;
+                }
+#pragma omp critical (seq_id_bv)
+                {
+                    std::cerr << "marking node- end " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    seq_id_bv[offset(pos_start_in_s)] = 1;
+                }
             }
+            j = ovlp_end_in_q;
         }
     }
     std::cerr << graph_size << " " << seq_id_bv.size() << std::endl;
