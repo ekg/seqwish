@@ -74,46 +74,53 @@ void emit_gfa(std::ostream& out,
     // iterate over the sequence positions, emitting a node at every edge crossing
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
-        size_t j = seqidx.nth_seq_offset(i);
+        size_t j = seqidx.nth_seq_offset(i)+1;
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
-        //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
+        std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         std::vector<pos_t> path_v;
         uint64_t seen_bp = 0;
         uint64_t accumulated_bp = 0;
-        for ( ; j < k; ++j) {
+        while (j < k) {
             std::vector<size_t> ovlp;
-            path_iitree.overlap(j+1, j+2, ovlp);
+            path_iitree.overlap(j, j+1, ovlp);
             // each input base should only map one place in the graph
             assert(ovlp.size() == 1);
-            auto& p = ovlp.front();
+            size_t idx = ovlp.front();
+            uint64_t ovlp_start_in_q = path_iitree.start(idx);
+            uint64_t ovlp_end_in_q = path_iitree.end(idx);
+            pos_t pos_start_in_s = path_iitree.data(idx);
+            bool match_is_rev = is_rev(pos_start_in_s);
+            // iterate through the nodes in this range
+            uint64_t length = ovlp_end_in_q - ovlp_start_in_q;
+            std::cerr << "overlap in path_iitree " << ovlp_start_in_q << ".." << ovlp_end_in_q << " " << pos_to_string(pos_start_in_s) << std::endl;
+            pos_t q = make_pos_t(ovlp_start_in_q, false);
+            pos_t p = pos_start_in_s;
             // validate the path
-            char c = seq_v_buf[offset(p)-1];
-            if (is_rev(p)) c = dna_reverse_complement(c);
-            assert(seqidx.at_pos(make_pos_t(j+1, false)) == c);
-            // are we at the start of a node?
-            // if so, write to the path
-            //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " @" << offset(p)-1 << " in seq_v, seen_bp " << seen_bp << " " << accumulated_bp << " " << c << " == " << seqidx.at_pos(make_pos_t(j+1, false)) << std::endl;
-            if (!is_rev(p)) {
-                if (seq_id_cbv[offset(p)-1] == 1) {
-                    size_t id = seq_id_cbv_rank(offset(p));
-                    path_v.push_back(make_pos_t(id, is_rev(p)));
-                    //std::cerr << "adding " << id << "+" << std::endl;
-                    assert(seen_bp == accumulated_bp);
-                    accumulated_bp += seq_id_cbv_select(id+1) - seq_id_cbv_select(id);
+            // for each base in the range pointed to by the match, check that the input sequence we're processing matches the graph
+            for (uint64_t k = 0; k < length; ++k) {
+                if (seq_id_cbv[offset(p)-1]) {
+                    uint64_t node_id = seq_id_cbv_rank(offset(p));
+                    std::cerr << "got to node " << node_id << (match_is_rev ? "-" : "+") << std::endl;
+                    path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
-            } else {
-                if (seq_id_cbv[offset(p)] == 1) {
-                    size_t id = seq_id_cbv_rank(offset(p));
-                    path_v.push_back(make_pos_t(id, is_rev(p)));
-                    //std::cerr << "adding " << id << "-" << std::endl;
-                    assert(seen_bp == accumulated_bp);
-                    accumulated_bp += seq_id_cbv_select(id+1) - seq_id_cbv_select(id);
+                /*else if (match_is_rev && seq_id_cbv[offset(p)]) {
+                    uint64_t node_id = seq_id_cbv_rank(offset(p)-1);
+                    std::cerr << "got to node " << node_id << "-" << std::endl;
+                    path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
+                */
+                char c = seq_v_buf[offset(p)-1];
+                if (is_rev(p)) c = dna_reverse_complement(c);
+                std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
+                assert(seqidx.at_pos(q) == c);
+                incr_pos(p, 1);
+                incr_pos(q, 1);
             }
-            ++seen_bp;
+            seen_bp += length;
+            j = ovlp_end_in_q;
         }
-        if (accumulated_bp != seq_len) {
+        if (seen_bp != seq_len) {
             std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
             assert(false);
         }
