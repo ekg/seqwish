@@ -24,6 +24,7 @@ void compact_nodes(
         // query intervals overlapping this position in the node_iitree
         std::cerr << "in compact " << from << " -> " << to << std::endl;
         std::cerr << from_ovlp.size() << " " << to_ovlp.size() << std::endl;
+        // this won't work in the case of loops or empty graphs!
         if (from_ovlp ==  to_ovlp) {
             std::cerr << "continuing" << std::endl;
         } else {

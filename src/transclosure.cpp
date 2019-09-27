@@ -101,6 +101,7 @@ size_t compute_transitive_closures(
     // maybe we set up a handler that decides when to flush things
     // we flush when we stop extending
     // we determine when we stop extending when we have stepped a bp and broke our range extension
+    uint64_t last_seq_id = seqidx.seq_id_at(1);
     for (uint64_t i = 1; i <= input_seq_length; ++i) {
         //std::cerr << q_seen_bv << std::endl;
         if (q_seen_bv[i-1]) continue;
@@ -109,7 +110,13 @@ size_t compute_transitive_closures(
         seq_v_out << seqidx.at(i-1);
         size_t seq_v_length = seq_v_out.tellp();
         uint64_t flushed = range_buffer.size();
-        flush_ranges(seq_v_length);
+        uint64_t curr_seq_id = seqidx.seq_id_at(i);
+        if (curr_seq_id != last_seq_id) {
+            flush_ranges(seq_v_length+1); // hack to force flush
+            last_seq_id = curr_seq_id;
+        } else {
+            flush_ranges(seq_v_length);
+        }
         flushed -= range_buffer.size();
         std::cerr << "seq " << seq_v_length << " " << base << " buf size " << range_buffer.size() << " flushed " << flushed << std::endl;
         // mark current 
