@@ -150,6 +150,8 @@ int main(int argc, char** argv) {
         std::remove(seq_v_file.c_str());
         std::remove(node_iitree_idx.c_str());
         std::remove(path_iitree_idx.c_str());
+        link_mmset.close_reader();
+        std::remove(link_mm_idx.c_str());
     }
 
     return(0);
