@@ -46,10 +46,10 @@ void derive_links(seqindex_t& seqidx,
             uint64_t seq_start = seqidx.nth_seq_offset(seq_id) + 1;
             uint64_t seq_end = seq_start + seqidx.nth_seq_length(seq_id) - 1;
             std::cerr << "seq boundaries " << seq_start << "-" << seq_end << std::endl;
-            bool is_rev_pos = is_rev(pos_start_in_q);
+            bool curr_step_is_rev = is_rev(pos_start_in_q);
             std::vector<size_t> path_before_ovlp, path_after_ovlp;
-            uint64_t start_in_q = (is_rev_pos ? offset(pos_end_in_q) : offset(pos_start_in_q));
-            uint64_t end_in_q = (is_rev_pos ? offset(pos_start_in_q) : offset(pos_end_in_q)) + 1;
+            uint64_t start_in_q = (curr_step_is_rev ? offset(pos_end_in_q) : offset(pos_start_in_q));
+            uint64_t end_in_q = (curr_step_is_rev ? offset(pos_start_in_q) : offset(pos_end_in_q)) + 1;
             std::cerr << "start_in_q " << start_in_q << " end_in_q " << end_in_q << std::endl;
             // and only consider cases where we'd be within the boundaries
             if (start_in_q-1 >= seq_start) {
@@ -74,7 +74,12 @@ void derive_links(seqindex_t& seqidx,
                               << " prev pos_end_in_s " << pos_to_string(pos_end_in_s)
                               << " node boundaries " << node_start_in_s << ".." << node_end_in_s << std::endl;
                     // find which node we're in here, and record a link
-                    std::cerr << "id? " << seq_id_cbv_rank(offset(pos_end_in_s)) << std::endl;
+                    uint64_t prev_id = seq_id_cbv_rank(offset(pos_end_in_s));
+                    std::cerr << "id? " << prev_id << std::endl;
+                    // relative orientations please
+                    bool prev_step_is_rev = is_rev(pos_end_in_s);
+                    std::cerr << "link " << (prev_step_is_rev ? "-" : "+") << " " << (curr_step_is_rev ? "-" : "+") << std::endl;
+                    link_mmset.append(std::make_pair(make_pos_t(prev_id, prev_step_is_rev), make_pos_t(id, curr_step_is_rev)));
                 }
             }
             if (end_in_q+1 <= seq_end) {
@@ -94,7 +99,11 @@ void derive_links(seqindex_t& seqidx,
                               << " next pos_start_in_s " << pos_to_string(pos_start_in_s)
                               << " node boundaries " << node_start_in_s << ".." << node_end_in_s << std::endl;
                     // find which node we're in here, and record a link
-                    std::cerr << "id? " << seq_id_cbv_rank(offset(pos_start_in_s)) << std::endl;
+                    uint64_t next_id = seq_id_cbv_rank(offset(pos_start_in_s));
+                    std::cerr << "id? " << next_id << std::endl;
+                    bool next_step_is_rev = is_rev(pos_start_in_s);
+                    std::cerr << "link " << (curr_step_is_rev ? "-" : "+") << " " << (next_step_is_rev ? "-" : "+") << std::endl;
+                    link_mmset.append(std::make_pair(make_pos_t(id, curr_step_is_rev), make_pos_t(next_id, next_step_is_rev)));
                 }
             }
         }
