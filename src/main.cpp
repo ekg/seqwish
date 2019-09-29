@@ -90,9 +90,10 @@ int main(int argc, char** argv) {
         assert(false);
     }
 
-    // for debugging
-    for (auto& interval : aln_iitree) {
-        std::cerr << "aln_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
+    if (args::get(debug)) {
+        for (auto& interval : aln_iitree) {
+            std::cerr << "aln_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
+        }
     }
 
     // 3) find the transitive closures via the alignments and construct the graph sequence S, and the N and P interval sets
@@ -107,12 +108,13 @@ int main(int argc, char** argv) {
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max), args::get(min_transclose_len));
 
-    for (auto& interval : node_iitree) {
-        std::cerr << "node_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
-    }
-
-    for (auto& interval : path_iitree) {
-        std::cerr << "path_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
+    if (args::get(debug)) {
+        for (auto& interval : node_iitree) {
+            std::cerr << "node_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
+        }
+        for (auto& interval : path_iitree) {
+            std::cerr << "path_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
+        }
     }
 
     // 4) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes

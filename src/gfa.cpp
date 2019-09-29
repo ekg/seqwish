@@ -79,7 +79,7 @@ void emit_gfa(std::ostream& out,
         size_t j = seqidx.nth_seq_offset(i)+1;
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
-        std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
+        //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         std::vector<pos_t> path_v;
         uint64_t seen_bp = 0;
         uint64_t accumulated_bp = 0;
@@ -95,7 +95,7 @@ void emit_gfa(std::ostream& out,
             bool match_is_rev = is_rev(pos_start_in_s);
             // iterate through the nodes in this range
             uint64_t length = ovlp_end_in_q - ovlp_start_in_q;
-            std::cerr << "overlap in path_iitree " << ovlp_start_in_q << ".." << ovlp_end_in_q << " " << pos_to_string(pos_start_in_s) << std::endl;
+            //std::cerr << "overlap in path_iitree " << ovlp_start_in_q << ".." << ovlp_end_in_q << " " << pos_to_string(pos_start_in_s) << std::endl;
             pos_t q = make_pos_t(ovlp_start_in_q, false);
             pos_t p = pos_start_in_s;
             // validate the path
@@ -103,7 +103,7 @@ void emit_gfa(std::ostream& out,
             for (uint64_t k = 0; k < length; ++k) {
                 if (seq_id_cbv[offset(p)-1]) {
                     uint64_t node_id = seq_id_cbv_rank(offset(p));
-                    std::cerr << "got to node " << node_id << (match_is_rev ? "-" : "+") << std::endl;
+                    //std::cerr << "got to node " << node_id << (match_is_rev ? "-" : "+") << std::endl;
                     path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
                 /*else if (match_is_rev && seq_id_cbv[offset(p)]) {
@@ -114,10 +114,10 @@ void emit_gfa(std::ostream& out,
                 */
                 char c = seq_v_buf[offset(p)-1];
                 if (is_rev(p)) c = dna_reverse_complement(c);
-                std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
+                //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
                 //assert(seqidx.at_pos(q) == c);
                 if (seqidx.at_pos(q) != c) {
-                    std::cerr << "GRAPH BROKE @ "
+                    std::cerr << "GRAPH BROKEN @ "
                         << seqidx.nth_name(i) << " " << pos_to_string(q) << " -> "
                         << pos_to_string(q) << std::endl;
                     assert(false);
@@ -129,7 +129,7 @@ void emit_gfa(std::ostream& out,
             j = ovlp_end_in_q;
         }
         if (seen_bp != seq_len) {
-            std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
+            //std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
             assert(false);
         }
         std::stringstream cigarss;
