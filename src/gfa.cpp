@@ -63,10 +63,12 @@ void emit_gfa(std::ostream& out,
     auto print_link = [&out](const std::pair<pos_t, pos_t>& p) {
         auto& from = p.first;
         auto& to = p.second;
-        out << "L" << "\t"
-            << offset(from) << "\t" << (is_rev(from)?"-":"+") << "\t"
-            << offset(to) << "\t" << (is_rev(to)?"-":"+") << "\t"
-            << "0M" << std::endl;
+        if (from && to) {
+            out << "L" << "\t"
+                << offset(from) << "\t" << (is_rev(from)?"-":"+") << "\t"
+                << offset(to) << "\t" << (is_rev(to)?"-":"+") << "\t"
+                << "0M" << std::endl;
+        }
     };
     link_mmset.for_each_unique_value(print_link);
 
@@ -113,7 +115,13 @@ void emit_gfa(std::ostream& out,
                 char c = seq_v_buf[offset(p)-1];
                 if (is_rev(p)) c = dna_reverse_complement(c);
                 std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
-                assert(seqidx.at_pos(q) == c);
+                //assert(seqidx.at_pos(q) == c);
+                if (seqidx.at_pos(q) != c) {
+                    std::cerr << "GRAPH BROKE @ "
+                        << seqidx.nth_name(i) << " " << pos_to_string(q) << " -> "
+                        << pos_to_string(q) << std::endl;
+                    assert(false);
+                }
                 incr_pos(p, 1);
                 incr_pos(q, 1);
             }
