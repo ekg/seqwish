@@ -19,7 +19,7 @@ void compact_nodes(
         size_t j = seqidx.nth_seq_offset(i)+1;
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
-        std::cerr << "compact " << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
+        //std::cerr << "compact " << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         while (j < k) {
             std::vector<size_t> ovlp;
             path_iitree.overlap(j, j+1, ovlp);
@@ -36,30 +36,30 @@ void compact_nodes(
             if (!match_is_rev) {
 #pragma omp critical (seq_id_bv)
                 {
-                    std::cerr << "marking node+ start " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    //std::cerr << "marking node+ start " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
                     seq_id_bv[offset(pos_start_in_s)-1] = 1;
                 }
 #pragma omp critical (seq_id_bv)
                 {
-                    std::cerr << "marking node+ end " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    //std::cerr << "marking node+ end " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
                     seq_id_bv[offset(pos_end_in_s)-1] = 1;
                 }
             } else {
 #pragma omp critical (seq_id_bv)
                 {
-                    std::cerr << "marking node- start " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    //std::cerr << "marking node- start " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
                     seq_id_bv[offset(pos_end_in_s)] = 1;
                 }
 #pragma omp critical (seq_id_bv)
                 {
-                    std::cerr << "marking node- end " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
+                    //std::cerr << "marking node- end " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
                     seq_id_bv[offset(pos_start_in_s)] = 1;
                 }
             }
             j = ovlp_end_in_q;
         }
     }
-    std::cerr << graph_size << " " << seq_id_bv.size() << std::endl;
+    //std::cerr << graph_size << " " << seq_id_bv.size() << std::endl;
     seq_id_bv[graph_size] = 1;
 }
 

@@ -15,27 +15,9 @@ size_t compute_transitive_closures(
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
     sdsl::bit_vector q_seen_bv(seqidx.seq_length());
-    // for each base in seqidx
-    //   collect mapped bases
-    //   mark our seen bitvector
-    //   emit the base
-    //   record entries in node_mm and path_mm
     uint64_t input_seq_length = seqidx.seq_length();
-    /*
-    std::cerr << "all overlaps" << std::endl;
-    std::vector<size_t> all_ovlp;
-    aln_iitree.overlap(0, input_seq_length, all_ovlp);
-    for (auto& s : all_ovlp) {
-        uint64_t start = aln_iitree.start(s);
-        uint64_t end = aln_iitree.end(s);
-        pos_t pos = aln_iitree.data(s);
-        std::cerr << "overlap " << start << "-" << end
-                  << " position offset " << offset(pos) << (is_rev(pos)?"-":"+") << std::endl;
-    }
-    */
     // a buffer of ranges to write into our iitree, arranged by range ending position in Q
     // we flush those intervals that don't get extended into the next position in S
-    //
     // this maps from a position in Q (our input seqs concatenated, offset and orientation)
     // to a range (start and length) in S (our graph sequence vector)
     // we are mapping from the /last/ position in the matched range, not the first
@@ -71,8 +53,6 @@ size_t compute_transitive_closures(
         while (it != range_buffer.end()) {
             if (it->second.first + it->second.second != s_pos) {
                 // flush
-                std::cerr << "flushing " << offset(it->first) << ":" << (is_rev(it->first) ? "-" : "+")
-                          << " -> " << it->second.first << ":" << it->second.second << std::endl;
                 uint64_t match_length = it->second.second;
                 uint64_t match_start_in_s = it->second.first;
                 uint64_t match_end_in_s = match_start_in_s + match_length;
@@ -102,28 +82,27 @@ size_t compute_transitive_closures(
             }
         }
     };
-    //std::cerr << "input seq len " << input_seq_length << std::endl;
-    // new way, accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
+    // range compressed model
+    // accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
     // we flush when we stop extending
     // we determine when we stop extending when we have stepped a bp and broke our range extension
     uint64_t last_seq_id = seqidx.seq_id_at(1);
     for (uint64_t i = 1; i <= input_seq_length; ++i) {
-        //std::cerr << q_seen_bv << std::endl;
         if (q_seen_bv[i-1]) continue;
         // write base
         char base = seqidx.at(i-1);
         seq_v_out << seqidx.at(i-1);
         size_t seq_v_length = seq_v_out.tellp();
-        uint64_t flushed = range_buffer.size();
+        //uint64_t flushed = range_buffer.size();
         uint64_t curr_seq_id = seqidx.seq_id_at(i);
         if (curr_seq_id != last_seq_id) {
-            flush_ranges(seq_v_length+1); // hack to force flush
+            flush_ranges(seq_v_length+1); // hack to force flush at sequence change
             last_seq_id = curr_seq_id;
         } else {
             flush_ranges(seq_v_length);
         }
-        flushed -= range_buffer.size();
-        std::cerr << "seq " << seq_v_length << " " << base << " buf size " << range_buffer.size() << " flushed " << flushed << std::endl;
+        //flushed -= range_buffer.size();
+        //std::cerr << "seq " << seq_v_length << " " << base << " buf size " << range_buffer.size() << " flushed " << flushed << std::endl;
         // mark current 
         q_seen_bv[i-1] = 1;
         // emit current
@@ -137,7 +116,7 @@ size_t compute_transitive_closures(
             todo.erase(todo.begin());
             //assert(q_seen_bv[offset(j)-1]==1);
             extend_range(seq_v_length, j);
-            // todo rip this out
+            // optionally require a minimum length of match to transclose through
             if (min_transclose_len && match_len < min_transclose_len) {
                 continue;
             }
