@@ -1,0 +1,12 @@
+# Control file for continuous integration testing at http://travis-ci.org/
+
+language: cpp
+compiler: gcc
+sudo: required
+dist: xenial
+#before_install:
+install:
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo add-apt-repository -y ppa:jonathonf/gcc-7.1; sudo apt-get update -qy; sudo apt-get install -qy gcc-7 g++-7; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 60 --slave /usr/bin/g++ g++ /usr/bin/g++-7; fi
+script:
+  - cmake -H. -Bbuild && cmake --build build -- -j 4 && echo Testing && cd test && make test

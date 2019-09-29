@@ -45,6 +45,22 @@ void incr_pos(pos_t& pos, size_t by) {
     }
 }
 
+void decr_pos(pos_t& pos) {
+    if (!is_rev(pos)) {
+        pos -= 2;
+    } else {
+        pos += 2;
+    }
+}
+
+void decr_pos(pos_t& pos, size_t by) {
+    if (!is_rev(pos)) {
+        pos -= 2*by;
+    } else {
+        pos += 2*by;
+    }
+}
+
 pos_t rev_pos_t(const pos_t& pos) {
     return make_pos_t(offset(pos), !is_rev(pos));
 }

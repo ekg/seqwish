@@ -1,0 +1,106 @@
+#!/bin/bash
+#
+# While not directly TAP-specific, being able to mock stuff
+# in tests is pretty useful.
+#
+# If you're using bash-tap-bootstrap, then just source this
+# file in your tests from the bash-tap directory found by
+# the bootstrap by including this line after you've sourced
+# bash-tap-bootstrap:
+#
+#   . "$BASH_TAP_ROOT/bash-tap-mock"
+#
+# If you're not using bash-tap-bootstrap then copy this file
+# to your test directory and source it with:
+#
+#   . $(dirname $0)/bash-tap-mock
+#
+# It's important to note that if you're capturing the arguments
+# passed to your mock function in a variable, and want that
+# variable to be accessible to your tests, you must ensure that
+# the mocked function is executed in the current shell and not
+# a subshell.  In particular, this means you cannot use $() or
+# `` to capture output of the function at the same time, as these
+# invoke a subshell - the mock will happen, but any variables you
+# set within your mock will only exist within the subshell.
+# If you wish to capture output at the same time, you need to
+# make use of the start_output_capture and finish_output_capture
+# helper functons in bash-tap, or manually use file-descriptor
+# redirects yourself to achieve the same effect.
+
+bash_tap_mock_version='1.0.2'
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    # Being run directly, probably by test harness running entire dir.
+    echo "1..0 # SKIP bash-tap-mock isn't a test file"
+    exit 0
+fi
+
+function mock_function() {
+    local original_name="$1"
+    local mock_name="$2"
+    local save_original_as="_btm_mocked_${original_name}"
+
+    if [ -z $(declare -F "$save_original_as") ]; then
+        _btm_copy_function "$original_name" "$save_original_as"
+    fi
+    _btm_copy_function "$mock_name" "$original_name"
+}
+
+function restore_mocked_function() {
+    local original_name="$1"
+    local save_original_as="_btm_mocked_${original_name}"
+
+    if [ ! -z $(declare -F "$save_original_as") ]; then
+        _btm_copy_function "$save_original_as" "$original_name"
+        unset -f "$save_original_as"
+    else
+        _btm_caller_error "Can't find saved original function '$original_name' to restore"
+    fi
+}
+
+function mock_command() {
+    local command_name="$1"
+    local mock_name="$2"
+
+    if [ ! -z $(declare -F "$command_name") ]; then
+        #  It's not actually a command, it's a function, mock that
+        mock_function "$command_name" "$mock_name"
+    else
+        _btm_copy_function "$mock_name" "$command_name"
+    fi
+}
+
+function restore_mocked_command() {
+    local command_name="$1"
+
+    local save_original_as="_btm_mocked_${command_name}"
+    if [ ! -z $(declare -F "$save_original_as") ]; then
+        #  Was actually a function mock not a command mock.
+        restore_mocked_function "$command_name"
+    else
+        unset -f "$command_name" >/dev/null
+    fi
+}
+
+# Copied from http://stackoverflow.com/a/1203628/870000
+function _btm_copy_function() {
+    declare -F $1 >/dev/null || _btm_caller_error "Can't find function '$1' to copy"
+    eval "$(echo "${2}()"; declare -f ${1} | tail -n +2)"
+}
+
+#  Report an error from the POV of the first calling point outside this file
+function _btm_caller_error() {
+    local message="$*"
+
+    local thisfile="${BASH_SOURCE[0]}"
+    local file="$thisfile"
+    local frame_num=2
+    until [ "$file" != "$thisfile" ]; do
+        frame=$(caller "$frame_num")
+        IFS=' ' read line func file <<<"$frame"
+    done
+
+    echo "Error: $message, on line $line of $file" >&2
+    exit 255
+}
