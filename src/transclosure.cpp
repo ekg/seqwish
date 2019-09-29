@@ -43,6 +43,7 @@ size_t compute_transitive_closures(
     // here we try to find a growing range to extend
     auto extend_range = [&](const uint64_t& s_pos, const pos_t& q_pos) {
         // find a position in the map that we can add onto
+        // it must match position and orientation
         pos_t q_last_pos = q_pos;
         decr_pos(q_last_pos);
         auto f = range_buffer.find(q_last_pos);
@@ -50,11 +51,17 @@ size_t compute_transitive_closures(
         if (f == range_buffer.end()) {
             range_buffer[q_pos] = std::make_pair(s_pos, 1);
         } else {
-            // if one does, we expand the range and drop it back into the map at the new Q end pos
+            // if one does, check that it matches our extension,
             std::pair<uint64_t, uint64_t> x = f->second;
-            range_buffer.erase(f);
-            ++x.second; // increment the match length
-            range_buffer[q_pos] = x; // and stash it
+            if (x.first + x.second == s_pos) {
+                // if so we expand its range and drop it back into the map at the new Q end pos
+                range_buffer.erase(f);
+                ++x.second; // increment the match length
+                range_buffer[q_pos] = x; // and stash it
+            } else {
+                // if it doesn't, we store a new range
+                range_buffer[q_pos] = std::make_pair(s_pos, 1);
+            }
         }
     };
     auto flush_ranges = [&](const uint64_t& s_pos) {
@@ -97,8 +104,6 @@ size_t compute_transitive_closures(
     };
     //std::cerr << "input seq len " << input_seq_length << std::endl;
     // new way, accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
-    // but how
-    // maybe we set up a handler that decides when to flush things
     // we flush when we stop extending
     // we determine when we stop extending when we have stepped a bp and broke our range extension
     uint64_t last_seq_id = seqidx.seq_id_at(1);
