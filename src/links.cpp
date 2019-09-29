@@ -19,6 +19,7 @@ void derive_links(seqindex_t& seqidx,
         std::cerr << i << " rank " << seq_id_cbv_rank(i) << std::endl;
     }
     */
+#pragma omp parallel for schedule(dynamic)
     for (size_t id = 1; id <= n_nodes; ++id) {
         uint64_t node_start_in_s = seq_id_cbv_select(id)+1; // node_iitree and path_iitree are 1-based
         uint64_t node_end_in_s = seq_id_cbv_select(id+1)+1;
