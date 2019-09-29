@@ -1,18 +1,17 @@
 #include "gfa.hpp"
-#include "mmmultimap.hpp"
 
 namespace seqwish {
 
 void emit_gfa(std::ostream& out,
               size_t graph_length,
               const std::string& seq_v_file,
-              mmmulti::map<uint64_t, pos_t>& path_mm,
-              mmmulti::map<pos_t, pos_t>& link_fwd_mm,
-              mmmulti::map<pos_t, pos_t>& link_rev_mm,
+              mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+              mmmulti::iitree<uint64_t, pos_t>& path_iitree,
               const sdsl::sd_vector<>& seq_id_cbv,
               const sdsl::sd_vector<>::rank_1_type& seq_id_cbv_rank,
               const sdsl::sd_vector<>::select_1_type& seq_id_cbv_select,
-              seqindex_t& seqidx) {
+              seqindex_t& seqidx,
+              mmmulti::set<std::pair<pos_t, pos_t>>& link_mmset) {
 
     out << "H" << "\t" << "VN:Z:1.0" << std::endl;
     int seq_v_fd = -1;
@@ -59,86 +58,80 @@ void emit_gfa(std::ostream& out,
         std::cerr << std::endl;
         */
 
-        auto print_to_link = [&out, &id, &seq_id_cbv, &seq_id_cbv_rank](const pos_t& p) {
-            size_t i = offset(p);
-            // internal links which do not go to the head or tail of a compacted node
-            if (!is_rev(p) && seq_id_cbv[i]
-                || is_rev(p) && seq_id_cbv[i-1]) {
-                pos_t node = make_pos_t(seq_id_cbv_rank(i), is_rev(p));
-                out << "L" << "\t"
-                    << offset(node) << "\t" << (is_rev(node)?"-":"+") << "\t"
-                    << id << "\t" << "+" << "\t"
-                    << "0M" << std::endl;
-            }
-        };
-
-        auto print_from_link = [&out, &id, &seq_id_cbv, &seq_id_cbv_rank](const pos_t& p) {
-            size_t i = offset(p);
-            // internal links which do not go to the head or tail of a compacted node
-            if (!is_rev(p) && seq_id_cbv[i-1]
-                || is_rev(p) && seq_id_cbv[i]) {
-                pos_t node = make_pos_t(seq_id_cbv_rank(i), is_rev(p));
-                out << "L" << "\t"
-                    << id << "\t" << "+" << "\t"
-                    << offset(node) << "\t" << (is_rev(node)?"-":"+") << "\t"
-                    << "0M" << std::endl;
-            }
-        };
-        
-        //std::cerr << "fwd start" << std::endl;
-        link_rev_mm.for_unique_values_of(node_start_fwd, print_to_link);
-        //std::cerr << "fwd end" << std::endl;
-        link_fwd_mm.for_unique_values_of(node_end_fwd, print_from_link);
-        //pos_t node_start_rev = make_pos_t(node_start+node_length, true);
-        //pos_t node_end_rev = make_pos_t(node_start+1, true);
-
     }
+
+    auto print_link = [&out](const std::pair<pos_t, pos_t>& p) {
+        auto& from = p.first;
+        auto& to = p.second;
+        if (from && to) {
+            out << "L" << "\t"
+                << offset(from) << "\t" << (is_rev(from)?"-":"+") << "\t"
+                << offset(to) << "\t" << (is_rev(to)?"-":"+") << "\t"
+                << "0M" << std::endl;
+        }
+    };
+    link_mmset.for_each_unique_value(print_link);
 
     // write the paths
     // iterate over the sequence positions, emitting a node at every edge crossing
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
-        size_t j = seqidx.nth_seq_offset(i);
+        size_t j = seqidx.nth_seq_offset(i)+1;
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         std::vector<pos_t> path_v;
         uint64_t seen_bp = 0;
         uint64_t accumulated_bp = 0;
-        for ( ; j < k; ++j) {
-            std::vector<pos_t> v = path_mm.values(j+1);
+        while (j < k) {
+            std::vector<size_t> ovlp;
+            path_iitree.overlap(j, j+1, ovlp);
             // each input base should only map one place in the graph
-            assert(v.size() == 1);
-            auto& p = v.front();
+            assert(ovlp.size() == 1);
+            size_t idx = ovlp.front();
+            uint64_t ovlp_start_in_q = path_iitree.start(idx);
+            uint64_t ovlp_end_in_q = path_iitree.end(idx);
+            pos_t pos_start_in_s = path_iitree.data(idx);
+            bool match_is_rev = is_rev(pos_start_in_s);
+            // iterate through the nodes in this range
+            uint64_t length = ovlp_end_in_q - ovlp_start_in_q;
+            //std::cerr << "overlap in path_iitree " << ovlp_start_in_q << ".." << ovlp_end_in_q << " " << pos_to_string(pos_start_in_s) << std::endl;
+            pos_t q = make_pos_t(ovlp_start_in_q, false);
+            pos_t p = pos_start_in_s;
             // validate the path
-            char c = seq_v_buf[offset(p)-1];
-            if (is_rev(p)) c = dna_reverse_complement(c);
-            assert(seqidx.at_pos(make_pos_t(j+1, false)) == c);
-            // are we at the start of a node?
-            // if so, write to the path
-            //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " @" << offset(p)-1 << " in seq_v, seen_bp " << seen_bp << " " << accumulated_bp << " " << c << " == " << seqidx.at_pos(make_pos_t(j+1, false)) << std::endl;
-            if (!is_rev(p)) {
-                if (seq_id_cbv[offset(p)-1] == 1) {
-                    size_t id = seq_id_cbv_rank(offset(p));
-                    path_v.push_back(make_pos_t(id, is_rev(p)));
-                    //std::cerr << "adding " << id << "+" << std::endl;
-                    assert(seen_bp == accumulated_bp);
-                    accumulated_bp += seq_id_cbv_select(id+1) - seq_id_cbv_select(id);
+            // for each base in the range pointed to by the match, check that the input sequence we're processing matches the graph
+            for (uint64_t k = 0; k < length; ++k) {
+                if (seq_id_cbv[offset(p)-1]) {
+                    uint64_t node_id = seq_id_cbv_rank(offset(p));
+                    //std::cerr << "got to node " << node_id << (match_is_rev ? "-" : "+") << std::endl;
+                    path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
-            } else {
-                if (seq_id_cbv[offset(p)] == 1) {
-                    size_t id = seq_id_cbv_rank(offset(p));
-                    path_v.push_back(make_pos_t(id, is_rev(p)));
-                    //std::cerr << "adding " << id << "-" << std::endl;
-                    assert(seen_bp == accumulated_bp);
-                    accumulated_bp += seq_id_cbv_select(id+1) - seq_id_cbv_select(id);
+                /*else if (match_is_rev && seq_id_cbv[offset(p)]) {
+                    uint64_t node_id = seq_id_cbv_rank(offset(p)-1);
+                    std::cerr << "got to node " << node_id << "-" << std::endl;
+                    path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
+                */
+                char c = seq_v_buf[offset(p)-1];
+                if (is_rev(p)) c = dna_reverse_complement(c);
+                //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
+                if (seqidx.at_pos(q) != c) {
+                    std::cerr << "GRAPH BROKEN @ "
+                        << seqidx.nth_name(i) << " " << pos_to_string(q) << " -> "
+                        << pos_to_string(q) << std::endl;
+                    assert(false);
+                    exit(1); // for release builds
+                }
+                incr_pos(p, 1);
+                incr_pos(q, 1);
             }
-            ++seen_bp;
+            seen_bp += length;
+            j = ovlp_end_in_q;
         }
-        if (accumulated_bp != seq_len) {
+        if (seen_bp != seq_len) {
             std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
             assert(false);
+            exit(1); // for release builds
         }
         std::stringstream cigarss;
         std::stringstream pathss;
