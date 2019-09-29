@@ -115,12 +115,12 @@ void emit_gfa(std::ostream& out,
                 char c = seq_v_buf[offset(p)-1];
                 if (is_rev(p)) c = dna_reverse_complement(c);
                 //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
-                //assert(seqidx.at_pos(q) == c);
                 if (seqidx.at_pos(q) != c) {
                     std::cerr << "GRAPH BROKEN @ "
                         << seqidx.nth_name(i) << " " << pos_to_string(q) << " -> "
                         << pos_to_string(q) << std::endl;
                     assert(false);
+                    exit(1); // for release builds
                 }
                 incr_pos(p, 1);
                 incr_pos(q, 1);
@@ -129,8 +129,9 @@ void emit_gfa(std::ostream& out,
             j = ovlp_end_in_q;
         }
         if (seen_bp != seq_len) {
-            //std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
+            std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
             assert(false);
+            exit(1); // for release builds
         }
         std::stringstream cigarss;
         std::stringstream pathss;
