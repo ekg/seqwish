@@ -19,7 +19,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     std::ofstream seqout(seqfilename.c_str());
     std::vector<uint64_t> seqname_offset;
     std::vector<uint64_t> seq_offset;
-    bool input_is_fasta=false, input_is_fastq=false;
+    bool input_is_fasta=false, input_is_fastq=false, input_is_gfa=false;
     // look at the first character to determine if it's fastq or fasta
     std::string line;
     std::getline(in, line);
@@ -27,44 +27,63 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
         input_is_fasta = true;
     } else if (line[0] == '@') {
         input_is_fastq = true;
+    } else if (line[0] == 'H' || line[0] == 'S' || line[0] == 'L' || line[0] == 'P') {
+        input_is_gfa = true; // GFAv1
     } else {
         std::cerr << "unknown file format given to seqindex_t" << std::endl;
         assert(false);
     }
     size_t seq_bytes_written = 0;
     size_t seq_names_bytes_written = 0;
-    while (in.good()) {
-        seqname_offset.push_back(seq_names_bytes_written);
-        seq_offset.push_back(seq_bytes_written);
-        line[0] = '>';
-        line = line.substr(0, line.find(" "));
-        seqnames << line << " ";
-        seq_names_bytes_written += line.size() + 1;
-        std::string seq;
-        // get the sequence
-        if (input_is_fasta) {
-            while (std::getline(in, line)) {
-                if (line[0] == '>') {
-                    // this is the header of the next sequence
-                    break;
-                } else {
-                    seq.append(line);
-                }
+    seqname_offset.push_back(seq_names_bytes_written);
+    seq_offset.push_back(seq_bytes_written);
+    if (input_is_gfa) {
+        while (in.good()) {
+            if (line[0] == 'S') {
+                std::vector<std::string> elems;
+                split_string(line, elems, "\t");
+                //std::cerr << "got line " << elems[0] << " " << elems[1] << " " << elems[2] << std::endl;
+                std::cerr << "got seq named " << elems[1] << std::endl;
+                seqnames << ">" << elems[1] << " ";
+                seq_names_bytes_written += elems[1].size() + 2;
+                seqout << elems[2];
+                seq_bytes_written += elems[2].size();
+                seqname_offset.push_back(seq_names_bytes_written);
+                seq_offset.push_back(seq_bytes_written);
             }
-        } else if (input_is_fastq) {
-            std::getline(in, seq); // sequence
-            std::getline(in, line); // delimiter
-            std::getline(in, line); // quality
-            std::getline(in, line);
+            std::getline(in, line); // try to get the next line
         }
-        seqout << seq;
-        // record where the sequence starts
-        seq_bytes_written += seq.size();
+    } else {
+        while (in.good()) {
+            line[0] = '>';
+            line = line.substr(0, line.find(" "));
+            seqnames << line << " ";
+            seq_names_bytes_written += line.size() + 1;
+            std::string seq;
+            // get the sequence
+            if (input_is_fasta) {
+                while (std::getline(in, line)) {
+                    if (line[0] == '>') {
+                        // this is the header of the next sequence
+                        break;
+                    } else {
+                        seq.append(line);
+                    }
+                }
+            } else if (input_is_fastq) {
+                std::getline(in, seq); // sequence
+                std::getline(in, line); // delimiter
+                std::getline(in, line); // quality
+                std::getline(in, line);
+            }
+            seqout << seq;
+            // record where the sequence starts
+            seq_bytes_written += seq.size();
+            seqname_offset.push_back(seq_names_bytes_written);
+            seq_offset.push_back(seq_bytes_written);
+        }
     }
     in.close();
-    // add the last value so we can get sequence length for the last sequence and name
-    seq_offset.push_back(seq_bytes_written);
-    seqname_offset.push_back(seq_names_bytes_written);
     seqnames.close();
     seqout.close();
     // save the count of sequences

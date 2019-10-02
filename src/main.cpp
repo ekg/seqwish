@@ -28,6 +28,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
     args::ValueFlag<std::string> base(parser, "BASE", "build graph using this basename", {'b', "base"});
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "write the graph in GFA to FILE", {'g', "gfa"});
+    args::ValueFlag<std::string> gfa_in(parser, "FILE", "take sequence and alignments (overlaps on L records) from GFA FILE", {'G', "gfa-in"});
     args::ValueFlag<std::string> sml_in(parser, "FILE", "use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "write the graph in VGP format with basename FILE", {'o', "vgp-out"});
     args::ValueFlag<uint64_t> num_threads(parser, "N", "use this many threads during parallel steps", {'t', "threads"});
@@ -73,7 +74,14 @@ int main(int argc, char** argv) {
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     seqindex_t seqidx;
-    seqidx.build_index(args::get(seqs), args::get(base));
+    if (!args::get(seqs).empty()) {
+        seqidx.build_index(args::get(seqs), args::get(base));
+    } else if (!args::get(gfa_in).empty()) {
+        seqidx.build_index(args::get(gfa_in), args::get(base));
+    } else {
+        std::cerr << "[seqwish] ERROR: seqwish requires an input sequence file in FASTA, FASTQ, or GFA format" << std::endl;
+        return 5;
+    }
     seqidx.save();
 
     // 2) parse the alignments into position pairs and index (A)
@@ -86,6 +94,8 @@ int main(int argc, char** argv) {
     } else if (!args::get(paf_alns).empty()) {
         unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
         if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
+    } else if (!args::get(gfa_in).empty()) {
+        unpack_gfa_overlaps(args::get(gfa_in), aln_iitree, seqidx, args::get(min_match_len));
     } else {
         assert(false);
     }

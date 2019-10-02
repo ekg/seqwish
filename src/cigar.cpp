@@ -34,4 +34,34 @@ std::string cigar_to_string(const cigar_t& cigar) {
     return ss.str();
 }
 
+size_t cigar_query_length(const cigar_t& cigar) {
+    size_t length = 0;
+    for (auto& elem : cigar) {
+        switch (elem.op) {
+        case 'M':
+        case 'I':
+            length += elem.len;
+            break;
+        default:
+            break;
+        }
+    }
+    return length;
+}
+
+size_t cigar_target_length(const cigar_t& cigar) {
+    size_t length = 0;
+    for (auto& elem : cigar) {
+        switch (elem.op) {
+        case 'M':
+        case 'D':
+            length += elem.len;
+            break;
+        default:
+            break;
+        }
+    }
+    return length;
+}
+
 }

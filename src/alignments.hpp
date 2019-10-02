@@ -11,6 +11,7 @@
 #include "seqindex.hpp"
 #include "gzstream.h"
 #include "pos.hpp"
+#include "cigar.hpp"
 
 namespace seqwish {
 
@@ -19,6 +20,11 @@ void unpack_paf_alignments(const std::string& paf_file,
                            mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                            seqindex_t& seqidx,
                            uint64_t min_match_len);
+
+void unpack_gfa_overlaps(const std::string& gfa_file,
+                         mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                         seqindex_t& seqidx,
+                         uint64_t min_match_len);
 
 void unpack_sxs_alignments(const std::string& sxs_file,
                            mmmulti::iitree<uint64_t, pos_t>& aln_iitree,

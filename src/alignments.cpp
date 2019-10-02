@@ -84,6 +84,98 @@ void unpack_paf_alignments(const std::string& paf_file,
     aln_iitree.index();
 }
 
+void unpack_gfa_overlaps(const std::string& gfa_file,
+                         mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                         seqindex_t& seqidx,
+                         uint64_t min_match_len) {
+    // go through the GFA file
+    igzstream gfa_in(gfa_file.c_str());
+    if (!gfa_in.good()) assert("GFA is not good!");
+    uint64_t lines = std::count(std::istreambuf_iterator<char>(gfa_in),
+                                std::istreambuf_iterator<char>(), '\n');
+    gfa_in.close();
+    gfa_in.open(gfa_file.c_str());
+#pragma omp parallel for schedule(dynamic)
+    for (size_t i = 0; i < lines; ++i) {
+        std::string line;
+#pragma omp critical (gfa_in)
+        std::getline(gfa_in, line);
+        if (line[0] == 'L') {
+            std::vector<std::string> elems;
+            split_string(line, elems, "\t");
+            std::cerr << "got line " << elems[0] << " " << elems[1] << " " << elems[2] << " " << elems[3] << " " << elems[4] << " " << elems[5] << std::endl;
+            size_t query_idx = seqidx.rank_of_seq_named(elems[1]);
+            size_t query_len = seqidx.nth_seq_length(query_idx);
+            bool q_rev = (elems[2] == "-");
+            size_t target_idx = seqidx.rank_of_seq_named(elems[3]);
+            size_t target_len = seqidx.nth_seq_length(target_idx);
+            bool t_rev = (elems[4] == "-");
+            cigar_t overlap_cigar = cigar_from_string(elems[5]);
+            size_t len_in_query = cigar_query_length(overlap_cigar);
+            size_t len_in_target = cigar_target_length(overlap_cigar);
+            size_t q_all_pos = 1 + (q_rev ? seqidx.pos_in_all_seqs(query_idx, len_in_query, false)
+                                    : seqidx.pos_in_all_seqs(query_idx, query_len - len_in_query - 1, false));
+            size_t t_all_pos = 1 + (!t_rev ? seqidx.pos_in_all_seqs(target_idx, len_in_target, false)
+                                    : seqidx.pos_in_all_seqs(target_idx, target_len - len_in_target - 1, false));
+            pos_t q_pos = make_pos_t(q_all_pos, q_rev);
+            pos_t t_pos = make_pos_t(t_all_pos, t_rev);
+            for (auto& c : overlap_cigar) {
+                switch (c.op) {
+                case 'M':
+                {
+                    pos_t q_pos_match_start = q_pos;
+                    pos_t t_pos_match_start = t_pos;
+                    uint64_t match_len = 0;
+                    auto add_match = [&](void) {
+                        if (match_len && match_len >= min_match_len) {
+                            if (is_rev(q_pos)) {
+                                aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
+                            } else {
+                                aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            }
+                        }
+                    };
+                    for (size_t i = 0; i < c.len; ++i) {
+                        if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
+                            && offset(q_pos) != offset(t_pos)) { // guard against self mappings
+                            if (match_len == 0) {
+                                q_pos_match_start = q_pos;
+                                t_pos_match_start = t_pos;
+                            }
+                            ++match_len;
+                            incr_pos(q_pos);
+                            incr_pos(t_pos);
+                        } else {
+                            add_match();
+                            incr_pos(q_pos);
+                            incr_pos(t_pos);
+                            match_len = 0;
+                            // break out the last match
+                        }
+                    }
+                    // handle any last match
+                    add_match();
+                }
+                break;
+                case 'I':
+                    //std::cerr << "ins " << c.len << std::endl;
+                    incr_pos(q_pos, c.len);
+                    break;
+                case 'D':
+                    //std::cerr << "del " << c.len << std::endl;
+                    incr_pos(t_pos, c.len);
+                    break;
+                default: break;
+                }
+            }
+            
+        }
+    }
+    aln_iitree.index();
+}
+
 void unpack_sxs_alignments(const std::string& sxs_file,
                            mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                            seqindex_t& seqidx,

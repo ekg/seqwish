@@ -15,6 +15,7 @@
 #include "pos.hpp"
 #include "dna.hpp"
 #include "threads.hpp"
+#include "split.hpp"
 
 namespace seqwish {
 
