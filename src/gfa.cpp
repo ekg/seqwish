@@ -5,8 +5,8 @@ namespace seqwish {
 void emit_gfa(std::ostream& out,
               size_t graph_length,
               const std::string& seq_v_file,
-              mmmulti::iitree<uint64_t, pos_t>& node_iitree,
-              mmmulti::iitree<uint64_t, pos_t>& path_iitree,
+              range_pos_iitii& node_iitree, // unused
+              range_pos_iitii& path_iitree,
               const sdsl::sd_vector<>& seq_id_cbv,
               const sdsl::sd_vector<>::rank_1_type& seq_id_cbv_rank,
               const sdsl::sd_vector<>::select_1_type& seq_id_cbv_select,
@@ -84,14 +84,13 @@ void emit_gfa(std::ostream& out,
         uint64_t seen_bp = 0;
         uint64_t accumulated_bp = 0;
         while (j < k) {
-            std::vector<size_t> ovlp;
-            path_iitree.overlap(j, j+1, ovlp);
+            std::vector<range_pos_t> ovlp = path_iitree.overlap(j, j+1);
             // each input base should only map one place in the graph
             assert(ovlp.size() == 1);
-            size_t idx = ovlp.front();
-            uint64_t ovlp_start_in_q = path_iitree.start(idx);
-            uint64_t ovlp_end_in_q = path_iitree.end(idx);
-            pos_t pos_start_in_s = path_iitree.data(idx);
+            auto& o = ovlp.front();
+            auto& ovlp_start_in_q = o.start;
+            auto& ovlp_end_in_q = o.end;
+            auto& pos_start_in_s = o.pos;
             bool match_is_rev = is_rev(pos_start_in_s);
             // iterate through the nodes in this range
             uint64_t length = ovlp_end_in_q - ovlp_start_in_q;

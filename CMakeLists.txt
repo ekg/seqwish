@@ -84,12 +84,33 @@ set(gzipreader_INCLUDE "${SOURCE_DIR}")
 # mmmultimap (memory mapped multimap)
 ExternalProject_Add(mmmultimap
   GIT_REPOSITORY "https://github.com/ekg/mmmultimap.git"
-  GIT_TAG "4247c106990c33f5ee16a795fed1d43b72545aaf"
+  GIT_TAG "88c734c36563048b0f3acc04dd8856f19e02b75f"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(mmmultimap SOURCE_DIR)
 set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
+
+# mmmultimap (memory mapped multimap)
+ExternalProject_Add(iitii
+  GIT_REPOSITORY "https://github.com/ekg/iitii.git"
+  GIT_TAG "fd9986f4f35629b737c4a36b71a9b58b5e7761b5"
+  BUILD_COMMAND ""
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND "")
+ExternalProject_Get_property(iitii SOURCE_DIR)
+set(iitii_INCLUDE "${SOURCE_DIR}/src")
+
+ExternalProject_Add(mmap_allocator
+  GIT_REPOSITORY "https://github.com/ekg/mmap_allocator.git"
+  GIT_TAG "ed61daf094de1c2e1adbe8306287ad52da5f0264"
+  BUILD_IN_SOURCE TRUE
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND "make"
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(mmap_allocator SOURCE_DIR)
+set(mmap_allocator_INCLUDE "${SOURCE_DIR}")
 
 # In-place Parallel Super Scalar Samplesort (IPS⁴o), header only
 ExternalProject_Add(ips4o
@@ -101,7 +122,7 @@ ExternalProject_Add(ips4o
 ExternalProject_Get_property(ips4o SOURCE_DIR)
 set(ips4o_INCLUDE "${SOURCE_DIR}")
 
-set(CMAKE_BUILD_TYPE Debug) 
+set(CMAKE_BUILD_TYPE Debug)
 
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish
@@ -121,12 +142,15 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/threads.cpp
   ${CMAKE_SOURCE_DIR}/src/exists.cpp
   ${CMAKE_SOURCE_DIR}/src/mmap.cpp
+  ${CMAKE_SOURCE_DIR}/src/iitii_types.cpp
   )
 add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
 add_dependencies(seqwish gzipreader)
 add_dependencies(seqwish mmmultimap)
+add_dependencies(seqwish iitii)
+add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
 target_include_directories(seqwish PUBLIC
   "${bsort_INCLUDE}"
@@ -135,12 +159,15 @@ target_include_directories(seqwish PUBLIC
   "${tayweeargs_INCLUDE}"
   "${gzipreader_INCLUDE}"
   "${ips4o_INCLUDE}"
-  "${mmmultimap_INCLUDE}")
+  "${mmmultimap_INCLUDE}"
+  "${iitii_INCLUDE}"
+  "${mmap_allocator_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
   "${bsort_LIB}/libbsort.a"
+  "${mmap_allocator_INCLUDE}/libmmap_allocator.a"
   "-latomic"
   z)
 if (BUILD_STATIC)
