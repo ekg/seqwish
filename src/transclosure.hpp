@@ -19,8 +19,8 @@ size_t compute_transitive_closures(
     seqindex_t& seqidx,
     range_pos_iitii& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
-    mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph to input
-    mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input to graph
+    range_pos_iitii::builder& node_iitree_builder,
+    range_pos_iitii::builder& path_iitree_builder,
     uint64_t repeat_max,
     uint64_t min_transclose_len);
 
