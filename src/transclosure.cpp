@@ -5,10 +5,10 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
+    range_pos_iitii& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
-    mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
-    mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
+    range_pos_iitii::builder& node_iitree_builder,
+    range_pos_iitii::builder& path_iitree_builder,
     uint64_t repeat_max,
     uint64_t min_transclose_len) {
     // open seq_v_file
@@ -74,8 +74,8 @@ size_t compute_transitive_closures(
                     incr_pos(match_pos_in_q, 1);
                     decr_pos(match_pos_in_s, match_length - 1);
                 }
-                node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
-                path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
+                node_iitree_builder.add({match_start_in_s, match_end_in_s, match_pos_in_q});
+                path_iitree_builder.add({match_start_in_q, match_end_in_q, match_pos_in_s});
                 it = range_buffer.erase(it);
             } else {
                 ++it;
@@ -120,14 +120,13 @@ size_t compute_transitive_closures(
             if (min_transclose_len && match_len < min_transclose_len) {
                 continue;
             }
-            std::vector<size_t> ovlp;
             uint64_t n = offset(j);
             //std::cerr << "offset j " << n << std::endl;
-            aln_iitree.overlap(n, n+1, ovlp);
+            std::vector<range_pos_t> ovlp = aln_iitree.overlap(n, n+1);
             for (auto& s : ovlp) {
-                uint64_t start = aln_iitree.start(s);
-                uint64_t end = aln_iitree.end(s);
-                pos_t pos = aln_iitree.data(s);
+                auto& start = s.start;
+                auto& end = s.end;
+                auto& pos = s.pos;
                 //std::cerr << " with overlap " << start << "-" << end << std::endl;
                 //std::cerr << "and position offset " << offset(pos) << (is_rev(pos)?"-":"+") << std::endl;
                 //std::cerr << "n " << n << " start " << start << std::endl;
@@ -150,9 +149,6 @@ size_t compute_transitive_closures(
     seq_v_out.close();
     flush_ranges(seq_bytes+2);
     assert(range_buffer.empty());
-    // build node_mm and path_mm indexes
-    node_iitree.index();
-    path_iitree.index();
     return seq_bytes;
 }
 
