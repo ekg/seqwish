@@ -17,6 +17,7 @@
 #include "pos.hpp"
 #include "threads.hpp"
 #include "exists.hpp"
+#include "iitii_types.hpp"
 
 using namespace seqwish;
 
@@ -34,6 +35,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "filter exact matches below this length", {'L', "min-match-len"});
     args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
+    args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
@@ -79,22 +81,27 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = args::get(base) + ".sqa";
     std::remove(aln_idx.c_str());
-    mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
+    //mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
+    range_pos_iitii::builder aln_iitree_builder(aln_idx);
     if (!args::get(sxs_alns).empty()) {
-        unpack_sxs_alignments(args::get(sxs_alns), aln_iitree, seqidx, args::get(min_match_len)); // constructs interval set of our matches
+        unpack_sxs_alignments(args::get(sxs_alns), aln_iitree_builder, seqidx, args::get(min_match_len)); // constructs interval set of our matches
         if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));
     } else if (!args::get(paf_alns).empty()) {
-        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
+        unpack_paf_alignments(args::get(paf_alns), aln_iitree_builder, seqidx, args::get(min_match_len));
         if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     } else {
         assert(false);
     }
+    uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
+    range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);
 
+    /*
     if (args::get(debug)) {
         for (auto& interval : aln_iitree) {
             std::cerr << "aln_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
         }
     }
+    */
 
     // 3) find the transitive closures via the alignments and construct the graph sequence S, and the N and P interval sets
     std::string seq_v_file = args::get(base) + ".sqs";
@@ -103,11 +110,15 @@ int main(int argc, char** argv) {
     std::remove(seq_v_file.c_str());
     std::remove(node_iitree_idx.c_str());
     std::remove(path_iitree_idx.c_str());
-    mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
-    mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
-    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
+    range_pos_iitii::builder node_iitree_builder(node_iitree_idx);
+    range_pos_iitii::builder path_iitree_builder(path_iitree_idx);
+    //mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
+    //mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
+    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree_builder, path_iitree_builder,
                                                       args::get(repeat_max), args::get(min_transclose_len));
-
+    range_pos_iitii node_iitree = node_iitree_builder.build(n_domains);
+    range_pos_iitii path_iitree = path_iitree_builder.build(n_domains);
+    /*
     if (args::get(debug)) {
         for (auto& interval : node_iitree) {
             std::cerr << "node_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
@@ -116,6 +127,7 @@ int main(int argc, char** argv) {
             std::cerr << "path_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
         }
     }
+    */
 
     // 4) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
     sdsl::bit_vector seq_id_bv(graph_length+1);
@@ -148,10 +160,7 @@ int main(int argc, char** argv) {
 
     if (!args::get(keep_temp_files)) {
         seqidx.remove_index_files();
-        std::remove(aln_idx.c_str());
         std::remove(seq_v_file.c_str());
-        std::remove(node_iitree_idx.c_str());
-        std::remove(path_iitree_idx.c_str());
         link_mmset.close_reader();
         std::remove(link_mm_idx.c_str());
     }
