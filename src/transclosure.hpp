@@ -9,6 +9,7 @@
 #include "sdsl/bit_vectors.hpp"
 #include "seqindex.hpp"
 #include "mmiitree.hpp"
+#include "iitii_types.hpp"
 #include "pos.hpp"
 
 namespace seqwish {
@@ -16,7 +17,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
+    range_pos_iitii& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph to input
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input to graph
