@@ -8,6 +8,7 @@
 #include "sxs.hpp"
 #include "mmmultimap.hpp"
 #include "mmiitree.hpp"
+#include "iitii_types.hpp"
 #include "seqindex.hpp"
 #include "gzstream.h"
 #include "pos.hpp"
@@ -16,12 +17,12 @@ namespace seqwish {
 
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                           range_pos_iitii::builder& aln_iitree_builder,
                            seqindex_t& seqidx,
                            uint64_t min_match_len);
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                           range_pos_iitii::builder& aln_iitree_builder,
                            seqindex_t& seqidx,
                            uint64_t min_match_len);
 

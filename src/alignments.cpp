@@ -3,7 +3,7 @@
 namespace seqwish {
 
 void unpack_paf_alignments(const std::string& paf_file,
-                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                           range_pos_iitii::builder& aln_iitree_builder,
                            seqindex_t& seqidx,
                            uint64_t min_match_len) {
     // go through the PAF file
@@ -39,11 +39,11 @@ void unpack_paf_alignments(const std::string& paf_file,
                 auto add_match = [&](void) {
                     if (match_len && match_len >= min_match_len) {
                         if (is_rev(q_pos)) {
-                            aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
+                            aln_iitree_builder.add({offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true)});
+                            aln_iitree_builder.add({offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true)});
                         } else {
-                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            aln_iitree_builder.add({offset(q_pos_match_start), offset(q_pos), t_pos_match_start});
+                            aln_iitree_builder.add({offset(t_pos_match_start), offset(t_pos), q_pos_match_start});
                         }
                     }
                 };
@@ -81,11 +81,11 @@ void unpack_paf_alignments(const std::string& paf_file,
             }
         }
     }
-    aln_iitree.index();
+    //aln_iitree.index();
 }
 
 void unpack_sxs_alignments(const std::string& sxs_file,
-                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                           range_pos_iitii::builder& aln_iitree_builder,
                            seqindex_t& seqidx,
                            uint64_t min_match_len) {
     // go through the PAF file
@@ -134,11 +134,11 @@ void unpack_sxs_alignments(const std::string& sxs_file,
                 auto add_match = [&](void) {
                     if (match_len && match_len >= min_match_len) {
                         if (is_rev(q_pos)) {
-                            aln_iitree.add(offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
+                            aln_iitree_builder.add({offset(q_pos)+1, offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true)});
+                            aln_iitree_builder.add({offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true)});
                         } else {
-                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            aln_iitree_builder.add({offset(q_pos_match_start), offset(q_pos), t_pos_match_start});
+                            aln_iitree_builder.add({offset(t_pos_match_start), offset(t_pos), q_pos_match_start});
                         }
                     }
                 };
@@ -176,7 +176,6 @@ void unpack_sxs_alignments(const std::string& sxs_file,
             }
         }
     }
-    aln_iitree.index();
 }
 
 /*

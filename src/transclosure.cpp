@@ -5,7 +5,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
+    range_pos_iitii& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
@@ -120,14 +120,13 @@ size_t compute_transitive_closures(
             if (min_transclose_len && match_len < min_transclose_len) {
                 continue;
             }
-            std::vector<size_t> ovlp;
             uint64_t n = offset(j);
             //std::cerr << "offset j " << n << std::endl;
-            aln_iitree.overlap(n, n+1, ovlp);
+            std::vector<range_pos_t> ovlp = aln_iitree.overlap(n, n+1);
             for (auto& s : ovlp) {
-                uint64_t start = aln_iitree.start(s);
-                uint64_t end = aln_iitree.end(s);
-                pos_t pos = aln_iitree.data(s);
+                auto& start = s.start;
+                auto& end = s.end;
+                pos_t pos = s.pos;
                 //std::cerr << " with overlap " << start << "-" << end << std::endl;
                 //std::cerr << "and position offset " << offset(pos) << (is_rev(pos)?"-":"+") << std::endl;
                 //std::cerr << "n " << n << " start " << start << std::endl;
