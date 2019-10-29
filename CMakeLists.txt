@@ -84,12 +84,22 @@ set(gzipreader_INCLUDE "${SOURCE_DIR}")
 # mmmultimap (memory mapped multimap)
 ExternalProject_Add(mmmultimap
   GIT_REPOSITORY "https://github.com/ekg/mmmultimap.git"
-  GIT_TAG "4247c106990c33f5ee16a795fed1d43b72545aaf"
+  GIT_TAG "88c734c36563048b0f3acc04dd8856f19e02b75f"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(mmmultimap SOURCE_DIR)
 set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
+
+# mmmultimap (memory mapped multimap)
+ExternalProject_Add(iitii
+  GIT_REPOSITORY "https://github.com/ekg/iitii.git"
+  GIT_TAG "759e7b36fcce8e4ed385a07d43efddab83821f9c"
+  BUILD_COMMAND ""
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND "")
+ExternalProject_Get_property(iitii SOURCE_DIR)
+set(iitii_INCLUDE "${SOURCE_DIR}/src")
 
 # In-place Parallel Super Scalar Samplesort (IPS⁴o), header only
 ExternalProject_Add(ips4o
@@ -101,7 +111,7 @@ ExternalProject_Add(ips4o
 ExternalProject_Get_property(ips4o SOURCE_DIR)
 set(ips4o_INCLUDE "${SOURCE_DIR}")
 
-set(CMAKE_BUILD_TYPE Debug) 
+set(CMAKE_BUILD_TYPE Release)
 
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish
@@ -127,6 +137,7 @@ add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
 add_dependencies(seqwish gzipreader)
 add_dependencies(seqwish mmmultimap)
+add_dependencies(seqwish iitii)
 add_dependencies(seqwish ips4o)
 target_include_directories(seqwish PUBLIC
   "${bsort_INCLUDE}"
@@ -135,7 +146,8 @@ target_include_directories(seqwish PUBLIC
   "${tayweeargs_INCLUDE}"
   "${gzipreader_INCLUDE}"
   "${ips4o_INCLUDE}"
-  "${mmmultimap_INCLUDE}")
+  "${mmmultimap_INCLUDE}"
+  "${iitii_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
