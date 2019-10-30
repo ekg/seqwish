@@ -94,7 +94,7 @@ set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
 # mmmultimap (memory mapped multimap)
 ExternalProject_Add(iitii
   GIT_REPOSITORY "https://github.com/ekg/iitii.git"
-  GIT_TAG "fd9986f4f35629b737c4a36b71a9b58b5e7761b5"
+  GIT_TAG "85209e07a3ee403fb6557387a7f897cd76be4406"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
