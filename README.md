@@ -86,13 +86,14 @@ Static builds are unlikely to be supported on OSX, and require appropriate stati
 ## usage
 
 `seqwish` supports minimap2's PAF format output. It requires the CIGAR string of the alignment to be provided in the `cg:z:` optional field.
-It uses temporary files during the construction, and it writes these with the prefix given by the `-b[base], --base=[base]` command line argument.
+It uses large temporary files during the construction.
+By default, these are prefixed with the output GFA file name, but this can be changed with the `-b[base], --base=[base]` command line argument.
 The input sequences can be in FASTA or FASTQ format, either in plain text or gzipped.
 It writes [GFA1](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md#the-gfa-format-specification) on its standard output.
 
 ```
 minimap2 x.fa.gz x.fa.gz -c -X >x.paf
-seqwish -s x.fa.gz -p x.paf -b x.graph -g x.gfa
+seqwish -s x.fa.gz -p x.paf -g x.gfa
 ```
 
 ## TODO
