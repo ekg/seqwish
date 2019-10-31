@@ -73,6 +73,11 @@ int main(int argc, char** argv) {
         return 4;
     }
 
+    std::string work_base = args::get(base);
+    if (work_base.empty()) {
+        work_base = args::get(gfa_out);
+    }
+
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     seqindex_t seqidx;
     seqidx.build_index(args::get(seqs), args::get(base));
