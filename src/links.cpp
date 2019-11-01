@@ -3,8 +3,8 @@
 namespace seqwish {
 
 void derive_links(seqindex_t& seqidx,
-                  range_pos_iitii& node_iitree,
-                  range_pos_iitii& path_iitree,
+                  mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                  mmmulti::iitree<uint64_t, pos_t>& path_iitree,
                   const sdsl::sd_vector<>& seq_id_cbv,
                   const sdsl::sd_vector<>::rank_1_type& seq_id_cbv_rank,
                   const sdsl::sd_vector<>::select_1_type& seq_id_cbv_select,
@@ -26,12 +26,13 @@ void derive_links(seqindex_t& seqidx,
         //std::cerr << "links for node " << id << " start " << node_start_in_s << " end " << node_end_in_s << std::endl;
         // find the things on both sides of our node by looking in the node_iitree, finding what bits of the paths (in Q)
         // are there, and seeing what's on either side of them to decide what links we need
-        std::vector<range_pos_t> node_ovlp = node_iitree.overlap(node_start_in_s, node_end_in_s);
-        for (auto& ovlp : node_ovlp) {
-            auto& ovlp_start_in_s = ovlp.start;
-            auto& ovlp_end_in_s = ovlp.end;
+        std::vector<size_t> node_ovlp;
+        node_iitree.overlap(node_start_in_s, node_end_in_s, node_ovlp);
+        for (auto& idx : node_ovlp) {
+            uint64_t ovlp_start_in_s = node_iitree.start(idx);
+            uint64_t ovlp_end_in_s = node_iitree.end(idx);
             uint64_t ovlp_length = ovlp_end_in_s - ovlp_start_in_s;
-            auto& pos_start_in_q = ovlp.pos;
+            pos_t pos_start_in_q = node_iitree.data(idx);
             pos_t pos_end_in_q = pos_start_in_q;
             incr_pos(pos_end_in_q, ovlp_length - (ovlp_end_in_s - node_end_in_s) - 1);
             incr_pos(pos_start_in_q, node_start_in_s - ovlp_start_in_s);
@@ -49,18 +50,19 @@ void derive_links(seqindex_t& seqidx,
             uint64_t seq_end = seq_start + seqidx.nth_seq_length(seq_id) - 1;
             //std::cerr << "seq boundaries " << seq_start << "-" << seq_end << std::endl;
             bool curr_step_is_rev = is_rev(pos_start_in_q);
+            std::vector<size_t> path_before_ovlp, path_after_ovlp;
             uint64_t start_in_q = (curr_step_is_rev ? offset(pos_end_in_q) : offset(pos_start_in_q));
             uint64_t end_in_q = (curr_step_is_rev ? offset(pos_start_in_q) : offset(pos_end_in_q)) + 1;
             //std::cerr << "start_in_q " << start_in_q << " end_in_q " << end_in_q << std::endl;
             // and only consider cases where we'd be within the boundaries
             if (start_in_q-1 >= seq_start) {
-                std::vector<range_pos_t> path_before_ovlp = path_iitree.overlap(start_in_q-1, start_in_q);
+                path_iitree.overlap(start_in_q-1, start_in_q, path_before_ovlp);
                 // map these back into positions and orientations in S
-                for (auto& ovlp : path_before_ovlp) {
+                for (auto& idx : path_before_ovlp) {
                     // this is the larger range we're in
-                    auto& ovlp_start_in_q = ovlp.start;
-                    auto& ovlp_end_in_q = ovlp.end;
-                    auto& pos_start_in_s = ovlp.pos;
+                    uint64_t ovlp_start_in_q = path_iitree.start(idx);
+                    uint64_t ovlp_end_in_q = path_iitree.end(idx);
+                    pos_t pos_start_in_s = path_iitree.data(idx);
                     pos_t pos_end_in_s = pos_start_in_s;
                     if (ovlp_end_in_q > start_in_q) {
                         //std::cerr << "contained in previous range on q" << std::endl;
@@ -86,11 +88,11 @@ void derive_links(seqindex_t& seqidx,
                 }
             }
             if (end_in_q+1 <= seq_end) {
-                std::vector<range_pos_t> path_after_ovlp = path_iitree.overlap(end_in_q, end_in_q+1);
-                for (auto& ovlp : path_after_ovlp) {
-                    auto& ovlp_start_in_q = ovlp.start;
-                    auto& ovlp_end_in_q = ovlp.end;
-                    auto& pos_start_in_s = ovlp.pos;
+                path_iitree.overlap(end_in_q, end_in_q+1, path_after_ovlp);
+                for (auto& idx : path_after_ovlp) {
+                    uint64_t ovlp_start_in_q = path_iitree.start(idx);
+                    uint64_t ovlp_end_in_q = path_iitree.end(idx);
+                    pos_t pos_start_in_s = path_iitree.data(idx);
                     if (ovlp_start_in_q < end_in_q) {
                         //std::cerr << "contained in previous range on q" << std::endl;
                         incr_pos(pos_start_in_s, end_in_q - ovlp_start_in_q);
