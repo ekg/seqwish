@@ -115,15 +115,11 @@ int main(int argc, char** argv) {
     std::remove(seq_v_file.c_str());
     std::remove(node_iitree_idx.c_str());
     std::remove(path_iitree_idx.c_str());
-    range_pos_iitii::builder node_iitree_builder(node_iitree_idx);
-    range_pos_iitii::builder path_iitree_builder(path_iitree_idx);
-    //mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
-    //mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
-    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree_builder, path_iitree_builder,
+    mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
+    mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
+    size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max), args::get(min_transclose_len));
-    range_pos_iitii node_iitree = node_iitree_builder.build(n_domains);
-    range_pos_iitii path_iitree = path_iitree_builder.build(n_domains);
-    /*
+
     if (args::get(debug)) {
         for (auto& interval : node_iitree) {
             std::cerr << "node_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
@@ -132,7 +128,6 @@ int main(int argc, char** argv) {
             std::cerr << "path_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
         }
     }
-    */
 
     // 4) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
     sdsl::bit_vector seq_id_bv(graph_length+1);
@@ -165,7 +160,10 @@ int main(int argc, char** argv) {
 
     if (!args::get(keep_temp_files)) {
         seqidx.remove_index_files();
+        //std::remove(aln_idx.c_str());
         std::remove(seq_v_file.c_str());
+        std::remove(node_iitree_idx.c_str());
+        std::remove(path_iitree_idx.c_str());
         link_mmset.close_reader();
         std::remove(link_mm_idx.c_str());
     }

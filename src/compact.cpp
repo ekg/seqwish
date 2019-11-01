@@ -6,8 +6,8 @@ namespace seqwish {
 void compact_nodes(
     seqindex_t& seqidx,
     size_t graph_size,
-    range_pos_iitii& node_iitree,
-    range_pos_iitii& path_iitree,
+    mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+    mmmulti::iitree<uint64_t, pos_t>& path_iitree,
     sdsl::bit_vector& seq_id_bv) {
     // for each pair of positions in the graph base seq
     // do we have any links from the first that don't go to the second?
@@ -21,13 +21,14 @@ void compact_nodes(
         size_t k = j + seq_len;
         //std::cerr << "compact " << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         while (j < k) {
-            std::vector<range_pos_t> ovlp = path_iitree.overlap(j, j+1);
+            std::vector<size_t> ovlp;
+            path_iitree.overlap(j, j+1, ovlp);
             // each input base should only map one place in the graph
             assert(ovlp.size() == 1);
-            auto& o = ovlp.front();
-            auto& ovlp_start_in_q = o.start;
-            auto& ovlp_end_in_q = o.end;
-            auto& pos_start_in_s = o.pos;
+            size_t idx = ovlp.front();
+            uint64_t ovlp_start_in_q = path_iitree.start(idx);
+            uint64_t ovlp_end_in_q = path_iitree.end(idx);
+            pos_t pos_start_in_s = path_iitree.data(idx);
             bool match_is_rev = is_rev(pos_start_in_s);
             // mark a node start and end
             pos_t pos_end_in_s = pos_start_in_s;
