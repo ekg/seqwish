@@ -80,11 +80,11 @@ int main(int argc, char** argv) {
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     seqindex_t seqidx;
-    seqidx.build_index(args::get(seqs), args::get(base));
+    seqidx.build_index(args::get(seqs), work_base);
     seqidx.save();
 
     // 2) parse the alignments into position pairs and index (A)
-    std::string aln_idx = args::get(base) + ".sqa";
+    std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
     //mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
     range_pos_iitii::builder aln_iitree_builder(aln_idx);
@@ -109,9 +109,9 @@ int main(int argc, char** argv) {
     */
 
     // 3) find the transitive closures via the alignments and construct the graph sequence S, and the N and P interval sets
-    std::string seq_v_file = args::get(base) + ".sqs";
-    std::string node_iitree_idx = args::get(base) + ".sqn";
-    std::string path_iitree_idx = args::get(base) + ".sqp";
+    std::string seq_v_file = work_base + ".sqs";
+    std::string node_iitree_idx = work_base + ".sqn";
+    std::string path_iitree_idx = work_base + ".sqp";
     std::remove(seq_v_file.c_str());
     std::remove(node_iitree_idx.c_str());
     std::remove(path_iitree_idx.c_str());
@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
     sdsl::util::assign(seq_id_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_id_cbv));
 
     // 5) determine links between nodes
-    std::string link_mm_idx = args::get(base) + ".sql";
+    std::string link_mm_idx = work_base + ".sql";
     std::remove(link_mm_idx.c_str());
     mmmulti::set<std::pair<pos_t, pos_t>> link_mmset(link_mm_idx);
     derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset);
