@@ -53,16 +53,6 @@ message("${sdsl-lite_INCLUDE}")
 set(sdsl-lite_LIB "${INSTALL_DIR}/src/sdsl-lite-build/lib")
 set(sdsl-lite-divsufsort_LIB "${INSTALL_DIR}/src/sdsl-lite-build/external/libdivsufsort/lib")
 
-# bsort (header-only, so here we just check if we can build it)
-ExternalProject_Add(bsort
-  GIT_REPOSITORY "https://github.com/ekg/bsort.git"
-  GIT_TAG "c3ab0d3308424030e0a000645a26d2c10a59a124"
-  UPDATE_COMMAND ""
-  INSTALL_COMMAND "")
-ExternalProject_Get_property(bsort SOURCE_DIR)
-set(bsort_INCLUDE "${SOURCE_DIR}/src")
-set(bsort_LIB "${SOURCE_DIR}/lib")
-
 # taywee's C++ args library, header only
 ExternalProject_Add(tayweeargs
   GIT_REPOSITORY "https://github.com/Taywee/args.git"
@@ -144,7 +134,6 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/mmap.cpp
   ${CMAKE_SOURCE_DIR}/src/iitii_types.cpp
   )
-add_dependencies(seqwish bsort)
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
 add_dependencies(seqwish gzipreader)
@@ -153,7 +142,6 @@ add_dependencies(seqwish iitii)
 add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
 target_include_directories(seqwish PUBLIC
-  "${bsort_INCLUDE}"
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
   "${tayweeargs_INCLUDE}"
@@ -166,7 +154,6 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
-  "${bsort_LIB}/libbsort.a"
   "${mmap_allocator_INCLUDE}/libmmap_allocator.a"
   "-latomic"
   z)
