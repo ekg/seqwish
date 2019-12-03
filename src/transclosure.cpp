@@ -1,5 +1,6 @@
 #include "transclosure.hpp"
 #include "spinlock.hpp"
+#include "dset64-gccAtomic.hpp"
 
 namespace seqwish {
 
