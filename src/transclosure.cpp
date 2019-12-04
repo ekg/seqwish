@@ -11,7 +11,8 @@ size_t compute_transitive_closures(
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
     uint64_t repeat_max,
-    uint64_t min_transclose_len) {
+    uint64_t min_transclose_len,
+    uint64_t transclose_batch_size) { // size of a batch to collect for lock-free transitive closure
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
@@ -87,64 +88,63 @@ size_t compute_transitive_closures(
     // accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
     // we flush when we stop extending
     // we determine when we stop extending when we have stepped a bp and broke our range extension
+    //auto range_pos_hash = [](const range_pos_t& rp) { return std::hash<uint64_t>(rp.start) };
     uint64_t last_seq_id = seqidx.seq_id_at(1);
-    for (uint64_t i = 1; i <= input_seq_length; ++i) {
-        if (q_seen_bv[i-1]) continue;
-        // write base
-        char base = seqidx.at(i-1);
-        seq_v_out << seqidx.at(i-1);
-        size_t seq_v_length = seq_v_out.tellp();
-        //uint64_t flushed = range_buffer.size();
-        uint64_t curr_seq_id = seqidx.seq_id_at(i);
-        if (curr_seq_id != last_seq_id) {
-            flush_ranges(seq_v_length+1); // hack to force flush at sequence change
-            last_seq_id = curr_seq_id;
-        } else {
-            flush_ranges(seq_v_length);
-        }
-        //flushed -= range_buffer.size();
-        //std::cerr << "seq " << seq_v_length << " " << base << " buf size " << range_buffer.size() << " flushed " << flushed << std::endl;
-        // mark current 
-        q_seen_bv[i-1] = 1;
-        // emit current
+    for (uint64_t i = 1; i <= input_seq_length; i+=transclose_batch_size) {
+        // collect ranges overlapping
+        std::vector<range_pos_t> ovlp;
+        // complete our collection (todo: in parallel)
+        std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen;
         std::set<std::pair<pos_t, uint64_t>> todo;
-        std::unordered_map<uint64_t, uint64_t> seen_seqs;
-        todo.insert(std::make_pair(make_pos_t(i, false), min_transclose_len));
-        seen_seqs[seqidx.seq_id_at(offset(i))]++;
+        for (auto& s : aln_iitree.overlap(i, i + transclose_batch_size)) {
+            seen.insert({s.start, s.end, s.pos});
+            if (i > s.start) {
+                uint64_t trim_from_start = i - s.start;
+                s.start += trim_from_start;
+                incr_pos(s.pos, trim_from_start);
+            }
+            if (s.end > (i + transclose_batch_size)) {
+                uint64_t trim_from_end = s.end - (i + transclose_batch_size);
+                s.end -= trim_from_end;
+            }
+            ovlp.push_back(s);
+            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
+        }
         while (!todo.empty()) {
             pos_t j = todo.begin()->first;
             uint64_t match_len = todo.begin()->second;
             todo.erase(todo.begin());
-            //assert(q_seen_bv[offset(j)-1]==1);
-            extend_range(seq_v_length, j);
-            // optionally require a minimum length of match to transclose through
-            if (min_transclose_len && match_len < min_transclose_len) {
-                continue;
-            }
             uint64_t n = offset(j);
-            //std::cerr << "offset j " << n << std::endl;
-            std::vector<range_pos_t> ovlp = aln_iitree.overlap(n, n+1);
-            for (auto& s : ovlp) {
-                auto& start = s.start;
-                auto& end = s.end;
-                pos_t pos = s.pos;
-                //std::cerr << " with overlap " << start << "-" << end << std::endl;
-                //std::cerr << "and position offset " << offset(pos) << (is_rev(pos)?"-":"+") << std::endl;
-                //std::cerr << "n " << n << " start " << start << std::endl;
-                incr_pos(pos, n - start);
-                uint64_t k = offset(pos);
-                if (k && !q_seen_bv[k-1]) {
-                    uint64_t seq_id = seqidx.seq_id_at(offset(pos));
-                    auto& c = seen_seqs[seq_id];
-                    if (!repeat_max || c < repeat_max) {
-                        ++c;
-                        q_seen_bv[k-1] = 1;
-                        todo.insert(std::make_pair(make_pos_t(offset(pos),is_rev(pos)^is_rev(j)), end - start));
+            //std::vector<range_pos_t> ovlp;
+            for (auto& s : aln_iitree.overlap(n, n+match_len)) {
+                if (!seen.count({s.start, s.end, s.pos})) {
+                    seen.insert({s.start, s.end, s.pos});
+                    if (n > s.start) {
+                        uint64_t trim_from_start = n - s.start;
+                        s.start += trim_from_start;
+                        incr_pos(s.pos, trim_from_start);
                     }
+                    if (s.end > (n + match_len)) {
+                        uint64_t trim_from_end = s.end - (n + match_len);
+                        s.end -= trim_from_end;
+                    }
+                    ovlp.push_back(s);
+                    todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
                 }
             }
         }
+        // print our overlaps
+        std::cerr << "transc" << "\t" << i << "-" << i + transclose_batch_size << std::endl;
+        for (auto& s : ovlp) {
+            std::cerr << "ovlp" << "\t" << s.start << "-" << s.end << "\t" << offset(s.pos) << (is_rev(s.pos)?"-":"+") << std::endl;
+        }
+        // run the transclosure for this region
+        // convert the ranges into integers, insert into our disjoint set union find structure
+        // in parallel, run over each match, unioning the values in the disjoint set
+        // sort?
+        // emit using our range compressor structure
     }
+    exit(1);
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
