@@ -112,6 +112,17 @@ ExternalProject_Add(ips4o
 ExternalProject_Get_property(ips4o SOURCE_DIR)
 set(ips4o_INCLUDE "${SOURCE_DIR}")
 
+# BBHash perfect hasher, alltypes branch
+ExternalProject_Add(bbhash
+  GIT_REPOSITORY "https://github.com/vgteam/BBHash.git"
+  GIT_TAG "36e4fe3eaeef762c831c49cdc01f1a3a2c7a97a4"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(bbhash SOURCE_DIR)
+set(bbhash_INCLUDE "${SOURCE_DIR}")
+
 set(CMAKE_BUILD_TYPE Debug)
 
 # set up our target executable and specify its dependencies and includes
@@ -141,6 +152,7 @@ add_dependencies(seqwish mmmultimap)
 add_dependencies(seqwish iitii)
 add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
+add_dependencies(seqwish bbhash)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -149,7 +161,8 @@ target_include_directories(seqwish PUBLIC
   "${ips4o_INCLUDE}"
   "${mmmultimap_INCLUDE}"
   "${iitii_INCLUDE}"
-  "${mmap_allocator_INCLUDE}")
+  "${mmap_allocator_INCLUDE}"
+  "${bbhash_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
