@@ -1,6 +1,7 @@
 #include "transclosure.hpp"
 #include "spinlock.hpp"
 #include "dset64-gccAtomic.hpp"
+#include "BooPHF.h"
 
 namespace seqwish {
 
@@ -70,7 +71,7 @@ size_t compute_transitive_closures(
                 pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev_match);
                 pos_t match_pos_in_q = make_pos_t(match_start_in_q, is_rev_match);
                 if (is_rev_match) {
-                    // go form transclosure model to the same pattern we have in the alignment iitree
+                    // go from transclosure model to the same pattern we have in the alignment iitree
                     // 1-based half open intervals, positions map to start and orientation in S and Q
                     std::swap(match_start_in_q, match_end_in_q);
                     incr_pos(match_pos_in_q, 1);
@@ -84,6 +85,30 @@ size_t compute_transitive_closures(
             }
         }
     };
+    auto for_each_fresh_range = [&q_seen_bv](const range_pos_t& range,
+                                             const std::function<void(range_pos_t)>& lambda) {
+        // walk range, breaking where we've seen it, emiting new ranges
+        uint64_t p = range.start;
+        while (p < range.end) {
+            // if we haven't seen p, start making a range
+            if (q_seen_bv[p-1]) {
+                ++p;
+            } else {
+                // otherwise, skip along
+                uint64_t q = p;
+                while (p < range.end && !q_seen_bv[p-1]) ++p;
+                // recalculate the pos for our range
+                pos_t t = range.pos;
+                if (is_rev(t)) {
+                    incr_pos(t, range.end - p);
+                } else {
+                    incr_pos(t, q - range.start);
+                }
+                lambda({q, p, t});
+            }
+        }
+    };
+    
     // range compressed model
     // accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
     // we flush when we stop extending
@@ -92,57 +117,149 @@ size_t compute_transitive_closures(
     uint64_t last_seq_id = seqidx.seq_id_at(1);
     for (uint64_t i = 1; i <= input_seq_length; i+=transclose_batch_size) {
         // collect ranges overlapping
-        std::vector<range_pos_t> ovlp;
+        std::vector<std::pair<range_pos_t, bool>> ovlp;
         // complete our collection (todo: in parallel)
         std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen;
         std::set<std::pair<pos_t, uint64_t>> todo;
-        for (auto& s : aln_iitree.overlap(i, i + transclose_batch_size)) {
-            seen.insert({s.start, s.end, s.pos});
-            if (i > s.start) {
-                uint64_t trim_from_start = i - s.start;
-                s.start += trim_from_start;
-                incr_pos(s.pos, trim_from_start);
-            }
-            if (s.end > (i + transclose_batch_size)) {
-                uint64_t trim_from_end = s.end - (i + transclose_batch_size);
-                s.end -= trim_from_end;
-            }
-            ovlp.push_back(s);
-            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
-        }
+        uint64_t chunk_start = i;
+        uint64_t chunk_end = i + transclose_batch_size;
+        for_each_fresh_range({chunk_start, chunk_end, 0}, [&](range_pos_t b) {
+                for (auto& r : aln_iitree.overlap(b.start, b.end)) {
+                    // XXX TODO break into ranges where we haven't already closed
+                    for_each_fresh_range(r, [&](range_pos_t s) {
+                            seen.insert({s.start, s.end, s.pos});
+                            if (chunk_start > s.start) {
+                                uint64_t trim_from_start = chunk_start - s.start;
+                                s.start += trim_from_start;
+                                incr_pos(s.pos, trim_from_start);
+                            }
+                            if (s.end > chunk_end) {
+                                uint64_t trim_from_end = s.end - chunk_end;
+                                s.end -= trim_from_end;
+                            }
+                            ovlp.push_back(std::make_pair(s, false));
+                            todo.insert(std::make_pair(s.pos, s.end - s.start));
+                        });
+                }
+            });
         while (!todo.empty()) {
             pos_t j = todo.begin()->first;
             uint64_t match_len = todo.begin()->second;
             todo.erase(todo.begin());
-            uint64_t n = offset(j);
-            //std::vector<range_pos_t> ovlp;
-            for (auto& s : aln_iitree.overlap(n, n+match_len)) {
-                if (!seen.count({s.start, s.end, s.pos})) {
-                    seen.insert({s.start, s.end, s.pos});
-                    if (n > s.start) {
-                        uint64_t trim_from_start = n - s.start;
-                        s.start += trim_from_start;
-                        incr_pos(s.pos, trim_from_start);
-                    }
-                    if (s.end > (n + match_len)) {
-                        uint64_t trim_from_end = s.end - (n + match_len);
-                        s.end -= trim_from_end;
-                    }
-                    ovlp.push_back(s);
-                    todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
-                }
+            // get the n and n+match_len on the forward strand
+            uint64_t n = !is_rev(j) ? offset(j) : offset(j) - match_len;
+            uint64_t range_start = n;
+            uint64_t range_end = n + match_len;
+            for (auto& r : aln_iitree.overlap(n, n+match_len)) {
+                for_each_fresh_range(r, [&](range_pos_t s) {
+                        // XXX TODO break into ranges where we haven't already closed
+                        if (!seen.count({s.start, s.end, s.pos})) {
+                            seen.insert({s.start, s.end, s.pos});
+                            if (n > s.start) {
+                                uint64_t trim_from_start = n - s.start;
+                                s.start += trim_from_start;
+                                incr_pos(s.pos, trim_from_start);
+                            }
+                            if (s.end > (n + match_len)) {
+                                uint64_t trim_from_end = s.end - (n + match_len);
+                                s.end -= trim_from_end;
+                            }
+                            // record the adjusted range and compute our flip relative to the tree of matches we're extending
+                            ovlp.push_back(std::make_pair(s, is_rev(j)^is_rev(s.pos)));
+                            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(j)^is_rev(s.pos)), s.end - s.start));
+                        }
+                    });
             }
         }
         // print our overlaps
         std::cerr << "transc" << "\t" << i << "-" << i + transclose_batch_size << std::endl;
         for (auto& s : ovlp) {
-            std::cerr << "ovlp" << "\t" << s.start << "-" << s.end << "\t" << offset(s.pos) << (is_rev(s.pos)?"-":"+") << std::endl;
+            std::cerr << "ovlp" << "\t" << s.first.start << "-" << s.first.end << "\t" << offset(s.first.pos) << (is_rev(s.first.pos)?"-":"+") << "\t" << (s.second?"-":"+") << std::endl;
         }
-        // run the transclosure for this region
-        // convert the ranges into integers, insert into our disjoint set union find structure
-        // in parallel, run over each match, unioning the values in the disjoint set
-        // sort?
-        // emit using our range compressor structure
+        // run the transclosure for this region using lock-free union find
+        
+        // convert the ranges into positions in the input sequence space
+        std::vector<pos_t> q_subset;
+        for (auto& s : ovlp) {
+            auto& r = s.first;
+            pos_t p = r.pos;
+            //bool flip = s.second;
+            for (uint64_t j = r.start; j != r.end; ++j) {
+                // XXX TODO skip if we've already seen it
+                q_subset.push_back(make_pos_t(j, false));
+                q_subset.push_back(make_pos_t(j, true));
+                q_subset.push_back(p);
+                q_subset.push_back(rev_pos_t(p));
+                incr_pos(p);
+            }
+        }
+        std::sort(q_subset.begin(), q_subset.end());
+        q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
+        uint nthreads = get_thread_count();
+        double gammaFactor = 2.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
+                                  // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
+        // how to query: bphf.lookup(key) maps ids into [0..N)
+        // make a dense mapping
+        auto bphf = boomphf::mphf<pos_t, pos_t_hasher>(q_subset.size(),q_subset,nthreads,gammaFactor,false,false);
+        // disjoint set structure
+        std::vector<DisjointSets::Aint> q_sets_data(q_subset.size());
+        // this initializes everything
+        auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
+#pragma omp parallel for
+        for (uint64_t x = 0; x < q_subset.size(); ++x) {
+            uint64_t j = offset(q_subset.at(x));
+            // unite the forward and reverse strands for the given base
+            disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
+        }
+        // join our strands
+#pragma omp parallel for
+        for (uint64_t k = 0; k < ovlp.size(); ++k) {
+            auto& s = ovlp.at(k);
+            auto& r = s.first;
+            pos_t p = r.pos;
+            //bool flip = s.second;
+            for (uint64_t j = r.start; j != r.end; ++j) {
+                // XXX todo skip if we've already closed this base
+                // unite both sides of the overlap
+                disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(p));
+                incr_pos(p);
+            }
+        }
+        // now read out our transclosures
+        std::vector<std::pair<uint64_t, pos_t>> dsets;
+        for (uint64_t x = 0; x < q_subset.size(); ++x) {
+            //uint64_t j = offset(q_subset.at(x));
+            auto& p = q_subset.at(x);
+            //disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
+            std::cerr << "dset\t" << pos_to_string(p) << "\t"
+                      << disjoint_sets.find(bphf.lookup(p)) << std::endl;
+            dsets.push_back(std::make_pair(disjoint_sets.find(bphf.lookup(p)), p));
+        }
+        std::sort(dsets.begin(), dsets.end());
+        for (auto& d : dsets) {
+            // run over the
+            std::cerr << "sdset\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
+        }
+
+        // XXX TODO set our seen bv for all the things we're closing
+
+//#pragma omp parallel for
+        
+        
+        // we'll use this for random access to the probably discontiguous membership array
+        
+
+        // (todo: use this to initially verify that we close everything)
+        
+        // insert these integers into our disjoint set union find structure
+        // (hopefully we can avoid recording the mappping)
+        
+        // in parallel, run over each ovlp, unioning the values in the disjoint set
+        
+        // sort by minimum position in each union of matched query positions
+        
+        // iterate over the result with our range compressor
+        // writing out the bases in the same order that we would have with the deterministic transclosure
     }
     exit(1);
     // close the graph sequence vector
