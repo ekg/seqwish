@@ -85,26 +85,29 @@ size_t compute_transitive_closures(
             }
         }
     };
+    // break the big range into its component ranges that we haven't already closed
     auto for_each_fresh_range = [&q_seen_bv](const range_pos_t& range,
                                              const std::function<void(range_pos_t)>& lambda) {
         // walk range, breaking where we've seen it, emiting new ranges
         uint64_t p = range.start;
+        pos_t t = range.pos;
+        std::cerr << "trying " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
         while (p < range.end) {
             // if we haven't seen p, start making a range
+            std::cerr << "looking at " << p << std::endl;
             if (q_seen_bv[p-1]) {
                 ++p;
+                incr_pos(t);
             } else {
                 // otherwise, skip along
                 uint64_t q = p;
-                while (p < range.end && !q_seen_bv[p-1]) ++p;
-                // recalculate the pos for our range
-                pos_t t = range.pos;
-                if (is_rev(t)) {
-                    incr_pos(t, range.end - p);
-                } else {
-                    incr_pos(t, q - range.start);
+                pos_t v = t;
+                while (p < range.end && !q_seen_bv[p-1]) {
+                    ++p;
+                    incr_pos(t);
                 }
-                lambda({q, p, t});
+                std::cerr << "lambda\t" << q << " " << p << " " << pos_to_string(v) << std::endl;
+                lambda({q, p, v});
             }
         }
     };
@@ -125,7 +128,6 @@ size_t compute_transitive_closures(
         uint64_t chunk_end = i + transclose_batch_size;
         for_each_fresh_range({chunk_start, chunk_end, 0}, [&](range_pos_t b) {
                 for (auto& r : aln_iitree.overlap(b.start, b.end)) {
-                    // XXX TODO break into ranges where we haven't already closed
                     for_each_fresh_range(r, [&](range_pos_t s) {
                             seen.insert({s.start, s.end, s.pos});
                             if (chunk_start > s.start) {
@@ -152,7 +154,6 @@ size_t compute_transitive_closures(
             uint64_t range_end = n + match_len;
             for (auto& r : aln_iitree.overlap(n, n+match_len)) {
                 for_each_fresh_range(r, [&](range_pos_t s) {
-                        // XXX TODO break into ranges where we haven't already closed
                         if (!seen.count({s.start, s.end, s.pos})) {
                             seen.insert({s.start, s.end, s.pos});
                             if (n > s.start) {
@@ -185,14 +186,16 @@ size_t compute_transitive_closures(
             pos_t p = r.pos;
             //bool flip = s.second;
             for (uint64_t j = r.start; j != r.end; ++j) {
-                // XXX TODO skip if we've already seen it
+                q_seen_bv[j-1] = 1; // mark that we've seen it, for later
                 q_subset.push_back(make_pos_t(j, false));
                 q_subset.push_back(make_pos_t(j, true));
+                q_seen_bv[offset(p)-1] = 1; // mark that we've seen the other side of the match
                 q_subset.push_back(p);
                 q_subset.push_back(rev_pos_t(p));
                 incr_pos(p);
             }
         }
+        std::cerr << "q_seen_bv\t" << q_seen_bv << std::endl;
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
         uint nthreads = get_thread_count();
