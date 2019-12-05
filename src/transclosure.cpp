@@ -151,7 +151,7 @@ size_t compute_transitive_closures(
         std::cerr << "closing\t" << i << std::endl;
         while (i <= input_seq_length && q_seen_bv[i-1]) ++i;
         std::cerr << "scanned_to\t" << i << std::endl;
-        if (i > input_seq_length) break; // done
+        if (i > input_seq_length) break; // we're done!
         // collect ranges overlapping
         std::vector<std::pair<range_pos_t, bool>> ovlp;
         // complete our collection (todo: in parallel)
