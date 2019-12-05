@@ -101,13 +101,11 @@ int main(int argc, char** argv) {
     uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
     range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);
 
-    /*
     if (args::get(debug)) {
-        for (auto& interval : aln_iitree) {
-            std::cerr << "aln_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
+        for (auto& interval : aln_iitree.overlap(1,seqidx.seq_length())) {
+            std::cerr << "aln_iitree " << interval.start << "-" << interval.end << " " << pos_to_string(interval.pos) << std::endl;
         }
     }
-    */
 
     // 3) find the transitive closures via the alignments and construct the graph sequence S, and the N and P interval sets
     std::string seq_v_file = work_base + ".sqs";
