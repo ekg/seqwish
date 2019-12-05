@@ -124,9 +124,16 @@ size_t compute_transitive_closures(
         // complete our collection (todo: in parallel)
         std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen;
         std::set<std::pair<pos_t, uint64_t>> todo;
+        std::vector<pos_t> q_subset;
         uint64_t chunk_start = i;
         uint64_t chunk_end = i + transclose_batch_size;
         for_each_fresh_range({chunk_start, chunk_end, 0}, [&](range_pos_t b) {
+                // consider also ranges that have no matches
+                // we need to close these
+                for (uint64_t j = b.start; j != b.end; ++j) {
+                    q_subset.push_back(make_pos_t(j, false));
+                    q_subset.push_back(make_pos_t(j, true));
+                }
                 for (auto& r : aln_iitree.overlap(b.start, b.end)) {
                     for_each_fresh_range(r, [&](range_pos_t s) {
                             seen.insert({s.start, s.end, s.pos});
@@ -180,16 +187,13 @@ size_t compute_transitive_closures(
         // run the transclosure for this region using lock-free union find
         
         // convert the ranges into positions in the input sequence space
-        std::vector<pos_t> q_subset;
         for (auto& s : ovlp) {
             auto& r = s.first;
             pos_t p = r.pos;
             //bool flip = s.second;
             for (uint64_t j = r.start; j != r.end; ++j) {
-                q_seen_bv[j-1] = 1; // mark that we've seen it, for later
                 q_subset.push_back(make_pos_t(j, false));
                 q_subset.push_back(make_pos_t(j, true));
-                q_seen_bv[offset(p)-1] = 1; // mark that we've seen the other side of the match
                 q_subset.push_back(p);
                 q_subset.push_back(rev_pos_t(p));
                 incr_pos(p);
@@ -198,6 +202,10 @@ size_t compute_transitive_closures(
         std::cerr << "q_seen_bv\t" << q_seen_bv << std::endl;
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
+        // do the marking here, because we added the initial range in at the beginning
+        for (auto& p : q_subset) {
+            q_seen_bv[offset(p)-1] = 1; // mark that we've seen it, for later
+        }
         uint nthreads = get_thread_count();
         double gammaFactor = 2.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
