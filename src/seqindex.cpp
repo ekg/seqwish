@@ -257,8 +257,8 @@ char seqindex_t::at(size_t pos) {
 }
 
 char seqindex_t::at_pos(pos_t pos) {
-    // assumes 1-based pos
-    char c = at(offset(pos)-1);
+    // assumes 0-based pos
+    char c = at(offset(pos));
     if (is_rev(pos)) {
         c = dna_reverse_complement(c);
     }
