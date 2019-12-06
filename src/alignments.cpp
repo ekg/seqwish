@@ -24,9 +24,9 @@ void unpack_paf_alignments(const std::string& paf_file,
         size_t target_idx = seqidx.rank_of_seq_named(paf.target_sequence_name);
         size_t target_len = seqidx.nth_seq_length(target_idx);
         bool q_rev = !paf.query_target_same_strand;
-        size_t q_all_pos = 1 + (q_rev ? seqidx.pos_in_all_seqs(query_idx, paf.query_end, false) - 1
+        size_t q_all_pos = (q_rev ? seqidx.pos_in_all_seqs(query_idx, paf.query_end, false) - 1
                             : seqidx.pos_in_all_seqs(query_idx, paf.query_start, false));
-        size_t t_all_pos = 1 + seqidx.pos_in_all_seqs(target_idx, paf.target_start, false);
+        size_t t_all_pos = seqidx.pos_in_all_seqs(target_idx, paf.target_start, false);
         pos_t q_pos = make_pos_t(q_all_pos, q_rev);
         pos_t t_pos = make_pos_t(t_all_pos, false);
         for (auto& c : paf.cigar) {
