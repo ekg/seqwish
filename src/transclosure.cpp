@@ -120,17 +120,20 @@ size_t compute_transitive_closures(
                            std::vector<std::pair<range_pos_t, bool>>& ovlp,
                            std::set<std::tuple<uint64_t, uint64_t, pos_t>>& seen,
                            std::set<std::pair<pos_t, uint64_t>>& todo) {
+        std::cerr << "handle_range " << query_start << " " << query_end << std::endl;
         if (!seen.count({s.start, s.end, s.pos})
             && s.start < query_end && s.end > query_start) {
             std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
             seen.insert({s.start, s.end, s.pos});
             if (query_start > s.start) {
                 uint64_t trim_from_start = query_start - s.start;
+                std::cerr << "trim_start " << trim_from_start << std::endl;
                 s.start += trim_from_start;
                 incr_pos(s.pos, trim_from_start);
             }
             if (s.end > query_end) {
                 uint64_t trim_from_end = s.end - query_end;
+                std::cerr << "trim_end " << trim_from_end << std::endl;
                 s.end -= trim_from_end;
             }
             // record the adjusted range and compute our flip relative to the tree of matches we're extending
@@ -183,7 +186,7 @@ size_t compute_transitive_closures(
             uint64_t match_len = todo.begin()->second;
             todo.erase(todo.begin());
             // get the n and n+match_len on the forward strand
-            uint64_t n = !is_rev(j) ? offset(j) : offset(j) - match_len;
+            uint64_t n = !is_rev(j) ? offset(j) : offset(j) - match_len + 1;
             uint64_t range_start = n;
             uint64_t range_end = n + match_len;
             std::cerr << "later_lookup " << range_start << " " << range_end << std::endl;
@@ -201,6 +204,13 @@ size_t compute_transitive_closures(
         // run the transclosure for this region using lock-free union find
         
         // convert the ranges into positions in the input sequence space
+        // todo, remove duplicates
+        auto show_q_subset = [&](void) {
+            std::cerr << "q_subset ";
+            for (auto& c : q_subset) std::cerr << pos_to_string(c) << " ";
+            std::cerr << std::endl;
+        };
+        show_q_subset();
         for (auto& s : ovlp) {
             auto& r = s.first;
             pos_t p = r.pos;
@@ -213,6 +223,7 @@ size_t compute_transitive_closures(
                 q_subset.push_back(p);
                 q_subset.push_back(rev_pos_t(p));
                 incr_pos(p);
+                show_q_subset();
             }
         }
         std::sort(q_subset.begin(), q_subset.end());
