@@ -97,14 +97,14 @@ size_t compute_transitive_closures(
         while (p < range.end) {
             // if we haven't seen p, start making a range
             std::cerr << "looking at " << p << std::endl;
-            if (q_seen_bv[p-1]) {
+            if (q_seen_bv[p]) {
                 ++p;
                 incr_pos(t);
             } else {
                 // otherwise, skip along
                 uint64_t q = p;
                 pos_t v = t;
-                while (p < range.end && !q_seen_bv[p-1]) {
+                while (p < range.end && !q_seen_bv[p]) {
                     ++p;
                     incr_pos(t);
                 }
@@ -146,10 +146,10 @@ size_t compute_transitive_closures(
     // we determine when we stop extending when we have stepped a bp and broke our range extension
     //auto range_pos_hash = [](const range_pos_t& rp) { return std::hash<uint64_t>(rp.start) };
     uint64_t last_seq_id = seqidx.seq_id_at(1);
-    for (uint64_t i = 1; i <= input_seq_length; ) { //i+=transclose_batch_size) {
+    for (uint64_t i = 0; i < input_seq_length; ) { //i+=transclose_batch_size) {
         // scan our q_seen_bv to find our next start
         std::cerr << "closing\t" << i << std::endl;
-        while (i <= input_seq_length && q_seen_bv[i-1]) ++i;
+        while (i < input_seq_length && q_seen_bv[i]) ++i;
         std::cerr << "scanned_to\t" << i << std::endl;
         if (i > input_seq_length) break; // we're done!
         // collect ranges overlapping
@@ -159,7 +159,7 @@ size_t compute_transitive_closures(
         std::set<std::pair<pos_t, uint64_t>> todo;
         std::vector<pos_t> q_subset;
         uint64_t chunk_start = i;
-        uint64_t chunk_end = std::min(input_seq_length+1, i + transclose_batch_size);
+        uint64_t chunk_end = std::min(input_seq_length, i + transclose_batch_size);
         i = chunk_end;
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         // need to handle the first ranges a little differently
@@ -220,7 +220,7 @@ size_t compute_transitive_closures(
         // do the marking here, because we added the initial range in at the beginning
         for (auto& p : q_subset) {
             std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
-            q_seen_bv[offset(p)-1] = 1; // mark that we're closing over these bases
+            q_seen_bv[offset(p)] = 1; // mark that we're closing over these bases
         }
         std::cerr << "q_seen_bv\t" << q_seen_bv << std::endl;
         uint nthreads = get_thread_count();
