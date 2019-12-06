@@ -96,7 +96,7 @@ size_t compute_transitive_closures(
         std::cerr << "trying " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
         while (p < range.end) {
             // if we haven't seen p, start making a range
-            std::cerr << "looking at " << p << std::endl;
+            //std::cerr << "looking at " << p << std::endl;
             if (q_seen_bv[p]) {
                 ++p;
                 incr_pos(t);
@@ -127,7 +127,7 @@ size_t compute_transitive_closures(
             if (query_start > s.start) {
                 uint64_t trim_from_start = query_start - s.start;
                 s.start += trim_from_start;
-                incr_pos(s.pos, trim_from_start+1);
+                incr_pos(s.pos, trim_from_start);
             }
             if (s.end > query_end) {
                 uint64_t trim_from_end = s.end - query_end;
