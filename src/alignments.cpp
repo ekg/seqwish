@@ -13,7 +13,7 @@ void unpack_paf_alignments(const std::string& paf_file,
                                 std::istreambuf_iterator<char>(), '\n');
     paf_in.close();
     paf_in.open(paf_file.c_str());
-#pragma omp parallel for schedule(dynamic)
+//#pragma omp parallel for schedule(dynamic) // why is this broken now?
     for (size_t i = 0; i < lines; ++i) {
         std::string line;
 #pragma omp critical (paf_in)
