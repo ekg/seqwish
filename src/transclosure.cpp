@@ -73,7 +73,7 @@ size_t compute_transitive_closures(
                 pos_t match_pos_in_q = make_pos_t(match_start_in_q, is_rev_match);
                 if (is_rev_match) {
                     // go from transclosure model to the same pattern we have in the alignment iitree
-                    // 1-based half open intervals, positions map to start and orientation in S and Q
+                    // 0-based half open intervals, positions map to start and orientation in S and Q
                     std::swap(match_start_in_q, match_end_in_q);
                     incr_pos(match_pos_in_q, 1);
                     decr_pos(match_pos_in_s, match_length - 1);
@@ -148,17 +148,17 @@ size_t compute_transitive_closures(
     // we flush when we stop extending
     // we determine when we stop extending when we have stepped a bp and broke our range extension
     //auto range_pos_hash = [](const range_pos_t& rp) { return std::hash<uint64_t>(rp.start) };
-    uint64_t last_seq_id = seqidx.seq_id_at(1);
+    uint64_t last_seq_id = seqidx.seq_id_at(0);
     for (uint64_t i = 0; i < input_seq_length; ) { //i+=transclose_batch_size) {
         // scan our q_seen_bv to find our next start
         std::cerr << "closing\t" << i << std::endl;
         while (i < input_seq_length && q_seen_bv[i]) ++i;
         std::cerr << "scanned_to\t" << i << std::endl;
-        if (i > input_seq_length) break; // we're done!
+        if (i >= input_seq_length) break; // we're done!
         // collect ranges overlapping
         std::vector<std::pair<range_pos_t, bool>> ovlp;
         // complete our collection (todo: in parallel)
-        std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen;
+        std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen; // TODO replace with bitvector
         std::set<std::pair<pos_t, uint64_t>> todo;
         std::vector<pos_t> q_subset;
         uint64_t chunk_start = i;
@@ -210,27 +210,27 @@ size_t compute_transitive_closures(
             for (auto& c : q_subset) std::cerr << pos_to_string(c) << " ";
             std::cerr << std::endl;
         };
-        show_q_subset();
+        //show_q_subset();
         for (auto& s : ovlp) {
             auto& r = s.first;
             pos_t p = r.pos;
             //bool flip = s.second;
-            std::cerr << "r.start " << r.start << " r.end " << r.end << std::endl;
+            //std::cerr << "r.start " << r.start << " r.end " << r.end << std::endl;
             for (uint64_t j = r.start; j < r.end; ++j) {
-                std::cerr << "j " << j << " " << pos_to_string(p) << std::endl;
+                //std::cerr << "j " << j << " " << pos_to_string(p) << std::endl;
                 q_subset.push_back(make_pos_t(j, false));
                 q_subset.push_back(make_pos_t(j, true));
                 q_subset.push_back(p);
                 q_subset.push_back(rev_pos_t(p));
                 incr_pos(p);
-                show_q_subset();
+                //show_q_subset();
             }
         }
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
         // do the marking here, because we added the initial range in at the beginning
         for (auto& p : q_subset) {
-            std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
+            //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv[offset(p)] = 1; // mark that we're closing over these bases
         }
         std::cerr << "q_seen_bv\t" << q_seen_bv << std::endl;
@@ -270,21 +270,86 @@ size_t compute_transitive_closures(
             //uint64_t j = offset(q_subset.at(x));
             auto& p = q_subset.at(x);
             //disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
-            std::cerr << "dset\t" << pos_to_string(p) << "\t"
-                      << disjoint_sets.find(bphf.lookup(p)) << std::endl;
+            //std::cerr << "dset\t" << pos_to_string(p) << "\t"
+            //          << disjoint_sets.find(bphf.lookup(p)) << std::endl;
             dsets.push_back(std::make_pair(disjoint_sets.find(bphf.lookup(p)), p));
+        }
+        // compress the dsets
+        std::sort(dsets.begin(), dsets.end());
+        uint64_t c = 0;
+        assert(dsets.size());
+        uint64_t l = dsets.front().first;
+        for (auto& d : dsets) {
+            if (d.first != l) {
+                ++c;
+                l = d.first;
+            }
+            d.first = c;
+        }
+        for (auto& d : dsets) {
+            std::cerr << "sdset\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
+        }
+        // sort by the smallest starting position in each disjoint set
+        std::vector<std::pair<uint64_t, uint64_t>> dsets_by_min_pos(c+1);
+        for (uint64_t x = 0; x < c+1; ++x) {
+            dsets_by_min_pos[x].second = x;
+            dsets_by_min_pos[x].first = std::numeric_limits<uint64_t>::max();
+        }
+        for (auto& d : dsets) {
+            uint64_t& minpos = dsets_by_min_pos[d.first].first;
+            minpos = std::min(minpos, d.second);
+        }
+        std::sort(dsets_by_min_pos.begin(), dsets_by_min_pos.end());
+        for (auto& d : dsets_by_min_pos) {
+            std::cerr << "sdset_min_pos\t" << d.second << "\t" << pos_to_string(d.first) << std::endl;
+        }
+        // invert the naming
+        std::vector<uint64_t> dset_names(c+1);
+        uint64_t x = 0;
+        for (auto& d : dsets_by_min_pos) {
+            dset_names[d.second] = x++;
+        }
+        // rename sdsets and re-sort
+        for (auto& d : dsets) {
+            d.first = dset_names[d.first];
         }
         std::sort(dsets.begin(), dsets.end());
         for (auto& d : dsets) {
-            // run over the
-            std::cerr << "sdset\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
+            std::cerr << "sdset_rename\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
         }
 
-        // XXX TODO set our seen bv for all the things we're closing
+        // now, run the graph emission
 
-//#pragma omp parallel for
-        
-        
+        size_t seq_v_length = seq_v_out.tellp();
+        //uint64_t flushed = range_buffer.size();
+        uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
+        // determine if we've switched references
+        for (auto& d : dsets) {
+            const auto& curr_dset_id = d.first;
+            const auto& curr_q_pos = d.second;
+            // if we're on a new position
+            if (curr_dset_id != last_dset_id) {
+                // emit our new position
+                char base = seqidx.at(offset(curr_q_pos));
+                seq_v_out << base;
+                seq_v_length = seq_v_out.tellp();
+                // check to see if we've switched sequences
+                uint64_t curr_seq_id = seqidx.seq_id_at(i);
+                // if we've changed basis sequences, flush
+                if (curr_seq_id != last_seq_id) {
+                    flush_ranges(seq_v_length); // hack to force flush at sequence change
+                    last_seq_id = curr_seq_id;
+                }
+                last_seq_id = curr_seq_id;
+                last_dset_id = curr_dset_id;
+            }
+            // in any case, use extend_range
+            extend_range(seq_v_length, curr_q_pos);
+        }
+        //flush_ranges(seq_v_length);
+        /*
+        */
+
         // we'll use this for random access to the probably discontiguous membership array
         
 
@@ -300,7 +365,7 @@ size_t compute_transitive_closures(
         // iterate over the result with our range compressor
         // writing out the bases in the same order that we would have with the deterministic transclosure
     }
-    exit(1);
+    //exit(1);
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
