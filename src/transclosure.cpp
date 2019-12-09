@@ -59,14 +59,14 @@ size_t compute_transitive_closures(
                 // flush
                 uint64_t match_length = it->second.second;
                 uint64_t match_start_in_s = it->second.first;
-                uint64_t match_end_in_s = match_start_in_s + match_length;
+                uint64_t match_end_in_s = match_start_in_s + match_length - 1;
                 pos_t match_end_pos_in_q = it->first;
                 bool is_rev_match = is_rev(match_end_pos_in_q);
-                // TODO appreciate why you're doing this here, presumably it's because of how we're running the transclosure
+                // why?
                 if (!is_rev_match) incr_pos(match_end_pos_in_q, 1);
-                //incr_pos(match_end_pos_in_q, 1);
+                incr_pos(match_end_pos_in_q, 1);
                 pos_t match_start_pos_in_q = match_end_pos_in_q;
-                decr_pos(match_start_pos_in_q, match_length);
+                decr_pos(match_start_pos_in_q, match_length-1);
                 uint64_t match_end_in_q = offset(match_end_pos_in_q);
                 uint64_t match_start_in_q = offset(match_start_pos_in_q);
                 pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev_match);
@@ -214,14 +214,12 @@ size_t compute_transitive_closures(
         for (auto& s : ovlp) {
             auto& r = s.first;
             pos_t p = r.pos;
-            //bool flip = s.second;
+            bool flip = s.second;
             //std::cerr << "r.start " << r.start << " r.end " << r.end << std::endl;
             for (uint64_t j = r.start; j < r.end; ++j) {
                 //std::cerr << "j " << j << " " << pos_to_string(p) << std::endl;
                 q_subset.push_back(make_pos_t(j, false));
-                q_subset.push_back(make_pos_t(j, true));
                 q_subset.push_back(p);
-                q_subset.push_back(rev_pos_t(p));
                 incr_pos(p);
                 //show_q_subset();
             }
@@ -323,14 +321,16 @@ size_t compute_transitive_closures(
         size_t seq_v_length = seq_v_out.tellp();
         //uint64_t flushed = range_buffer.size();
         uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
+        char current_base = '\0';
         // determine if we've switched references
         for (auto& d : dsets) {
             const auto& curr_dset_id = d.first;
             const auto& curr_q_pos = d.second;
+            char base = seqidx.at(offset(curr_q_pos));
             // if we're on a new position
             if (curr_dset_id != last_dset_id) {
                 // emit our new position
-                char base = seqidx.at(offset(curr_q_pos));
+                current_base = base;
                 seq_v_out << base;
                 seq_v_length = seq_v_out.tellp();
                 // check to see if we've switched sequences
@@ -340,11 +340,13 @@ size_t compute_transitive_closures(
                     flush_ranges(seq_v_length); // hack to force flush at sequence change
                     last_seq_id = curr_seq_id;
                 }
-                last_seq_id = curr_seq_id;
                 last_dset_id = curr_dset_id;
             }
-            // in any case, use extend_range
-            extend_range(seq_v_length, curr_q_pos);
+            // filter one strand
+            if (current_base == seqidx.at_pos(curr_q_pos)) {
+                // in any case, use extend_range
+                extend_range(seq_v_length, curr_q_pos);
+            }
         }
         //flush_ranges(seq_v_length);
         /*
