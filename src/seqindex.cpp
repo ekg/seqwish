@@ -270,7 +270,7 @@ size_t seqindex_t::n_seqs(void) {
 }
 
 size_t seqindex_t::seq_id_at(size_t pos) {
-    return seq_begin_cbv_rank(pos);
+    return seq_begin_cbv_rank(pos+1);
 }
 
 }

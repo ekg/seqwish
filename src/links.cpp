@@ -21,8 +21,8 @@ void derive_links(seqindex_t& seqidx,
     */
 #pragma omp parallel for schedule(dynamic)
     for (size_t id = 1; id <= n_nodes; ++id) {
-        uint64_t node_start_in_s = seq_id_cbv_select(id)+1; // node_iitree and path_iitree are 1-based
-        uint64_t node_end_in_s = seq_id_cbv_select(id+1)+1;
+        uint64_t node_start_in_s = seq_id_cbv_select(id); // node_iitree and path_iitree are 1-based
+        uint64_t node_end_in_s = seq_id_cbv_select(id+1);
         //std::cerr << "links for node " << id << " start " << node_start_in_s << " end " << node_end_in_s << std::endl;
         // find the things on both sides of our node by looking in the node_iitree, finding what bits of the paths (in Q)
         // are there, and seeing what's on either side of them to decide what links we need
@@ -37,16 +37,16 @@ void derive_links(seqindex_t& seqidx,
             incr_pos(pos_end_in_q, ovlp_length - (ovlp_end_in_s - node_end_in_s) - 1);
             incr_pos(pos_start_in_q, node_start_in_s - ovlp_start_in_s);
             //length -= (node_start - start_in_s) + (node_end - end_in_s);
-            //std::cerr << "node_iitree_ovlp " << idx << " " << ovlp_start_in_s << " " << ovlp_end_in_s << " " << pos_to_string(pos_start_in_q) << " " << pos_to_string(pos_end_in_q) << std::endl;
+            std::cerr << "node_iitree_ovlp " << idx << " " << ovlp_start_in_s << " " << ovlp_end_in_s << " " << pos_to_string(pos_start_in_q) << " " << pos_to_string(pos_end_in_q) << std::endl;
             // get the positions in s on either side of this range in Q
             // note the need to handle orientation
             // determine which sequence we're in
             uint64_t seq_id = seqidx.seq_id_at(offset(pos_start_in_q));
             uint64_t id_end = seqidx.seq_id_at(offset(pos_end_in_q));
-            //std::cerr << "sequence id at start " << seq_id << " and end " << id_end << std::endl;
+            std::cerr << "sequence id at start " << seq_id << " and end " << id_end << std::endl;
             assert(seq_id == id_end);
             // find its boundaries
-            uint64_t seq_start = seqidx.nth_seq_offset(seq_id) + 1;
+            uint64_t seq_start = seqidx.nth_seq_offset(seq_id);
             uint64_t seq_end = seq_start + seqidx.nth_seq_length(seq_id) - 1;
             //std::cerr << "seq boundaries " << seq_start << "-" << seq_end << std::endl;
             bool curr_step_is_rev = is_rev(pos_start_in_q);
