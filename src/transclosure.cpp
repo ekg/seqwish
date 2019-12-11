@@ -56,27 +56,28 @@ size_t compute_transitive_closures(
         std::map<pos_t, std::pair<uint64_t, uint64_t>>::iterator it = range_buffer.begin();
         while (it != range_buffer.end()) {
             if (it->second.first + it->second.second != s_pos) {
-                // flush
-                uint64_t match_length = it->second.second;
-                uint64_t match_start_in_s = it->second.first;
-                uint64_t match_end_in_s = match_start_in_s + match_length - 1;
+                uint64_t match_length, match_start_in_s, match_end_in_s, match_start_in_q, match_end_in_q;
+                pos_t match_pos_in_q, match_pos_in_s, match_start_pos_in_q;
                 pos_t match_end_pos_in_q = it->first;
                 bool is_rev_match = is_rev(match_end_pos_in_q);
-                // why?
-                if (!is_rev_match) incr_pos(match_end_pos_in_q, 1);
-                incr_pos(match_end_pos_in_q, 1);
-                pos_t match_start_pos_in_q = match_end_pos_in_q;
-                decr_pos(match_start_pos_in_q, match_length-1);
-                uint64_t match_end_in_q = offset(match_end_pos_in_q);
-                uint64_t match_start_in_q = offset(match_start_pos_in_q);
-                pos_t match_pos_in_s = make_pos_t(match_start_in_s, is_rev_match);
-                pos_t match_pos_in_q = make_pos_t(match_start_in_q, is_rev_match);
-                if (is_rev_match) {
-                    // go from transclosure model to the same pattern we have in the alignment iitree
-                    // 0-based half open intervals, positions map to start and orientation in S and Q
-                    std::swap(match_start_in_q, match_end_in_q);
-                    incr_pos(match_pos_in_q, 1);
-                    decr_pos(match_pos_in_s, match_length - 1);
+                if (!is_rev_match) {
+                    match_length = it->second.second;
+                    match_start_in_s = it->second.first;
+                    match_end_in_s = match_start_in_s + match_length;
+                    match_end_in_q = offset(match_end_pos_in_q) + 1;
+                    match_start_in_q = match_end_in_q - match_length;
+                    match_pos_in_s = make_pos_t(match_start_in_s, false);
+                    match_pos_in_q = make_pos_t(match_start_in_q, false);
+                } else {
+                    match_length = it->second.second;
+                    match_start_in_s = it->second.first;
+                    match_end_in_s = match_start_in_s + match_length;
+                    match_end_in_q = offset(match_end_pos_in_q);
+                    decr_pos(match_end_pos_in_q, match_length);
+                    match_pos_in_s = make_pos_t(match_end_in_s-1, true);
+                    match_pos_in_q = make_pos_t(offset(match_end_pos_in_q)-1, true);
+                    match_start_in_q = match_end_in_q;
+                    match_end_in_q = offset(match_end_pos_in_q);
                 }
                 node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
                 path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
@@ -339,13 +340,21 @@ size_t compute_transitive_closures(
                 if (curr_seq_id != last_seq_id) {
                     flush_ranges(seq_v_length); // hack to force flush at sequence change
                     last_seq_id = curr_seq_id;
+                } else {
+                    flush_ranges(seq_v_length-1);
                 }
                 last_dset_id = curr_dset_id;
             }
             // filter one strand
             if (current_base == seqidx.at_pos(curr_q_pos)) {
                 // in any case, use extend_range
-                extend_range(seq_v_length, curr_q_pos);
+                extend_range(seq_v_length-1, curr_q_pos);
+            }
+            // dump the range buffer
+            std::cerr << "============================================================" << std::endl;
+            std::cerr << "dset_pos " << seq_v_length << std::endl;
+            for (auto& r : range_buffer) {
+                std::cerr << "range_buffer " << pos_to_string(r.first) << " " << r.second.first << " " << r.second.second << std::endl;
             }
         }
         //flush_ranges(seq_v_length);
