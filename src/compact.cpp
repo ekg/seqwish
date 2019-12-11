@@ -32,19 +32,20 @@ void compact_nodes(
             bool match_is_rev = is_rev(pos_start_in_s);
             // mark a node start and end
             pos_t pos_end_in_s = pos_start_in_s;
-            incr_pos(pos_end_in_s, ovlp_end_in_q - ovlp_start_in_q);
             if (!match_is_rev) {
+                incr_pos(pos_end_in_s, ovlp_end_in_q - ovlp_start_in_q);
 #pragma omp critical (seq_id_bv)
                 {
                     std::cerr << "marking node+ start " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_start_in_s)-1] = 1;
+                    seq_id_bv[offset(pos_start_in_s)] = 1;
                 }
 #pragma omp critical (seq_id_bv)
                 {
                     std::cerr << "marking node+ end " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_end_in_s)-1] = 1;
+                    seq_id_bv[offset(pos_end_in_s)] = 1;
                 }
             } else {
+                incr_pos(pos_end_in_s, ovlp_end_in_q - ovlp_start_in_q - 1);
 #pragma omp critical (seq_id_bv)
                 {
                     std::cerr << "marking node- start " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
@@ -53,7 +54,7 @@ void compact_nodes(
 #pragma omp critical (seq_id_bv)
                 {
                     std::cerr << "marking node- end " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_start_in_s)] = 1;
+                    seq_id_bv[offset(pos_start_in_s)+1] = 1;
                 }
             }
             j = ovlp_end_in_q;
