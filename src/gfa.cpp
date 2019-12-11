@@ -76,7 +76,7 @@ void emit_gfa(std::ostream& out,
     // iterate over the sequence positions, emitting a node at every edge crossing
     size_t num_seqs = seqidx.n_seqs();
     for (size_t i = 1; i <= num_seqs; ++i) {
-        size_t j = seqidx.nth_seq_offset(i)+1;
+        size_t j = seqidx.nth_seq_offset(i);
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
@@ -101,8 +101,8 @@ void emit_gfa(std::ostream& out,
             // validate the path
             // for each base in the range pointed to by the match, check that the input sequence we're processing matches the graph
             for (uint64_t k = 0; k < length; ++k) {
-                if (seq_id_cbv[offset(p)-1]) {
-                    uint64_t node_id = seq_id_cbv_rank(offset(p));
+                if (seq_id_cbv[offset(p)]) {
+                    uint64_t node_id = seq_id_cbv_rank(offset(p)+1);
                     //std::cerr << "got to node " << node_id << (match_is_rev ? "-" : "+") << std::endl;
                     path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
@@ -112,7 +112,7 @@ void emit_gfa(std::ostream& out,
                     path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
                 */
-                char c = seq_v_buf[offset(p)-1];
+                char c = seq_v_buf[offset(p)];
                 if (is_rev(p)) c = dna_reverse_complement(c);
                 //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
                 if (seqidx.at_pos(q) != c) {
