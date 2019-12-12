@@ -50,12 +50,18 @@ Implementation of these features will follow.
 We plan to link into the [handle graph model](https://github.com/vgteam/vg/blob/master/src/handle.hpp) developed in the vg project, which should allow the application of any algorithms defined using that interface on the backing graph developed here.
 Users familiar with concepts in assembly graphs will notice many similarities between the graph induction algorithm and typical steps in assembly algorithms, and we intend to explore these as well using this platform.
 
-## implementation notes
-
-To sort the various arrays used in the squish graph construction, we use [bsort](https://github.com/peletoncycle/bsort), a disk-backed binary radix sort which has fixed-width keys and values.
-Auxiliary data structures, such as bitvectors, rank and select supports, and compressed suffix arrays are provided by [sdsl-lite](https://github.com/simongog/sdsl-lite).
-
 ## building
+
+### dependencies
+
+You'll need basic C++ build tools, cmake, and zlib.
+On ubuntu (and probably debian) systems, these can be installed with:
+
+```
+sudo apt install build-essential cmake zlib1g-dev
+```
+
+### build process
 
 seqwish uses cmake to build itself and its dependencies.
 
