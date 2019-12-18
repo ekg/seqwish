@@ -94,10 +94,10 @@ size_t compute_transitive_closures(
         // walk range, breaking where we've seen it, emiting new ranges
         uint64_t p = range.start;
         pos_t t = range.pos;
-        std::cerr << "trying " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
+        std::cerr << "for_each_fresh_range " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
         while (p < range.end) {
             // if we haven't seen p, start making a range
-            //std::cerr << "looking at " << p << std::endl;
+            std::cerr << "looking at " << p << std::endl;
             if (q_seen_bv[p]) {
                 ++p;
                 incr_pos(t);
@@ -115,32 +115,37 @@ size_t compute_transitive_closures(
         }
     };
 
-    auto handle_range = [](range_pos_t s,
-                           bool is_flipped,
-                           const uint64_t& query_start, const uint64_t& query_end,
-                           std::vector<std::pair<range_pos_t, bool>>& ovlp,
-                           std::set<std::tuple<uint64_t, uint64_t, pos_t>>& seen,
-                           std::set<std::pair<pos_t, uint64_t>>& todo) {
-        std::cerr << "handle_range " << query_start << " " << query_end << std::endl;
+    auto handle_range =
+        [&q_seen_bv](range_pos_t s,
+                     const uint64_t& query_start, const uint64_t& query_end,
+                     std::vector<std::pair<range_pos_t, bool>>& ovlp,
+                     std::set<std::tuple<uint64_t, uint64_t, pos_t>>& seen,
+                     std::set<std::pair<pos_t, uint64_t>>& todo) {
+        std::cerr << "handle_range "
+                  << s.start << "-" << s.end << " "
+                  << pos_to_string(s.pos) << " "
+                  << query_start << " " << query_end << " "
+                  << std::endl;
         if (!seen.count({s.start, s.end, s.pos})
             && s.start < query_end && s.end > query_start) {
             std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
             seen.insert({s.start, s.end, s.pos});
             if (query_start > s.start) {
                 uint64_t trim_from_start = query_start - s.start;
-                std::cerr << "trim_start " << trim_from_start << std::endl;
                 s.start += trim_from_start;
                 incr_pos(s.pos, trim_from_start);
             }
             if (s.end > query_end) {
                 uint64_t trim_from_end = s.end - query_end;
-                std::cerr << "trim_end " << trim_from_end << std::endl;
                 s.end -= trim_from_end;
             }
-            // record the adjusted range and compute our flip relative to the tree of matches we're extending
-            ovlp.push_back(std::make_pair(s, is_flipped^is_rev(s.pos)));
+            // record the adjusted range
+            ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
             assert(s.start < s.end);
-            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_flipped^is_rev(s.pos)), s.end - s.start));
+            std::cerr << "todo_insert "
+                      << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
+                      << s.end - s.start << std::endl;
+            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
         }
     };
     
@@ -150,7 +155,7 @@ size_t compute_transitive_closures(
     // we determine when we stop extending when we have stepped a bp and broke our range extension
     //auto range_pos_hash = [](const range_pos_t& rp) { return std::hash<uint64_t>(rp.start) };
     uint64_t last_seq_id = seqidx.seq_id_at(0);
-    for (uint64_t i = 0; i < input_seq_length; ) { //i+=transclose_batch_size) {
+    for (uint64_t i = 0; i < input_seq_length; ) {
         // scan our q_seen_bv to find our next start
         std::cerr << "closing\t" << i << std::endl;
         while (i < input_seq_length && q_seen_bv[i]) ++i;
@@ -178,22 +183,24 @@ size_t compute_transitive_closures(
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
                 for (auto& r : aln_iitree.overlap(b.start, b.end)) {
                     for_each_fresh_range(r, [&](range_pos_t s) {
-                            handle_range(s, false, b.start, b.end, ovlp, seen, todo);
+                            handle_range(s, b.start, b.end, ovlp, seen, todo);
                         });
                 }
             });
         while (!todo.empty()) {
-            pos_t j = todo.begin()->first;
+            pos_t pos = todo.begin()->first;
             uint64_t match_len = todo.begin()->second;
             todo.erase(todo.begin());
             // get the n and n+match_len on the forward strand
-            uint64_t n = !is_rev(j) ? offset(j) : offset(j) - match_len + 1;
+            uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
             uint64_t range_start = n;
             uint64_t range_end = n + match_len;
             std::cerr << "later_lookup " << range_start << " " << range_end << std::endl;
             for (auto& r : aln_iitree.overlap(range_start, range_end)) {
+                std::cerr << "later_overlap " << r.start << " " << r.end << std::endl;
                 for_each_fresh_range(r, [&](range_pos_t s) {
-                        handle_range(s, is_rev(j), range_start, range_end, ovlp, seen, todo);
+                        std::cerr << "later_fresh " << s.start << " " << s.end << std::endl;
+                        handle_range(s, range_start, range_end, ovlp, seen, todo);
                     });
             }
         }
@@ -228,6 +235,7 @@ size_t compute_transitive_closures(
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
         // do the marking here, because we added the initial range in at the beginning
+	// BLAH this is broken!
         for (auto& p : q_subset) {
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv[offset(p)] = 1; // mark that we're closing over these bases
@@ -333,7 +341,7 @@ size_t compute_transitive_closures(
                 // emit our new position
                 current_base = base;
                 seq_v_out << base;
-                seq_v_length = seq_v_out.tellp();
+                ++seq_v_length;
                 // check to see if we've switched sequences
                 uint64_t curr_seq_id = seqidx.seq_id_at(i);
                 // if we've changed basis sequences, flush
@@ -351,30 +359,15 @@ size_t compute_transitive_closures(
                 extend_range(seq_v_length-1, curr_q_pos);
             }
             // dump the range buffer
+	    /*
             std::cerr << "============================================================" << std::endl;
             std::cerr << "dset_pos " << seq_v_length << std::endl;
             for (auto& r : range_buffer) {
                 std::cerr << "range_buffer " << pos_to_string(r.first) << " " << r.second.first << " " << r.second.second << std::endl;
             }
+	    */
         }
-        //flush_ranges(seq_v_length);
-        /*
-        */
-
-        // we'll use this for random access to the probably discontiguous membership array
-        
-
-        // (todo: use this to initially verify that we close everything)
-        
-        // insert these integers into our disjoint set union find structure
-        // (hopefully we can avoid recording the mappping)
-        
-        // in parallel, run over each ovlp, unioning the values in the disjoint set
-        
-        // sort by minimum position in each union of matched query positions
-        
-        // iterate over the result with our range compressor
-        // writing out the bases in the same order that we would have with the deterministic transclosure
+	//flush_ranges(seq_v_length);
     }
     //exit(1);
     // close the graph sequence vector
