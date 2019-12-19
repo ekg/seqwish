@@ -1,5 +1,4 @@
-#ifndef POS_H_INCLUDED
-#define POS_H_INCLUDED
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -21,5 +20,3 @@ pos_t rev_pos_t(const pos_t& pos);
 std::string pos_to_string(const pos_t& pos);
 
 }
-
-#endif
