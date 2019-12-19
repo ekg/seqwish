@@ -7,7 +7,7 @@ namespace seqwish {
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
-    range_pos_iitii& aln_iitree, // input alignment matches between query seqs
+    mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
@@ -89,15 +89,15 @@ size_t compute_transitive_closures(
     };
     // break the big range into its component ranges that we haven't already closed
     // TODO bound this by any outer limits we might have to save time
-    auto for_each_fresh_range = [&q_seen_bv](const range_pos_t& range,
-                                             const std::function<void(range_pos_t)>& lambda) {
+    auto for_each_fresh_range = [&q_seen_bv](const match_t& range,
+                                             const std::function<void(match_t)>& lambda) {
         // walk range, breaking where we've seen it, emiting new ranges
         uint64_t p = range.start;
         pos_t t = range.pos;
         std::cerr << "for_each_fresh_range " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
         while (p < range.end) {
             // if we haven't seen p, start making a range
-            std::cerr << "looking at " << p << std::endl;
+            //std::cerr << "looking at " << p << std::endl;
             if (q_seen_bv[p]) {
                 ++p;
                 incr_pos(t);
@@ -116,9 +116,9 @@ size_t compute_transitive_closures(
     };
 
     auto handle_range =
-        [&q_seen_bv](range_pos_t s,
+        [&q_seen_bv](match_t s,
                      const uint64_t& query_start, const uint64_t& query_end,
-                     std::vector<std::pair<range_pos_t, bool>>& ovlp,
+                     std::vector<std::pair<match_t, bool>>& ovlp,
                      std::set<std::tuple<uint64_t, uint64_t, pos_t>>& seen,
                      std::set<std::pair<pos_t, uint64_t>>& todo) {
         std::cerr << "handle_range "
@@ -153,7 +153,6 @@ size_t compute_transitive_closures(
     // accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
     // we flush when we stop extending
     // we determine when we stop extending when we have stepped a bp and broke our range extension
-    //auto range_pos_hash = [](const range_pos_t& rp) { return std::hash<uint64_t>(rp.start) };
     uint64_t last_seq_id = seqidx.seq_id_at(0);
     for (uint64_t i = 0; i < input_seq_length; ) {
         // scan our q_seen_bv to find our next start
@@ -162,17 +161,17 @@ size_t compute_transitive_closures(
         std::cerr << "scanned_to\t" << i << std::endl;
         if (i >= input_seq_length) break; // we're done!
         // collect ranges overlapping
-        std::vector<std::pair<range_pos_t, bool>> ovlp;
+        std::vector<std::pair<match_t, bool>> ovlp;
         // complete our collection (todo: in parallel)
         std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen; // TODO replace with bitvector
         std::set<std::pair<pos_t, uint64_t>> todo;
         std::vector<pos_t> q_subset;
         uint64_t chunk_start = i;
-        uint64_t chunk_end = std::min(input_seq_length, i + transclose_batch_size);
+        uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         i = chunk_end;
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         // need to handle the first ranges a little differently
-        for_each_fresh_range({chunk_start, chunk_end, 0}, [&](range_pos_t b) {
+        for_each_fresh_range({chunk_start, chunk_end, 0}, [&](match_t b) {
                 // the special case is handling ranges that have no matches
                 // we need to close these even if they aren't matched to anything
                 std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
@@ -181,8 +180,11 @@ size_t compute_transitive_closures(
                     q_subset.push_back(make_pos_t(j, true));
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
-                for (auto& r : aln_iitree.overlap(b.start, b.end)) {
-                    for_each_fresh_range(r, [&](range_pos_t s) {
+                std::vector<size_t> o;
+                aln_iitree.overlap(b.start, b.end, o);
+                for (auto& idx : o) {
+                    auto r = get_match(aln_iitree, idx);
+                    for_each_fresh_range(r, [&](match_t s) {
                             handle_range(s, b.start, b.end, ovlp, seen, todo);
                         });
                 }
@@ -190,15 +192,21 @@ size_t compute_transitive_closures(
         while (!todo.empty()) {
             pos_t pos = todo.begin()->first;
             uint64_t match_len = todo.begin()->second;
+            std::cerr << "todo_load "
+                      << pos_to_string(pos) << " "
+                      << match_len << std::endl;
             todo.erase(todo.begin());
             // get the n and n+match_len on the forward strand
             uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
             uint64_t range_start = n;
             uint64_t range_end = n + match_len;
             std::cerr << "later_lookup " << range_start << " " << range_end << std::endl;
-            for (auto& r : aln_iitree.overlap(range_start, range_end)) {
+            std::vector<size_t> o;
+            aln_iitree.overlap(range_start, range_end, o);
+            for (auto& idx : o) {
+                auto r = get_match(aln_iitree, idx);
                 std::cerr << "later_overlap " << r.start << " " << r.end << std::endl;
-                for_each_fresh_range(r, [&](range_pos_t s) {
+                for_each_fresh_range(r, [&](match_t s) {
                         std::cerr << "later_fresh " << s.start << " " << s.end << std::endl;
                         handle_range(s, range_start, range_end, ovlp, seen, todo);
                     });
