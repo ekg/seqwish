@@ -168,7 +168,6 @@ size_t compute_transitive_closures(
         std::vector<pos_t> q_subset;
         uint64_t chunk_start = i;
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
-        i = chunk_end;
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         // need to handle the first ranges a little differently
         for_each_fresh_range({chunk_start, chunk_end, 0}, [&](match_t b) {
@@ -243,7 +242,7 @@ size_t compute_transitive_closures(
         }
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
-        show_q_subset();
+        //show_q_subset();
         // do the marking here, because we added the initial range in at the beginning
 	// BLAH this is broken!
         for (auto& p : q_subset) {
@@ -268,7 +267,7 @@ size_t compute_transitive_closures(
             disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
         }
         // join our strands
-        std::cerr << "graph {" << std::endl;
+        //std::cerr << "graph {" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
             auto& s = ovlp.at(k);
@@ -278,8 +277,8 @@ size_t compute_transitive_closures(
             for (uint64_t j = r.start; j != r.end; ++j) {
                 // XXX todo skip if we've already closed this base
                 // unite both sides of the overlap
-#pragma omp critical (cerr)
-                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
+//#pragma omp critical (cerr)
+//                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
                 //std::cerr << pos_to_string(make_pos_t(j, false)) << " -- " << pos_to_string(p) <<  ";" << std::endl;
                 //std::cerr << "uniting " << pos_to_string(make_pos_t(j, false)) << " and " << pos_to_string(p) << std::endl;
                 disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(p));
@@ -384,12 +383,13 @@ size_t compute_transitive_closures(
 	    */
         }
 	//flush_ranges(seq_v_length);
+        i = chunk_end; // update our chunk end here!
     }
     //exit(1);
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
-    flush_ranges(seq_bytes+2);
+    flush_ranges(seq_bytes+1);
     assert(range_buffer.empty());
     // build node_mm and path_mm indexes
     node_iitree.index();
