@@ -164,7 +164,7 @@ size_t compute_transitive_closures(
         std::vector<std::pair<match_t, bool>> ovlp;
         // complete our collection (todo: in parallel)
         std::set<std::tuple<uint64_t, uint64_t, pos_t>> seen; // TODO replace with bitvector
-        std::set<std::pair<pos_t, uint64_t>> todo;
+        std::set<std::pair<pos_t, uint64_t>> todo; // and this too?
         std::vector<pos_t> q_subset;
         uint64_t chunk_start = i;
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
@@ -191,6 +191,9 @@ size_t compute_transitive_closures(
         while (!todo.empty()) {
             pos_t pos = todo.begin()->first;
             uint64_t match_len = todo.begin()->second;
+            // TODO rip out the rest of this, replace with another function
+            // ... this will allow us to use omp tasks to schedule parallel collection of the overlap set
+            // TODO 2X replace all our anonymous functions with actual functions
             std::cerr << "todo_load "
                       << pos_to_string(pos) << " "
                       << match_len << std::endl;
