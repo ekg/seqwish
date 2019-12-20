@@ -226,7 +226,6 @@ size_t compute_transitive_closures(
             for (auto& c : q_subset) std::cerr << pos_to_string(c) << " ";
             std::cerr << std::endl;
         };
-        //show_q_subset();
         for (auto& s : ovlp) {
             auto& r = s.first;
             pos_t p = r.pos;
@@ -235,13 +234,16 @@ size_t compute_transitive_closures(
             for (uint64_t j = r.start; j < r.end; ++j) {
                 //std::cerr << "j " << j << " " << pos_to_string(p) << std::endl;
                 q_subset.push_back(make_pos_t(j, false));
+                q_subset.push_back(make_pos_t(j, true));
                 q_subset.push_back(p);
+                q_subset.push_back(make_pos_t(offset(p), !is_rev(p)));
                 incr_pos(p);
                 //show_q_subset();
             }
         }
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
+        show_q_subset();
         // do the marking here, because we added the initial range in at the beginning
 	// BLAH this is broken!
         for (auto& p : q_subset) {
@@ -266,6 +268,7 @@ size_t compute_transitive_closures(
             disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
         }
         // join our strands
+        std::cerr << "graph {" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
             auto& s = ovlp.at(k);
@@ -275,10 +278,15 @@ size_t compute_transitive_closures(
             for (uint64_t j = r.start; j != r.end; ++j) {
                 // XXX todo skip if we've already closed this base
                 // unite both sides of the overlap
+#pragma omp critical (cerr)
+                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
+                //std::cerr << pos_to_string(make_pos_t(j, false)) << " -- " << pos_to_string(p) <<  ";" << std::endl;
+                //std::cerr << "uniting " << pos_to_string(make_pos_t(j, false)) << " and " << pos_to_string(p) << std::endl;
                 disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(p));
                 incr_pos(p);
             }
         }
+        std::cerr << "}" << std::endl;
         // now read out our transclosures
         std::vector<std::pair<uint64_t, pos_t>> dsets;
         for (uint64_t x = 0; x < q_subset.size(); ++x) {
