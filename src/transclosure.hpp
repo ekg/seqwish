@@ -12,6 +12,10 @@
 #include "mmiitree.hpp"
 #include "pos.hpp"
 #include "match.hpp"
+#include "ips4o.hpp"
+#include "spinlock.hpp"
+#include "dset64-gccAtomic.hpp"
+#include "BooPHF.h"
 
 namespace seqwish {
 
