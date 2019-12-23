@@ -205,7 +205,7 @@ size_t compute_transitive_closures(
         uint64_t chunk_start = i;
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
-        // need to handle the first ranges a little differently ??
+        // the chunk range isn't an actual alignment, so we handle it differently
         for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, [&](match_t b) {
                 // the special case is handling ranges that have no matches
                 // we need to close these even if they aren't matched to anything
@@ -213,6 +213,7 @@ size_t compute_transitive_closures(
                 for (uint64_t j = b.start; j < b.end; ++j) {
                     q_subset.push_back(make_pos_t(j, false));
                     q_subset.push_back(make_pos_t(j, true));
+                    //q_curr_bv.set(j);
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
                 explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
@@ -220,9 +221,6 @@ size_t compute_transitive_closures(
         while (!todo.empty()) {
             pos_t pos = todo.begin()->first;
             uint64_t match_len = todo.begin()->second;
-            // TODO rip out the rest of this, replace with another function
-            // ... this will allow us to use omp tasks to schedule parallel collection of the overlap set
-            // TODO 2X replace all our anonymous functions with actual functions
             std::cerr << "todo_load "
                       << pos_to_string(pos) << " "
                       << match_len << std::endl;
@@ -233,18 +231,6 @@ size_t compute_transitive_closures(
             uint64_t range_end = n + match_len;
             explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
             //std::cerr << "later_lookup " << range_start << " " << range_end << std::endl;
-            /*
-            std::vector<size_t> o;
-            aln_iitree.overlap(range_start, range_end, o);
-            for (auto& idx : o) {
-                auto r = get_match(aln_iitree, idx);
-                std::cerr << "later_overlap " << r.start << " " << r.end << std::endl;
-                for_each_fresh_range(r, q_seen_bv, [&](match_t s) {
-                        std::cerr << "later_fresh " << s.start << " " << s.end << std::endl;
-                        handle_range(s, range_start, range_end, ovlp, q_seen_bv, todo);
-                    });
-            }
-            */
         }
         // print our overlaps
         std::cerr << "transc" << "\t" << chunk_start << "-" << chunk_end << std::endl;
@@ -283,6 +269,11 @@ size_t compute_transitive_closures(
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv.set(offset(p)); // mark that we're closing over these bases
         }
+        std::cerr << "q_curr_bv\t";
+        for (uint64_t j = 0; j < q_curr_bv.size(); ++j) {
+            std::cerr << q_curr_bv[j];
+        }
+        std::cerr << std::endl;
         std::cerr << "q_seen_bv\t";
         for (uint64_t j = 0; j < q_seen_bv.size(); ++j) {
             std::cerr << q_seen_bv[j];
