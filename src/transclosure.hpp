@@ -25,11 +25,11 @@ void flush_ranges(const uint64_t& s_pos,
                   mmmulti::iitree<uint64_t, pos_t>& path_iitree);
 
 void for_each_fresh_range(const match_t& range,
-                          bool mark_bv,
                           atomicbitvector::atomic_bv_t& seen_bv,
                           const std::function<void(match_t)>& lambda);
 
 void handle_range(match_t s,
+                  atomicbitvector::atomic_bv_t& curr_bv,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
@@ -37,6 +37,7 @@ void handle_range(match_t s,
 
 void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& seen_bv,
+                      atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
                       std::set<std::pair<pos_t, uint64_t>>& todo);
