@@ -211,7 +211,7 @@ size_t compute_transitive_closures(
         //atomicbitvector::atomic_bv_t q_subset_bv(seqidx.size()); // heavy for small closures
         // complete our collection (todo: in parallel)
         std::set<std::pair<pos_t, uint64_t>> todo; // and this too?
-        std::vector<pos_t> q_subset;
+        std::vector<uint64_t> q_subset;
         uint64_t chunk_start = i;
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
@@ -221,8 +221,8 @@ size_t compute_transitive_closures(
                 // we need to close these even if they aren't matched to anything
                 std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
                 for (uint64_t j = b.start; j < b.end; ++j) {
-                    q_subset.push_back(make_pos_t(j, false));
-                    q_subset.push_back(make_pos_t(j, true));
+                    q_subset.push_back(j); //make_pos_t(j, false));
+                    //q_subset.push_back(make_pos_t(j, true));
                     q_curr_bv.set(j);
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
@@ -253,7 +253,7 @@ size_t compute_transitive_closures(
         // todo, remove duplicates
         auto show_q_subset = [&](void) {
             std::cerr << "q_subset ";
-            for (auto& c : q_subset) std::cerr << pos_to_string(c) << " ";
+            for (auto& c : q_subset) std::cerr << c << " ";
             std::cerr << std::endl;
         };
         for (auto& s : ovlp) {
@@ -263,10 +263,10 @@ size_t compute_transitive_closures(
             //std::cerr << "r.start " << r.start << " r.end " << r.end << std::endl;
             for (uint64_t j = r.start; j < r.end; ++j) {
                 //std::cerr << "j " << j << " " << pos_to_string(p) << std::endl;
-                q_subset.push_back(make_pos_t(j, false));
-                q_subset.push_back(make_pos_t(j, true));
-                q_subset.push_back(p);
-                q_subset.push_back(make_pos_t(offset(p), !is_rev(p)));
+                q_subset.push_back(j); //make_pos_t(j, false));
+                //q_subset.push_back(make_pos_t(j, true));
+                //q_subset.push_back(p);
+                q_subset.push_back(offset(p)); //make_pos_t(offset(p), false)); //!is_rev(p)));
                 incr_pos(p);
                 //show_q_subset();
             }
@@ -281,11 +281,14 @@ size_t compute_transitive_closures(
             ++q_curr_bv_count;
         }
         std::cerr << std::endl;
-        assert(q_curr_bv_count * 2 == q_subset.size());
+        assert(q_curr_bv_count == q_subset.size());
+        std::vector<uint64_t> q_curr_clone;
+        for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
+        assert(q_curr_clone == q_subset);
         // we should already have done this above
         for (auto& p : q_subset) {
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
-            q_seen_bv.set(offset(p)); // mark that we're closing over these bases
+            q_seen_bv.set(p); // mark that we're closing over these bases
         }
         std::cerr << "q_curr_bv\t";
         for (uint64_t j = 0; j < q_curr_bv.size(); ++j) {
@@ -302,18 +305,11 @@ size_t compute_transitive_closures(
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
         // how to query: bphf.lookup(key) maps ids into [0..N)
         // make a dense mapping
-        auto bphf = boomphf::mphf<pos_t, pos_t_hasher>(q_subset.size(),q_subset,nthreads,gammaFactor,false,false);
+        auto bphf = boomphf::mphf<uint64_t, pos_t_hasher>(q_subset.size(),q_subset,nthreads,gammaFactor,false,false);
         // disjoint set structure
         std::vector<DisjointSets::Aint> q_sets_data(q_subset.size());
         // this initializes everything
         auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
-#pragma omp parallel for
-        for (uint64_t x = 0; x < q_subset.size(); ++x) {
-            uint64_t j = offset(q_subset.at(x));
-            // unite the forward and reverse strands for the given base
-            disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
-        }
-        // join our strands
         //std::cerr << "graph {" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
@@ -328,13 +324,13 @@ size_t compute_transitive_closures(
 //                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
                 //std::cerr << pos_to_string(make_pos_t(j, false)) << " -- " << pos_to_string(p) <<  ";" << std::endl;
                 //std::cerr << "uniting " << pos_to_string(make_pos_t(j, false)) << " and " << pos_to_string(p) << std::endl;
-                disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(p));
+                disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
                 incr_pos(p);
             }
         }
         std::cerr << "}" << std::endl;
         // now read out our transclosures
-        std::vector<std::pair<uint64_t, pos_t>> dsets;
+        std::vector<std::pair<uint64_t, uint64_t>> dsets;
         for (uint64_t x = 0; x < q_subset.size(); ++x) {
             //uint64_t j = offset(q_subset.at(x));
             auto& p = q_subset.at(x);
@@ -356,7 +352,7 @@ size_t compute_transitive_closures(
             d.first = c;
         }
         for (auto& d : dsets) {
-            std::cerr << "sdset\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
+            std::cerr << "sdset\t" << d.first << "\t" << d.second << std::endl;
         }
         // sort by the smallest starting position in each disjoint set
         std::vector<std::pair<uint64_t, uint64_t>> dsets_by_min_pos(c+1);
@@ -370,7 +366,7 @@ size_t compute_transitive_closures(
         }
         std::sort(dsets_by_min_pos.begin(), dsets_by_min_pos.end());
         for (auto& d : dsets_by_min_pos) {
-            std::cerr << "sdset_min_pos\t" << d.second << "\t" << pos_to_string(d.first) << std::endl;
+            std::cerr << "sdset_min_pos\t" << d.second << "\t" << d.first << std::endl;
         }
         // invert the naming
         std::vector<uint64_t> dset_names(c+1);
@@ -396,8 +392,8 @@ size_t compute_transitive_closures(
         // determine if we've switched references
         for (auto& d : dsets) {
             const auto& curr_dset_id = d.first;
-            const auto& curr_q_pos = d.second;
-            char base = seqidx.at(offset(curr_q_pos));
+            const auto& curr_offset = d.second;
+            char base = seqidx.at(curr_offset);
             // if we're on a new position
             if (curr_dset_id != last_dset_id) {
                 // emit our new position
@@ -415,11 +411,19 @@ size_t compute_transitive_closures(
                 }
                 last_dset_id = curr_dset_id;
             }
-            // filter one strand
-            if (current_base == seqidx.at_pos(curr_q_pos)) {
-                // in any case, use extend_range
-                extend_range(seq_v_length-1, curr_q_pos, range_buffer);
+            pos_t curr_q_pos = make_pos_t(curr_offset, false);
+            if (current_base != seqidx.at_pos(curr_q_pos)) {
+                curr_q_pos = make_pos_t(curr_offset, true);
             }
+            assert(current_base = seqidx.at_pos(curr_q_pos));
+            extend_range(seq_v_length-1, curr_q_pos, range_buffer);
+            //for (auto curr_q_pos : {make_pos_t(d.second, false), make_pos_t(d.second, true) })
+            //char base = seqidx.at(offset(curr_q_pos));
+            // filter one strand
+            //if (current_base == seqidx.at_pos(curr_q_pos)) {
+                // in any case, use extend_range
+            //extend_range(seq_v_length-1, curr_q_pos, range_buffer);
+            //}
             // dump the range buffer
 	    /*
             std::cerr << "============================================================" << std::endl;
