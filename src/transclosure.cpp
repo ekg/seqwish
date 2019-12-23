@@ -75,29 +75,23 @@ void flush_ranges(const uint64_t& s_pos,
 // break the big range into its component ranges that we haven't already closed
 // TODO bound this by any outer limits we might have to save time
 void for_each_fresh_range(const match_t& range,
-                          bool mark_bv,
                           atomicbitvector::atomic_bv_t& seen_bv,
                           const std::function<void(match_t)>& lambda) {
     // walk range, breaking where we've seen it, emiting new ranges
     uint64_t p = range.start;
     pos_t t = range.pos;
     std::cerr << "for_each_fresh_range " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
-    // TODO here is where we should be exploiting the atomic bitvector
-    // to mark what we are going to close over dynamically
-    // and we should be keeping it for the duration rather than marking afterwards
-    // but we should also be marking what's in the current closure set rather than keeping the list of positions
-    // how does that go?
     while (p < range.end) {
         // if we haven't seen p, start making a range
         //std::cerr << "looking at " << p << std::endl;
-        if (mark_bv && seen_bv.set(p) || seen_bv.test(p)) {
+        if (seen_bv.test(p)) {
             ++p;
             incr_pos(t);
         } else {
             // otherwise, skip along
             uint64_t q = p;
             pos_t v = t;
-            while (p < range.end && !(mark_bv && seen_bv.set(p) || seen_bv.test(p))) {
+            while (p < range.end && !seen_bv.test(p)) {
                 ++p;
                 incr_pos(t);
             }
@@ -149,7 +143,6 @@ void explore_overlaps(const match_t& b,
         auto r = get_match(aln_iitree, idx);
         for_each_fresh_range(
             r,
-            true,
             seen_bv,
             [&](match_t s) {
                 handle_range(s, b.start, b.end, ovlp, todo);
@@ -202,7 +195,7 @@ size_t compute_transitive_closures(
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         // need to handle the first ranges a little differently ??
-        for_each_fresh_range({chunk_start, chunk_end, 0}, false, q_seen_bv, [&](match_t b) {
+        for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, [&](match_t b) {
                 // the special case is handling ranges that have no matches
                 // we need to close these even if they aren't matched to anything
                 std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
@@ -275,12 +268,10 @@ size_t compute_transitive_closures(
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
         //show_q_subset();
         // we should already have done this above
-        /*
         for (auto& p : q_subset) {
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv.set(offset(p)); // mark that we're closing over these bases
         }
-        */
         std::cerr << "q_seen_bv\t";
         for (uint64_t j = 0; j < q_seen_bv.size(); ++j) {
             std::cerr << q_seen_bv[j];
