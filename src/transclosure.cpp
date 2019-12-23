@@ -1,7 +1,4 @@
 #include "transclosure.hpp"
-#include "spinlock.hpp"
-#include "dset64-gccAtomic.hpp"
-#include "BooPHF.h"
 
 namespace seqwish {
 
@@ -211,7 +208,7 @@ size_t compute_transitive_closures(
         //atomicbitvector::atomic_bv_t q_subset_bv(seqidx.size()); // heavy for small closures
         // complete our collection (todo: in parallel)
         std::set<std::pair<pos_t, uint64_t>> todo; // and this too?
-        std::vector<uint64_t> q_subset;
+        //std::vector<uint64_t> q_subset;
         uint64_t chunk_start = i;
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
@@ -221,7 +218,7 @@ size_t compute_transitive_closures(
                 // we need to close these even if they aren't matched to anything
                 std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
                 for (uint64_t j = b.start; j < b.end; ++j) {
-                    q_subset.push_back(j); //make_pos_t(j, false));
+                    //q_subset.push_back(j); //make_pos_t(j, false));
                     //q_subset.push_back(make_pos_t(j, true));
                     q_curr_bv.set(j);
                 }
@@ -251,6 +248,7 @@ size_t compute_transitive_closures(
         
         // convert the ranges into positions in the input sequence space
         // todo, remove duplicates
+        /*
         auto show_q_subset = [&](void) {
             std::cerr << "q_subset ";
             for (auto& c : q_subset) std::cerr << c << " ";
@@ -274,6 +272,7 @@ size_t compute_transitive_closures(
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
         show_q_subset();
+        */
         uint64_t q_curr_bv_count = 0;
         std::cerr << "q_subset_bv ";
         for (auto x : q_curr_bv) {
@@ -281,12 +280,12 @@ size_t compute_transitive_closures(
             ++q_curr_bv_count;
         }
         std::cerr << std::endl;
-        assert(q_curr_bv_count == q_subset.size());
-        std::vector<uint64_t> q_curr_clone;
-        for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
-        assert(q_curr_clone == q_subset);
+        //assert(q_curr_bv_count == q_subset.size());
+        //std::vector<uint64_t> q_curr_clone;
+        //for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
+        //assert(q_curr_clone == q_subset);
         // we should already have done this above
-        for (auto& p : q_subset) {
+        for (auto p : q_curr_bv) {
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv.set(p); // mark that we're closing over these bases
         }
@@ -305,12 +304,22 @@ size_t compute_transitive_closures(
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
         // how to query: bphf.lookup(key) maps ids into [0..N)
         // make a dense mapping
-        auto bphf = boomphf::mphf<uint64_t, pos_t_hasher>(q_subset.size(),q_subset,nthreads,gammaFactor,false,false);
+        // broken??
+        //auto data_iterator = boomphf::range(q_curr_bv.begin(), q_curr_bv.end());
+        //atomicbitvector::atomic_bv_t::iterator data_iterator = q_curr_bv.begin();
+        //this can't work because bbhash wants iterators that are equivalent to pointers
+        //for now, store the list of bases in memory, possibly on disk using mmapable_vector if this becomes a limitation
+        std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
+        for (auto p : q_curr_bv) {
+            q_curr_bv_vec.push_back(p);
+        }
+        auto bphf = boomphf::mphf<uint64_t, boomphf::SingleHashFunctor<uint64_t>>(q_curr_bv_count,q_curr_bv_vec,nthreads,gammaFactor,false,false);
+        q_curr_bv_vec.clear();
         // disjoint set structure
-        std::vector<DisjointSets::Aint> q_sets_data(q_subset.size());
+        std::vector<DisjointSets::Aint> q_sets_data(q_curr_bv_count);
         // this initializes everything
         auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
-        //std::cerr << "graph {" << std::endl;
+        std::cerr << "graph {" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
             auto& s = ovlp.at(k);
@@ -320,8 +329,8 @@ size_t compute_transitive_closures(
             for (uint64_t j = r.start; j != r.end; ++j) {
                 // XXX todo skip if we've already closed this base
                 // unite both sides of the overlap
-//#pragma omp critical (cerr)
-//                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
+#pragma omp critical (cerr)
+                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
                 //std::cerr << pos_to_string(make_pos_t(j, false)) << " -- " << pos_to_string(p) <<  ";" << std::endl;
                 //std::cerr << "uniting " << pos_to_string(make_pos_t(j, false)) << " and " << pos_to_string(p) << std::endl;
                 disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
@@ -331,16 +340,18 @@ size_t compute_transitive_closures(
         std::cerr << "}" << std::endl;
         // now read out our transclosures
         std::vector<std::pair<uint64_t, uint64_t>> dsets;
-        for (uint64_t x = 0; x < q_subset.size(); ++x) {
+        for (auto p : q_curr_bv) {
+            //for (uint64_t x = 0; x < q_subset.size(); ++x) {
             //uint64_t j = offset(q_subset.at(x));
-            auto& p = q_subset.at(x);
+            //auto& p = q_subset.at(x);
             //disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
             //std::cerr << "dset\t" << pos_to_string(p) << "\t"
             //          << disjoint_sets.find(bphf.lookup(p)) << std::endl;
+            std::cerr << "dset\t" << p << "\t" << disjoint_sets.find(bphf.lookup(p)) << std::endl;
             dsets.push_back(std::make_pair(disjoint_sets.find(bphf.lookup(p)), p));
         }
         // compress the dsets
-        std::sort(dsets.begin(), dsets.end());
+        ips4o::parallel::sort(dsets.begin(), dsets.end());
         uint64_t c = 0;
         assert(dsets.size());
         uint64_t l = dsets.front().first;
