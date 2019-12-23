@@ -131,11 +131,21 @@ void handle_range(match_t s,
         for (uint64_t i = s.start; i < s.end; ++i) {
             all_set &= curr_bv.set(i);
         }
+        std::cerr << "all_set ? " << all_set << std::endl;
         if (!all_set) {
             std::cerr << "todo_insert "
                       << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
                       << s.end - s.start << std::endl;
             todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
+        } else {
+            // mark the opposite end of the match
+            uint64_t match_len = s.end - s.start;
+            uint64_t n = !is_rev(s.pos) ? offset(s.pos) : offset(s.pos) - match_len + 1;
+            uint64_t range_start = n;
+            uint64_t range_end = n + match_len;
+            for (uint64_t i = range_start; i < range_end; ++i) {
+                curr_bv.set(i);
+            }
         }
     }
 }
@@ -213,7 +223,7 @@ size_t compute_transitive_closures(
                 for (uint64_t j = b.start; j < b.end; ++j) {
                     q_subset.push_back(make_pos_t(j, false));
                     q_subset.push_back(make_pos_t(j, true));
-                    //q_curr_bv.set(j);
+                    q_curr_bv.set(j);
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
                 explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
@@ -263,7 +273,15 @@ size_t compute_transitive_closures(
         }
         std::sort(q_subset.begin(), q_subset.end());
         q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
-        //show_q_subset();
+        show_q_subset();
+        uint64_t q_curr_bv_count = 0;
+        std::cerr << "q_subset_bv ";
+        for (auto x : q_curr_bv) {
+            std::cerr << x << " ";
+            ++q_curr_bv_count;
+        }
+        std::cerr << std::endl;
+        assert(q_curr_bv_count * 2 == q_subset.size());
         // we should already have done this above
         for (auto& p : q_subset) {
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
