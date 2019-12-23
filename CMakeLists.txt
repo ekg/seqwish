@@ -133,16 +133,16 @@ ExternalProject_Add(bbhash
 ExternalProject_Get_property(bbhash SOURCE_DIR)
 set(bbhash_INCLUDE "${SOURCE_DIR}")
 
+# atomic bitvector class
 ExternalProject_Add(atomicbitvector
   GIT_REPOSITORY "https://github.com/ekg/atomicbitvector.git"
-  GIT_TAG "10eeaaeb3cc809c38af5255c3da42c3eeec50d1c"
+  GIT_TAG "ebf6435171a47ad216294645d528c2c9fe030c96"
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
   BUILD_COMMAND ""
   CONFIGURE_COMMAND "")
 ExternalProject_Get_property(atomicbitvector SOURCE_DIR)
 set(atomicbitvector_INCLUDE "${SOURCE_DIR}/include")
-
 
 set(CMAKE_BUILD_TYPE Debug)
 
