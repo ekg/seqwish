@@ -122,6 +122,7 @@ void handle_range(match_t s,
         }
         assert(s.start < s.end);
         // record the adjusted range
+#pragma omp critical (ovlp)
         ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
         // check if we haven't closed the entire range before adding to todo
         bool all_set = true;
@@ -133,6 +134,7 @@ void handle_range(match_t s,
             std::cerr << "todo_insert "
                       << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
                       << s.end - s.start << std::endl;
+#pragma omp critical (todo)
             todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
         } else {
             // mark the opposite end of the match
@@ -223,7 +225,9 @@ size_t compute_transitive_closures(
                     q_curr_bv.set(j);
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
-                explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
+                // TODO use this threading model for the recursive exploration
+                std::thread t([&](void) { explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo); });
+                t.join();
             });
         while (!todo.empty()) {
             pos_t pos = todo.begin()->first;
@@ -247,32 +251,6 @@ size_t compute_transitive_closures(
         // run the transclosure for this region using lock-free union find
         
         // convert the ranges into positions in the input sequence space
-        // todo, remove duplicates
-        /*
-        auto show_q_subset = [&](void) {
-            std::cerr << "q_subset ";
-            for (auto& c : q_subset) std::cerr << c << " ";
-            std::cerr << std::endl;
-        };
-        for (auto& s : ovlp) {
-            auto& r = s.first;
-            pos_t p = r.pos;
-            bool flip = s.second;
-            //std::cerr << "r.start " << r.start << " r.end " << r.end << std::endl;
-            for (uint64_t j = r.start; j < r.end; ++j) {
-                //std::cerr << "j " << j << " " << pos_to_string(p) << std::endl;
-                q_subset.push_back(j); //make_pos_t(j, false));
-                //q_subset.push_back(make_pos_t(j, true));
-                //q_subset.push_back(p);
-                q_subset.push_back(offset(p)); //make_pos_t(offset(p), false)); //!is_rev(p)));
-                incr_pos(p);
-                //show_q_subset();
-            }
-        }
-        std::sort(q_subset.begin(), q_subset.end());
-        q_subset.erase(std::unique(q_subset.begin(), q_subset.end()), q_subset.end());
-        show_q_subset();
-        */
         uint64_t q_curr_bv_count = 0;
         std::cerr << "q_subset_bv ";
         for (auto x : q_curr_bv) {
@@ -375,7 +353,7 @@ size_t compute_transitive_closures(
             uint64_t& minpos = dsets_by_min_pos[d.first].first;
             minpos = std::min(minpos, d.second);
         }
-        std::sort(dsets_by_min_pos.begin(), dsets_by_min_pos.end());
+        ips4o::parallel::sort(dsets_by_min_pos.begin(), dsets_by_min_pos.end());
         for (auto& d : dsets_by_min_pos) {
             std::cerr << "sdset_min_pos\t" << d.second << "\t" << d.first << std::endl;
         }
@@ -389,7 +367,7 @@ size_t compute_transitive_closures(
         for (auto& d : dsets) {
             d.first = dset_names[d.first];
         }
-        std::sort(dsets.begin(), dsets.end());
+        ips4o::parallel::sort(dsets.begin(), dsets.end());
         for (auto& d : dsets) {
             std::cerr << "sdset_rename\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
         }

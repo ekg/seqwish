@@ -6,6 +6,7 @@
 #include <iostream>
 #include <unordered_set>
 #include <set>
+#include <thread>
 #include "sdsl/bit_vectors.hpp"
 #include "atomic_bitvector.hpp"
 #include "seqindex.hpp"
