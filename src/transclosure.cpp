@@ -102,6 +102,7 @@ void for_each_fresh_range(const match_t& range,
 }
 
 void handle_range(match_t s,
+                  atomicbitvector::atomic_bv_t& curr_bv,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
@@ -122,18 +123,26 @@ void handle_range(match_t s,
             uint64_t trim_from_end = s.end - query_end;
             s.end -= trim_from_end;
         }
+        assert(s.start < s.end);
         // record the adjusted range
         ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
-        assert(s.start < s.end);
-        std::cerr << "todo_insert "
-                  << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
-                  << s.end - s.start << std::endl;
-        todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
+        // check if we haven't closed the entire range before adding to todo
+        bool all_set = true;
+        for (uint64_t i = s.start; i < s.end; ++i) {
+            all_set &= curr_bv.set(i);
+        }
+        if (!all_set) {
+            std::cerr << "todo_insert "
+                      << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
+                      << s.end - s.start << std::endl;
+            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
+        }
     }
 }
 
 void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& seen_bv,
+                      atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
                       std::set<std::pair<pos_t, uint64_t>>& todo) {
@@ -145,10 +154,11 @@ void explore_overlaps(const match_t& b,
             r,
             seen_bv,
             [&](match_t s) {
-                handle_range(s, b.start, b.end, ovlp, todo);
+                handle_range(s, curr_bv, b.start, b.end, ovlp, todo);
             });
     }
 }
+
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
     mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
@@ -186,6 +196,7 @@ size_t compute_transitive_closures(
         if (i >= input_seq_length) break; // we're done!
         // collect ranges overlapping
         std::vector<std::pair<match_t, bool>> ovlp;
+        atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
         // TODO use an atomic bitset
         //atomicbitvector::atomic_bv_t q_subset_bv(seqidx.size()); // heavy for small closures
         // complete our collection (todo: in parallel)
@@ -204,7 +215,7 @@ size_t compute_transitive_closures(
                     q_subset.push_back(make_pos_t(j, true));
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
-                explore_overlaps(b, q_seen_bv, aln_iitree, ovlp, todo);
+                explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
             });
         while (!todo.empty()) {
             pos_t pos = todo.begin()->first;
@@ -220,7 +231,7 @@ size_t compute_transitive_closures(
             uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
             uint64_t range_start = n;
             uint64_t range_end = n + match_len;
-            explore_overlaps({range_start, range_end, pos}, q_seen_bv, aln_iitree, ovlp, todo);
+            explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
             //std::cerr << "later_lookup " << range_start << " " << range_end << std::endl;
             /*
             std::vector<size_t> o;
