@@ -84,9 +84,10 @@ int main(int argc, char** argv) {
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
     mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
-    assert(!args::get(paf_alns).empty());
-    unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
-    if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
+    if (!args::get(paf_alns).empty()) {
+        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
+    }
+    //if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     //uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
     //range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);
 

@@ -79,7 +79,7 @@ void for_each_fresh_range(const match_t& range,
     // walk range, breaking where we've seen it, emiting new ranges
     uint64_t p = range.start;
     pos_t t = range.pos;
-    std::cerr << "for_each_fresh_range " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
+    //std::cerr << "for_each_fresh_range " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
     while (p < range.end) {
         // if we haven't seen p, start making a range
         //std::cerr << "looking at " << p << std::endl;
@@ -94,26 +94,29 @@ void for_each_fresh_range(const match_t& range,
                 ++p;
                 incr_pos(t);
             }
-            std::cerr << "lambda\t" << q << " " << p << " " << pos_to_string(v) << std::endl;
+            //std::cerr << "lambda\t" << q << " " << p << " " << pos_to_string(v) << std::endl;
             lambda({q, p, v});
         }
     }
 }
 
 void handle_range(match_t s,
+                  atomicbitvector::atomic_bv_t& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
                   range_atomic_queue_t& todo,
                   std::vector<std::pair<pos_t, uint64_t>>& overflow) {
+    /*
     std::cerr << "handle_range "
               << s.start << "-" << s.end << " "
               << pos_to_string(s.pos) << " "
               << query_start << " " << query_end << " "
               << std::endl;
+    */
     if (s.start < query_end && s.end > query_start) {
-        std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
+        //std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
         if (query_start > s.start) {
             uint64_t trim_from_start = query_start - s.start;
             s.start += trim_from_start;
@@ -130,13 +133,16 @@ void handle_range(match_t s,
         // check if we haven't closed the entire range before adding to todo
         bool all_set = true;
         for (uint64_t i = s.start; i < s.end; ++i) {
+            assert(!seen_bv[i]);
             all_set &= curr_bv.set(i);
         }
-        std::cerr << "all_set ? " << all_set << std::endl;
+        //std::cerr << "all_set ? " << all_set << std::endl;
         if (!all_set) {
+            /*
             std::cerr << "todo_insert "
                       << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
                       << s.end - s.start << std::endl;
+            */
             auto item = std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start);
             // check if we can insert in todo, and insert if we can
             if (!todo.try_push(item)) {
@@ -150,6 +156,8 @@ void handle_range(match_t s,
             uint64_t range_start = n;
             uint64_t range_end = n + match_len;
             for (uint64_t i = range_start; i < range_end; ++i) {
+                //if (!seen_bv[i]) curr_bv.set(i);
+                //assert(!seen_bv[i]);
                 curr_bv.set(i);
             }
         }
@@ -171,7 +179,7 @@ void explore_overlaps(const match_t& b,
             r,
             seen_bv,
             [&](match_t s) {
-                handle_range(s, curr_bv, b.start, b.end, ovlp, todo, overflow);
+                handle_range(s, seen_bv, curr_bv, b.start, b.end, ovlp, todo, overflow);
             });
     }
 }
@@ -186,12 +194,11 @@ size_t compute_transitive_closures(
     uint64_t min_transclose_len,
     uint64_t transclose_batch_size) { // size of a batch to collect for lock-free transitive closure
     // get our thread count as set for openmp (nb: we'll only partly use openmp here)
-    std::cerr << "uhhhh" << std::endl;
     uint nthreads = get_thread_count();
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
-    std::cerr << "seq_size " << seqidx.seq_length() << std::endl;
+    //std::cerr << "seq_size " << seqidx.seq_length() << std::endl;
     //sdsl::bit_vector q_seen_bv(seqidx.seq_length());
     atomicbitvector::atomic_bv_t q_seen_bv(seqidx.seq_length());
     uint64_t input_seq_length = seqidx.seq_length();
@@ -205,9 +212,9 @@ size_t compute_transitive_closures(
     // collect based on a seed chunk of a given length
     for (uint64_t i = 0; i < input_seq_length; ) {
         // scan our q_seen_bv to find our next start
-        std::cerr << "closing\t" << i << std::endl;
+        //std::cerr << "closing\t" << i << std::endl;
         while (i < input_seq_length && q_seen_bv[i]) ++i;
-        std::cerr << "scanned_to\t" << i << std::endl;
+        //std::cerr << "scanned_to\t" << i << std::endl;
         if (i >= input_seq_length) break; // we're done!
         // collect ranges overlapping, per thread to avoid contention
         std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
@@ -219,7 +226,7 @@ size_t compute_transitive_closures(
         uint64_t chunk_start = i;
         // and where it ends (not past the end of the sequence)
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
-        std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
+        //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         std::atomic<bool> work_todo;
         work_todo.store(true);
         auto worker_lambda =
@@ -227,7 +234,7 @@ size_t compute_transitive_closures(
                 auto& ovlp = ovlps[tid];
                 std::vector<std::pair<pos_t, uint64_t>> overflow;
                 // spin while waiting to get our first range
-                std::cerr << "about to spin in thread " << tid << std::endl;
+                //std::cerr << "about to spin in thread " << tid << std::endl;
                 std::pair<pos_t, uint64_t> item;
                 while (work_todo.load() && !todo.try_pop(item));
                 if (!work_todo.load()) return;
@@ -240,11 +247,11 @@ size_t compute_transitive_closures(
                     uint64_t range_end = n + match_len;
                     explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo, overflow);
                     // try to flush items from our thread local overflow into todo
-                    std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
+                    //std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
                     while (overflow.size() && todo.try_push(overflow.back())) {
                         overflow.pop_back();
                     }
-                } while (todo.try_pop(item));
+                } while (todo.try_pop(item) || work_todo.load());
             };
         // launch our threads to expand the overlap set in parallel
         std::vector<std::thread> workers; workers.reserve(nthreads);
@@ -255,13 +262,14 @@ size_t compute_transitive_closures(
         for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, [&](match_t b) {
                 // the special case is handling ranges that have no matches
                 // we need to close these even if they aren't matched to anything
-                std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
+                //std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
                 for (uint64_t j = b.start; j < b.end; ++j) {
                     //q_subset.push_back(j); //make_pos_t(j, false));
                     //q_subset.push_back(make_pos_t(j, true));
+                    assert(!q_seen_bv[j]);
                     q_curr_bv.set(j);
                 }
-                std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
+                //std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
                 todo.push(std::make_pair(make_pos_t(b.start, false), b.end - b.start));
                 // TODO use this threading model for the recursive exploration
                 //std::thread t([&](void) { explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo); });
@@ -269,11 +277,13 @@ size_t compute_transitive_closures(
             });
         // avoid a potential race that occurs when we don't have enough work for all the threads
         std::this_thread::sleep_for(1ms);
-        while (!todo.was_empty()) {
+        uint64_t empty_iter_count = 0;
+        while (!todo.was_empty() || empty_iter_count < 10) {
             std::this_thread::sleep_for(1ms);
+            ++empty_iter_count;
         }
         work_todo.store(false);
-        std::cerr << "gonna join" << std::endl;
+        //std::cerr << "gonna join" << std::endl;
         for (uint64_t t = 0; t < nthreads; ++t) {
             workers[t].join();
         }
@@ -286,29 +296,28 @@ size_t compute_transitive_closures(
             v.clear(); // attempt to free memory
         }
         // print our overlaps
+        /*
         std::cerr << "transc" << "\t" << chunk_start << "-" << chunk_end << std::endl;
         for (auto& s : ovlp) {
             std::cerr << "ovlp" << "\t" << s.first.start << "-" << s.first.end << "\t" << offset(s.first.pos) << (is_rev(s.first.pos)?"-":"+") << "\t" << (s.second?"-":"+") << std::endl;
         }
+        */
         // run the transclosure for this region using lock-free union find
         
         // convert the ranges into positions in the input sequence space
         uint64_t q_curr_bv_count = 0;
-        std::cerr << "q_subset_bv ";
+        //std::cerr << "q_subset_bv ";
         for (auto x : q_curr_bv) {
-            std::cerr << x << " ";
+            //std::cerr << x << " ";
             ++q_curr_bv_count;
         }
-        std::cerr << std::endl;
+        //std::cerr << std::endl;
         //assert(q_curr_bv_count == q_subset.size());
         //std::vector<uint64_t> q_curr_clone;
         //for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
         //assert(q_curr_clone == q_subset);
         // we should already have done this above
-        for (auto p : q_curr_bv) {
-            //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
-            q_seen_bv.set(p); // mark that we're closing over these bases
-        }
+        /*
         std::cerr << "q_curr_bv\t";
         for (uint64_t j = 0; j < q_curr_bv.size(); ++j) {
             std::cerr << q_curr_bv[j];
@@ -319,6 +328,7 @@ size_t compute_transitive_closures(
             std::cerr << q_seen_bv[j];
         }
         std::cerr << std::endl;
+        */
         double gammaFactor = 2.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
         // how to query: bphf.lookup(key) maps ids into [0..N)
@@ -338,7 +348,7 @@ size_t compute_transitive_closures(
         std::vector<DisjointSets::Aint> q_sets_data(q_curr_bv_count);
         // this initializes everything
         auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
-        std::cerr << "graph {" << std::endl;
+        //std::cerr << "graph {" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
             auto& s = ovlp.at(k);
@@ -346,17 +356,17 @@ size_t compute_transitive_closures(
             pos_t p = r.pos;
             //bool flip = s.second;
             for (uint64_t j = r.start; j != r.end; ++j) {
-                // XXX todo skip if we've already closed this base
-                // unite both sides of the overlap
-#pragma omp critical (cerr)
-                std::cerr << j << " -- " << offset(p) <<  ";" << std::endl;
-                //std::cerr << pos_to_string(make_pos_t(j, false)) << " -- " << pos_to_string(p) <<  ";" << std::endl;
-                //std::cerr << "uniting " << pos_to_string(make_pos_t(j, false)) << " and " << pos_to_string(p) << std::endl;
-                disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
+                // XXX todo skip if we've already closed either of these bases
+                if (!q_seen_bv[j] && !q_seen_bv[offset(p)]) {
+                    // unite both sides of the overlap
+                    disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
+                    //} else {
+                    //assert(false);
+                }
                 incr_pos(p);
             }
         }
-        std::cerr << "}" << std::endl;
+        //std::cerr << "}" << std::endl;
         // now read out our transclosures
         std::vector<std::pair<uint64_t, uint64_t>> dsets;
         for (auto p : q_curr_bv) {
@@ -366,8 +376,10 @@ size_t compute_transitive_closures(
             //disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
             //std::cerr << "dset\t" << pos_to_string(p) << "\t"
             //          << disjoint_sets.find(bphf.lookup(p)) << std::endl;
-            std::cerr << "dset\t" << p << "\t" << disjoint_sets.find(bphf.lookup(p)) << std::endl;
-            dsets.push_back(std::make_pair(disjoint_sets.find(bphf.lookup(p)), p));
+            //std::cerr << "dset\t" << p << "\t" << disjoint_sets.find(bphf.lookup(p)) << std::endl;
+            if (!q_seen_bv[p]) {
+                dsets.push_back(std::make_pair(disjoint_sets.find(bphf.lookup(p)), p));
+            }
         }
         // compress the dsets
         ips4o::parallel::sort(dsets.begin(), dsets.end());
@@ -381,9 +393,11 @@ size_t compute_transitive_closures(
             }
             d.first = c;
         }
+        /*
         for (auto& d : dsets) {
             std::cerr << "sdset\t" << d.first << "\t" << d.second << std::endl;
         }
+        */
         // sort by the smallest starting position in each disjoint set
         std::vector<std::pair<uint64_t, uint64_t>> dsets_by_min_pos(c+1);
         for (uint64_t x = 0; x < c+1; ++x) {
@@ -395,9 +409,11 @@ size_t compute_transitive_closures(
             minpos = std::min(minpos, d.second);
         }
         ips4o::parallel::sort(dsets_by_min_pos.begin(), dsets_by_min_pos.end());
+        /*
         for (auto& d : dsets_by_min_pos) {
             std::cerr << "sdset_min_pos\t" << d.second << "\t" << d.first << std::endl;
         }
+        */
         // invert the naming
         std::vector<uint64_t> dset_names(c+1);
         uint64_t x = 0;
@@ -409,10 +425,11 @@ size_t compute_transitive_closures(
             d.first = dset_names[d.first];
         }
         ips4o::parallel::sort(dsets.begin(), dsets.end());
+        /*
         for (auto& d : dsets) {
             std::cerr << "sdset_rename\t" << d.first << "\t" << pos_to_string(d.second) << std::endl;
         }
-
+        */
         // now, run the graph emission
 
         size_t seq_v_length = seq_v_out.tellp();
@@ -462,6 +479,11 @@ size_t compute_transitive_closures(
                 std::cerr << "range_buffer " << pos_to_string(r.first) << " " << r.second.first << " " << r.second.second << std::endl;
             }
 	    */
+        }
+        // mark our q_seen_bv for later
+        for (auto p : q_curr_bv) {
+            //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
+            q_seen_bv.set(p); // mark that we're closing over these bases
         }
 	//flush_ranges(seq_v_length);
         i = chunk_end; // update our chunk end here!

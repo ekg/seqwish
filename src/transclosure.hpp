@@ -37,6 +37,7 @@ void for_each_fresh_range(const match_t& range,
                           const std::function<void(match_t)>& lambda);
 
 void handle_range(match_t s,
+                  atomicbitvector::atomic_bv_t& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
