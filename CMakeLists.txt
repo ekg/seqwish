@@ -144,6 +144,17 @@ ExternalProject_Add(atomicbitvector
 ExternalProject_Get_property(atomicbitvector SOURCE_DIR)
 set(atomicbitvector_INCLUDE "${SOURCE_DIR}/include")
 
+# atomic queue library
+ExternalProject_Add(atomicqueue
+  GIT_REPOSITORY "https://github.com/max0x7ba/atomic_queue.git"
+  GIT_TAG "7568faad3ccc8fcfd68e1217356c94996f7f9e15"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(atomicqueue SOURCE_DIR)
+set(atomicqueue_INCLUDE "${SOURCE_DIR}")
+
 set(CMAKE_BUILD_TYPE Debug)
 
 # set up our target executable and specify its dependencies and includes
@@ -176,6 +187,7 @@ add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
 add_dependencies(seqwish bbhash)
 add_dependencies(seqwish atomicbitvector)
+add_dependencies(seqwish atomicqueue)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -186,7 +198,8 @@ target_include_directories(seqwish PUBLIC
   "${iitii_INCLUDE}"
   "${mmap_allocator_INCLUDE}"
   "${bbhash_INCLUDE}"
-  "${atomicbitvector_INCLUDE}")
+  "${atomicbitvector_INCLUDE}"
+  "${atomicqueue_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
