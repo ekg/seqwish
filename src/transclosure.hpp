@@ -17,8 +17,11 @@
 #include "spinlock.hpp"
 #include "dset64-gccAtomic.hpp"
 #include "BooPHF.h"
+#include "atomic_queue.h"
 
 namespace seqwish {
+
+typedef atomic_queue::AtomicQueue2<std::pair<pos_t, uint64_t>, 2 << 16> range_atomic_queue_t;
 
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
@@ -38,14 +41,16 @@ void handle_range(match_t s,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
-                  std::set<std::pair<pos_t, uint64_t>>& todo);
+                  range_atomic_queue_t& todo,
+                  std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
-                      std::set<std::pair<pos_t, uint64_t>>& todo);
+                      range_atomic_queue_t& todo,
+                      std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 size_t compute_transitive_closures(
     seqindex_t& seqidx,
