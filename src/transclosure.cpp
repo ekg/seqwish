@@ -103,7 +103,8 @@ void handle_range(match_t s,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
-                  std::set<std::pair<pos_t, uint64_t>>& todo) {
+                  range_atomic_queue_t& todo,
+                  std::vector<std::pair<pos_t, uint64_t>>& overflow) {
     std::cerr << "handle_range "
               << s.start << "-" << s.end << " "
               << pos_to_string(s.pos) << " "
@@ -122,7 +123,7 @@ void handle_range(match_t s,
         }
         assert(s.start < s.end);
         // record the adjusted range
-#pragma omp critical (ovlp)
+//#pragma omp critical (ovlp)
         ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
         // check if we haven't closed the entire range before adding to todo
         bool all_set = true;
@@ -134,8 +135,12 @@ void handle_range(match_t s,
             std::cerr << "todo_insert "
                       << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
                       << s.end - s.start << std::endl;
-#pragma omp critical (todo)
-            todo.insert(std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start));
+            auto item = std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start);
+            // check if we can insert in todo, and insert if we can
+            if (!todo.try_push(item)) {
+                // if not, put into a thread-local overflow
+                overflow.push_back(item); // TODO check if this ever occurs and toss a warning?
+            }
         } else {
             // mark the opposite end of the match
             uint64_t match_len = s.end - s.start;
@@ -154,7 +159,8 @@ void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
-                      std::set<std::pair<pos_t, uint64_t>>& todo) {
+                      range_atomic_queue_t& todo,
+                      std::vector<std::pair<pos_t, uint64_t>>& overflow) {
     std::vector<size_t> o;
     aln_iitree.overlap(b.start, b.end, o);
     for (auto& idx : o) {
@@ -163,7 +169,7 @@ void explore_overlaps(const match_t& b,
             r,
             seen_bv,
             [&](match_t s) {
-                handle_range(s, curr_bv, b.start, b.end, ovlp, todo);
+                handle_range(s, curr_bv, b.start, b.end, ovlp, todo, overflow);
             });
     }
 }
@@ -177,6 +183,9 @@ size_t compute_transitive_closures(
     uint64_t repeat_max,
     uint64_t min_transclose_len,
     uint64_t transclose_batch_size) { // size of a batch to collect for lock-free transitive closure
+    // get our thread count as set for openmp (nb: we'll only partly use openmp here)
+    std::cerr << "uhhhh" << std::endl;
+    uint nthreads = get_thread_count();
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
@@ -190,30 +199,53 @@ size_t compute_transitive_closures(
     // to a range (start and length) in S (our graph sequence vector)
     // we are mapping from the /last/ position in the matched range, not the first
     std::map<pos_t, std::pair<uint64_t, uint64_t>> range_buffer;
-    // here we try to find a growing range to extend
-    
-    // range compressed model
-    // accumulate pairs of ranges in S (output seq of graph) and Q (input seqs concatenated)
-    // we flush when we stop extending
-    // we determine when we stop extending when we have stepped a bp and broke our range extension
     uint64_t last_seq_id = seqidx.seq_id_at(0);
+    // collect based on a seed chunk of a given length
     for (uint64_t i = 0; i < input_seq_length; ) {
         // scan our q_seen_bv to find our next start
         std::cerr << "closing\t" << i << std::endl;
         while (i < input_seq_length && q_seen_bv[i]) ++i;
         std::cerr << "scanned_to\t" << i << std::endl;
         if (i >= input_seq_length) break; // we're done!
-        // collect ranges overlapping
-        std::vector<std::pair<match_t, bool>> ovlp;
+        // collect ranges overlapping, per thread to avoid contention
+        std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
+        // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
-        // TODO use an atomic bitset
-        //atomicbitvector::atomic_bv_t q_subset_bv(seqidx.size()); // heavy for small closures
-        // complete our collection (todo: in parallel)
-        std::set<std::pair<pos_t, uint64_t>> todo; // and this too?
-        //std::vector<uint64_t> q_subset;
+        // a shared work queue for our threads
+        range_atomic_queue_t todo; // 16M elements
+        // where our chunk begins
         uint64_t chunk_start = i;
+        // and where it ends (not past the end of the sequence)
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
+
+        auto worker_lambda =
+            [&](uint64_t tid) {
+                auto& ovlp = ovlps[tid];
+                std::vector<std::pair<pos_t, uint64_t>> overflow;
+                // spin while waiting to get our first range
+                std::cerr << "about to spin in thread " << tid << std::endl;
+                std::pair<pos_t, uint64_t> item = todo.pop();
+                // then continue until the work queue is apparently empty
+                do {
+                    auto& pos = item.first;
+                    auto& match_len = item.second;
+                    uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
+                    uint64_t range_start = n;
+                    uint64_t range_end = n + match_len;
+                    explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo, overflow);
+                    // try to flush items from our thread local overflow into todo
+                    std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
+                    while (overflow.size() && todo.try_push(overflow.back())) {
+                        overflow.pop_back();
+                    }
+                } while (!todo.was_empty());
+            };
+        // launch our threads to expand the overlap set in parallel
+        std::vector<std::thread> workers; workers.reserve(nthreads);
+        for (uint64_t t = 0; t < nthreads; ++t) {
+            workers.emplace_back(worker_lambda, t);
+        }
         // the chunk range isn't an actual alignment, so we handle it differently
         for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, [&](match_t b) {
                 // the special case is handling ranges that have no matches
@@ -225,23 +257,23 @@ size_t compute_transitive_closures(
                     q_curr_bv.set(j);
                 }
                 std::cerr << "outer_lookup " << b.start << " " << b.end << std::endl;
+                todo.push(std::make_pair(make_pos_t(b.start, false), b.end - b.start));
                 // TODO use this threading model for the recursive exploration
-                std::thread t([&](void) { explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo); });
-                t.join();
+                //std::thread t([&](void) { explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo); });
+                //t.join();
             });
-        while (!todo.empty()) {
-            pos_t pos = todo.begin()->first;
-            uint64_t match_len = todo.begin()->second;
-            std::cerr << "todo_load "
-                      << pos_to_string(pos) << " "
-                      << match_len << std::endl;
-            todo.erase(todo.begin());
-            // get the n and n+match_len on the forward strand
-            uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
-            uint64_t range_start = n;
-            uint64_t range_end = n + match_len;
-            explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo);
-            //std::cerr << "later_lookup " << range_start << " " << range_end << std::endl;
+        // wait for all the workers to finish
+        std::cerr << "gonna join" << std::endl;
+        for (uint64_t t = 0; t < nthreads; ++t) {
+            workers[t].join();
+        }
+        uint64_t novlps = 0;
+        for (auto& v : ovlps) novlps += v.size();
+        std::vector<std::pair<match_t, bool>> ovlp;
+        ovlp.reserve(novlps);
+        for (auto& v : ovlps) {
+            ovlp.insert(ovlp.end(), v.begin(), v.end());
+            v.clear(); // attempt to free memory
         }
         // print our overlaps
         std::cerr << "transc" << "\t" << chunk_start << "-" << chunk_end << std::endl;
@@ -277,7 +309,6 @@ size_t compute_transitive_closures(
             std::cerr << q_seen_bv[j];
         }
         std::cerr << std::endl;
-        uint nthreads = get_thread_count();
         double gammaFactor = 2.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
         // how to query: bphf.lookup(key) maps ids into [0..N)
