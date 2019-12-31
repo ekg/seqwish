@@ -2,6 +2,8 @@
 
 namespace seqwish {
 
+using namespace std::chrono_literals;
+
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
                   std::map<pos_t, std::pair<uint64_t, uint64_t>>& range_buffer) {
@@ -218,14 +220,17 @@ size_t compute_transitive_closures(
         // and where it ends (not past the end of the sequence)
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
-
+        std::atomic<bool> work_todo;
+        work_todo.store(true);
         auto worker_lambda =
             [&](uint64_t tid) {
                 auto& ovlp = ovlps[tid];
                 std::vector<std::pair<pos_t, uint64_t>> overflow;
                 // spin while waiting to get our first range
                 std::cerr << "about to spin in thread " << tid << std::endl;
-                std::pair<pos_t, uint64_t> item = todo.pop();
+                std::pair<pos_t, uint64_t> item;
+                while (work_todo.load() && !todo.try_pop(item));
+                if (!work_todo.load()) return;
                 // then continue until the work queue is apparently empty
                 do {
                     auto& pos = item.first;
@@ -239,7 +244,7 @@ size_t compute_transitive_closures(
                     while (overflow.size() && todo.try_push(overflow.back())) {
                         overflow.pop_back();
                     }
-                } while (!todo.was_empty());
+                } while (todo.try_pop(item));
             };
         // launch our threads to expand the overlap set in parallel
         std::vector<std::thread> workers; workers.reserve(nthreads);
@@ -262,7 +267,12 @@ size_t compute_transitive_closures(
                 //std::thread t([&](void) { explore_overlaps(b, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo); });
                 //t.join();
             });
-        // wait for all the workers to finish
+        // avoid a potential race that occurs when we don't have enough work for all the threads
+        std::this_thread::sleep_for(1ms);
+        while (!todo.was_empty()) {
+            std::this_thread::sleep_for(1ms);
+        }
+        work_todo.store(false);
         std::cerr << "gonna join" << std::endl;
         for (uint64_t t = 0; t < nthreads; ++t) {
             workers[t].join();
