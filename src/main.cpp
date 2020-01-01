@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "filter exact matches below this length", {'L', "min-match-len"});
     args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
-    args::ValueFlag<uint64_t> transclose_batch(parser, "N", "number of bp to use for transitive closure batch", {'B', "transclose-batch"});
+    args::ValueFlag<uint64_t> transclose_batch(parser, "N", "number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
     //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
     mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max), args::get(min_transclose_len),
-                                                      !args::get(transclose_batch) ? 1 : args::get(transclose_batch));
+                                                      !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch));
 
     if (args::get(debug)) {
         for (auto& interval : node_iitree) {
