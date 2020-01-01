@@ -221,16 +221,22 @@ size_t compute_transitive_closures(
         while (i < input_seq_length && q_seen_bv[i]) ++i;
         //std::cerr << "scanned_to\t" << i << std::endl;
         if (i >= input_seq_length) break; // we're done!
+        // where our chunk begins
+        uint64_t chunk_start = i;
+        // extend until we've got chunk_size unseen bases
+        uint64_t bases_to_consider = 0;
+        uint64_t chunk_end = chunk_start;
+        while (bases_to_consider < transclose_batch_size && chunk_end < input_seq_length) {
+            bases_to_consider += !q_seen_bv[chunk_end++];
+        }
+        // and where it ends (not past the end of the sequence)
+        //chunk_end = std::min(input_seq_length, chunk_end); // chunk_start + transclose_batch_size);
         // collect ranges overlapping, per thread to avoid contention
         std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
         // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
         // a shared work queue for our threads
         range_atomic_queue_t todo; // 16M elements
-        // where our chunk begins
-        uint64_t chunk_start = i;
-        // and where it ends (not past the end of the sequence)
-        uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlap_collect" << std::endl;
         std::atomic<bool> work_todo;
@@ -366,7 +372,7 @@ size_t compute_transitive_closures(
         }
         //std::cerr << "}" << std::endl;
         // now read out our transclosures
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dsets_write" << std::endl;
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_write" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
 #pragma omp parallel for

@@ -14,7 +14,7 @@ void compact_nodes(
     // do we have any links to the second that don't come from the first?
     seq_id_bv[0] = 1; // set first node start
     size_t num_seqs = seqidx.n_seqs();
-//#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
     for (size_t i = 1; i <= num_seqs; ++i) {
         size_t j = seqidx.nth_seq_offset(i);
         size_t seq_len = seqidx.nth_seq_length(i);
