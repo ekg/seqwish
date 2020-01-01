@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
 
     if (!args::get(keep_temp_files)) {
         seqidx.remove_index_files();
-        //std::remove(aln_idx.c_str());
+        std::remove(aln_idx.c_str());
         std::remove(seq_v_file.c_str());
         std::remove(node_iitree_idx.c_str());
         std::remove(path_iitree_idx.c_str());
