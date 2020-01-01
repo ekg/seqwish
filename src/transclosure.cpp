@@ -94,7 +94,7 @@ void for_each_fresh_range(const match_t& range,
             while (p < range.end && !seen_bv.test(p)) {
                 ++p;
                 incr_pos(t);
-                if (seqidx.seq_start(p)) break; // works, but is this the right place?
+                //if (seqidx.seq_start(p)) break; // works, but is this the right place?
             }
             //std::cerr << "lambda\t" << q << " " << p << " " << pos_to_string(v) << std::endl;
             lambda({q, p, v});
@@ -232,6 +232,7 @@ size_t compute_transitive_closures(
         // and where it ends (not past the end of the sequence)
         uint64_t chunk_end = std::min(input_seq_length, chunk_start + transclose_batch_size);
         //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlap_collect" << std::endl;
         std::atomic<bool> work_todo;
         work_todo.store(true);
         auto worker_lambda =
@@ -293,6 +294,7 @@ size_t compute_transitive_closures(
             workers[t].join();
         }
         // TODO use a thread to collect these during runtime from another atomic ring buffer
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlaps_vector_merge" << std::endl;
         uint64_t novlps = 0;
         for (auto& v : ovlps) novlps += v.size();
         std::vector<std::pair<match_t, bool>> ovlp;
@@ -323,7 +325,7 @@ size_t compute_transitive_closures(
         //for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
         //assert(q_curr_clone == q_subset);
         // we should already have done this above
-        double gammaFactor = 2.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
+        double gammaFactor = 4.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
         // how to query: bphf.lookup(key) maps ids into [0..N)
         // make a dense mapping
@@ -332,17 +334,19 @@ size_t compute_transitive_closures(
         //atomicbitvector::atomic_bv_t::iterator data_iterator = q_curr_bv.begin();
         //this can't work because bbhash wants iterators that are equivalent to pointers
         //for now, store the list of bases in memory, possibly on disk using mmapable_vector if this becomes a limitation
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "bbhash_build" << std::endl;
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
         for (auto p : q_curr_bv) {
             q_curr_bv_vec.push_back(p);
         }
         auto bphf = boomphf::mphf<uint64_t, boomphf::SingleHashFunctor<uint64_t>>(q_curr_bv_count,q_curr_bv_vec,nthreads,gammaFactor,false,false);
-        q_curr_bv_vec.clear();
+        //q_curr_bv_vec.clear();
         // disjoint set structure
         std::vector<DisjointSets::Aint> q_sets_data(q_curr_bv_count);
         // this initializes everything
         auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
         //std::cerr << "graph {" << std::endl;
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "parallel_union_find" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
             auto& s = ovlp.at(k);
@@ -362,21 +366,29 @@ size_t compute_transitive_closures(
         }
         //std::cerr << "}" << std::endl;
         // now read out our transclosures
-        std::vector<std::pair<uint64_t, uint64_t>> dsets;
-        for (auto p : q_curr_bv) {
-            //for (uint64_t x = 0; x < q_subset.size(); ++x) {
-            //uint64_t j = offset(q_subset.at(x));
-            //auto& p = q_subset.at(x);
-            //disjoint_sets.unite(bphf.lookup(make_pos_t(j, false)), bphf.lookup(make_pos_t(j, true)));
-            //std::cerr << "dset\t" << pos_to_string(p) << "\t"
-            //          << disjoint_sets.find(bphf.lookup(p)) << std::endl;
-            //std::cerr << "dset\t" << p << "\t" << disjoint_sets.find(bphf.lookup(p)) << std::endl;
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dsets_write" << std::endl;
+        std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
+        std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
+#pragma omp parallel for
+        for (uint64_t j = 0; j < q_curr_bv_count; ++j) {
+            auto& p = q_curr_bv_vec[j];
             if (!q_seen_bv[p]) {
-                dsets.push_back(std::make_pair(disjoint_sets.find(bphf.lookup(p)), p));
+                dsets[j] = std::make_pair(disjoint_sets.find(bphf.lookup(p)), p);
+            } else {
+                dsets[j] = max_pair;
             }
         }
+        q_curr_bv_vec.clear();
+        // remove excluded elements
+        dsets.erase(std::remove_if(dsets.begin(), dsets.end(),
+                                   [&max_pair](const std::pair<uint64_t, uint64_t>& x) {
+                                       return x == max_pair;
+                                   }),
+                    dsets.end());
         // compress the dsets
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_compression" << std::endl;
         ips4o::parallel::sort(dsets.begin(), dsets.end());
+
         uint64_t c = 0;
         assert(dsets.size());
         uint64_t l = dsets.front().first;
@@ -393,6 +405,7 @@ size_t compute_transitive_closures(
         }
         */
         // sort by the smallest starting position in each disjoint set
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_sort" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> dsets_by_min_pos(c+1);
         for (uint64_t x = 0; x < c+1; ++x) {
             dsets_by_min_pos[x].second = x;
@@ -409,6 +422,7 @@ size_t compute_transitive_closures(
         }
         */
         // invert the naming
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_invert" << std::endl;
         std::vector<uint64_t> dset_names(c+1);
         uint64_t x = 0;
         for (auto& d : dsets_by_min_pos) {
@@ -426,6 +440,7 @@ size_t compute_transitive_closures(
         */
         // now, run the graph emission
 
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "graph_emission" << std::endl;
         size_t seq_v_length = seq_v_out.tellp();
         //uint64_t flushed = range_buffer.size();
         uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
