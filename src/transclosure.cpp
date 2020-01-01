@@ -71,10 +71,11 @@ void flush_ranges(const uint64_t& s_pos,
     }
 }
 
-// break the big range into its component ranges that we haven't already closed
-// TODO bound this by any outer limits we might have to save time
+// break the big range into its component ranges that we haven't already closed,
+// breaking on sequence breaks
 void for_each_fresh_range(const match_t& range,
                           atomicbitvector::atomic_bv_t& seen_bv,
+                          const seqindex_t& seqidx,
                           const std::function<void(match_t)>& lambda) {
     // walk range, breaking where we've seen it, emiting new ranges
     uint64_t p = range.start;
@@ -83,7 +84,7 @@ void for_each_fresh_range(const match_t& range,
     while (p < range.end) {
         // if we haven't seen p, start making a range
         //std::cerr << "looking at " << p << std::endl;
-        if (seen_bv.test(p)) {
+        if (seen_bv.test(p)) { // || seqidx.seq_start(p)) {
             ++p;
             incr_pos(t);
         } else {
@@ -93,6 +94,7 @@ void for_each_fresh_range(const match_t& range,
             while (p < range.end && !seen_bv.test(p)) {
                 ++p;
                 incr_pos(t);
+                if (seqidx.seq_start(p)) break; // works, but is this the right place?
             }
             //std::cerr << "lambda\t" << q << " " << p << " " << pos_to_string(v) << std::endl;
             lambda({q, p, v});
@@ -103,6 +105,7 @@ void for_each_fresh_range(const match_t& range,
 void handle_range(match_t s,
                   atomicbitvector::atomic_bv_t& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
+                  const seqindex_t& seqidx,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
@@ -167,6 +170,7 @@ void handle_range(match_t s,
 void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
+                      const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
                       range_atomic_queue_t& todo,
@@ -178,14 +182,15 @@ void explore_overlaps(const match_t& b,
         for_each_fresh_range(
             r,
             seen_bv,
+            seqidx,
             [&](match_t s) {
-                handle_range(s, seen_bv, curr_bv, b.start, b.end, ovlp, todo, overflow);
+                handle_range(s, seen_bv, curr_bv, seqidx, b.start, b.end, ovlp, todo, overflow);
             });
     }
 }
 
 size_t compute_transitive_closures(
-    seqindex_t& seqidx,
+    const seqindex_t& seqidx,
     mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
@@ -245,7 +250,7 @@ size_t compute_transitive_closures(
                     uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
                     uint64_t range_start = n;
                     uint64_t range_end = n + match_len;
-                    explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, aln_iitree, ovlp, todo, overflow);
+                    explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, seqidx, aln_iitree, ovlp, todo, overflow);
                     // try to flush items from our thread local overflow into todo
                     //std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
                     while (overflow.size() && todo.try_push(overflow.back())) {
@@ -259,7 +264,7 @@ size_t compute_transitive_closures(
             workers.emplace_back(worker_lambda, t);
         }
         // the chunk range isn't an actual alignment, so we handle it differently
-        for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, [&](match_t b) {
+        for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, seqidx, [&](match_t b) {
                 // the special case is handling ranges that have no matches
                 // we need to close these even if they aren't matched to anything
                 //std::cerr << "upfront\t" << b.start << "-" << b.end << std::endl;
@@ -287,6 +292,7 @@ size_t compute_transitive_closures(
         for (uint64_t t = 0; t < nthreads; ++t) {
             workers[t].join();
         }
+        // TODO use a thread to collect these during runtime from another atomic ring buffer
         uint64_t novlps = 0;
         for (auto& v : ovlps) novlps += v.size();
         std::vector<std::pair<match_t, bool>> ovlp;
@@ -317,18 +323,6 @@ size_t compute_transitive_closures(
         //for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
         //assert(q_curr_clone == q_subset);
         // we should already have done this above
-        /*
-        std::cerr << "q_curr_bv\t";
-        for (uint64_t j = 0; j < q_curr_bv.size(); ++j) {
-            std::cerr << q_curr_bv[j];
-        }
-        std::cerr << std::endl;
-        std::cerr << "q_seen_bv\t";
-        for (uint64_t j = 0; j < q_seen_bv.size(); ++j) {
-            std::cerr << q_seen_bv[j];
-        }
-        std::cerr << std::endl;
-        */
         double gammaFactor = 2.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
                                   // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
         // how to query: bphf.lookup(key) maps ids into [0..N)
@@ -448,7 +442,9 @@ size_t compute_transitive_closures(
                 seq_v_out << base;
                 ++seq_v_length;
                 // check to see if we've switched sequences
-                uint64_t curr_seq_id = seqidx.seq_id_at(i);
+                // this check assumes that we're walking up through the Q vector
+                // we take the minimum position in Q in the dset and ask if it implies a sequence switch
+                uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
                 // if we've changed basis sequences, flush
                 if (curr_seq_id != last_seq_id) {
                     flush_ranges(seq_v_length, range_buffer, node_iitree, path_iitree); // hack to force flush at sequence change
@@ -485,7 +481,19 @@ size_t compute_transitive_closures(
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv.set(p); // mark that we're closing over these bases
         }
-	//flush_ranges(seq_v_length);
+        /*
+        std::cerr << "q_curr_bv\t";
+        for (uint64_t j = 0; j < q_curr_bv.size(); ++j) {
+            std::cerr << q_curr_bv[j];
+        }
+        std::cerr << std::endl;
+        std::cerr << "q_seen_bv\t";
+        for (uint64_t j = 0; j < q_seen_bv.size(); ++j) {
+            std::cerr << q_seen_bv[j];
+        }
+        std::cerr << std::endl;
+        */
+        //flush_ranges(seq_v_length);
         i = chunk_end; // update our chunk end here!
     }
     //exit(1);
