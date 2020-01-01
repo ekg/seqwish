@@ -21,7 +21,7 @@ void derive_links(seqindex_t& seqidx,
     */
 #pragma omp parallel for schedule(dynamic)
     for (size_t id = 1; id <= n_nodes; ++id) {
-        uint64_t node_start_in_s = seq_id_cbv_select(id); // node_iitree and path_iitree are 1-based
+        uint64_t node_start_in_s = seq_id_cbv_select(id); // select is 1-based
         uint64_t node_end_in_s = seq_id_cbv_select(id+1);
         //std::cerr << "links for node " << id << " start " << node_start_in_s << " end " << node_end_in_s << std::endl;
         // find the things on both sides of our node by looking in the node_iitree, finding what bits of the paths (in Q)

@@ -178,7 +178,7 @@ void seqindex_t::load(const std::string& filename) {
     open_seq(filename);
 }
 
-void seqindex_t::to_fasta(std::ostream& out, size_t linewidth) {
+void seqindex_t::to_fasta(std::ostream& out, size_t linewidth) const {
     // extract the sequence names
     for (size_t i = 1; i < seq_count+1; ++i) {
         auto name = nth_name(i);
@@ -194,7 +194,7 @@ void seqindex_t::to_fasta(std::ostream& out, size_t linewidth) {
     // iterate through the sequence names and extract the sequences
 }
 
-std::string seqindex_t::nth_name(size_t n) {
+std::string seqindex_t::nth_name(size_t n) const {
     // get the extents from our seq name dictionary
     size_t begin = seq_name_cbv_select(n)+1; // step past '>' delimiter
     size_t end = seq_name_cbv_select(n+1)-2; // step back past added ' '
@@ -202,7 +202,7 @@ std::string seqindex_t::nth_name(size_t n) {
     return name;
 }
 
-size_t seqindex_t::rank_of_seq_named(const std::string& name) {
+size_t seqindex_t::rank_of_seq_named(const std::string& name) const {
     std::string query = ">" + name + " ";
     //std::cerr << query << std::endl;
     auto occs = locate(seq_name_csa, query);
@@ -211,52 +211,52 @@ size_t seqindex_t::rank_of_seq_named(const std::string& name) {
     return seq_name_cbv_rank(occs[0])+1;
 }
 
-size_t seqindex_t::nth_seq_length(size_t n) {
+size_t seqindex_t::nth_seq_length(size_t n) const {
     //std::cerr << "trying for "  << n << std::endl;
     return seq_begin_cbv_select(n+1)-seq_begin_cbv_select(n);
 }
 
-size_t seqindex_t::nth_seq_offset(size_t n) {
+size_t seqindex_t::nth_seq_offset(size_t n) const {
     return seq_begin_cbv_select(n);
 }
 
-std::string seqindex_t::seq(const std::string& name) {
+std::string seqindex_t::seq(const std::string& name) const {
     return subseq(name, 0, nth_seq_length(rank_of_seq_named(name)));
 }
 
-std::string seqindex_t::subseq(const std::string& name, size_t pos, size_t count) {
+std::string seqindex_t::subseq(const std::string& name, size_t pos, size_t count) const {
     size_t n = rank_of_seq_named(name);
     return subseq(n, pos, count);
 }
 
-std::string seqindex_t::subseq(size_t n, size_t pos, size_t count) {
+std::string seqindex_t::subseq(size_t n, size_t pos, size_t count) const {
     return subseq(nth_seq_offset(n)+pos, count);
 }
 
-std::string seqindex_t::subseq(size_t pos, size_t count) {
+std::string seqindex_t::subseq(size_t pos, size_t count) const {
     std::string s; s.resize(count);
     memcpy((void*)s.c_str(), &seq_buf[pos], count);
     return s;
 }
 
-size_t seqindex_t::pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev) {
+size_t seqindex_t::pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev) const {
     return pos_in_all_seqs(rank_of_seq_named(name), pos, is_rev);
 }
 
-size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos, bool is_rev) {
+size_t seqindex_t::pos_in_all_seqs(size_t n, size_t pos, bool is_rev) const {
     //std::cerr << "nth seq length " << nth_seq_length(n) << " offset " << nth_seq_offset(n) << std::endl;
     return nth_seq_offset(n) + (is_rev ? nth_seq_length(n)-1-pos : pos);
 }
 
-size_t seqindex_t::seq_length(void) {
+size_t seqindex_t::seq_length(void) const {
     return seq_begin_cbv.size()-1;
 }
 
-char seqindex_t::at(size_t pos) {
+char seqindex_t::at(size_t pos) const {
     return seq_buf[pos];
 }
 
-char seqindex_t::at_pos(pos_t pos) {
+char seqindex_t::at_pos(pos_t pos) const {
     // assumes 0-based pos
     char c = at(offset(pos));
     if (is_rev(pos)) {
@@ -265,12 +265,16 @@ char seqindex_t::at_pos(pos_t pos) {
     return c;
 }
 
-size_t seqindex_t::n_seqs(void) {
+size_t seqindex_t::n_seqs(void) const {
     return seq_count;
 }
 
-size_t seqindex_t::seq_id_at(size_t pos) {
+size_t seqindex_t::seq_id_at(size_t pos) const {
     return seq_begin_cbv_rank(pos+1);
+}
+
+bool seqindex_t::seq_start(size_t pos) const {
+    return seq_begin_cbv[pos] == 1;
 }
 
 }
