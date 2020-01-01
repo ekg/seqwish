@@ -56,22 +56,23 @@ public:
     size_t save(sdsl::structure_tree_node* s = NULL, std::string name = "");
     void load(const std::string& filename);
     void remove_index_files(void);
-    void to_fasta(std::ostream& out, size_t linewidth = 60);
-    std::string nth_name(size_t n);
-    size_t rank_of_seq_named(const std::string& name);
-    size_t nth_seq_length(size_t n);
-    size_t nth_seq_offset(size_t n);
-    std::string seq(const std::string& name);
-    std::string subseq(const std::string& name, size_t pos, size_t count);
-    std::string subseq(size_t n, size_t pos, size_t count);
-    std::string subseq(size_t pos, size_t count);
-    size_t pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev);
-    size_t pos_in_all_seqs(size_t n, size_t pos, bool is_rev);
-    size_t seq_length(void);
-    char at(size_t pos);
-    char at_pos(pos_t pos); // assumes pos_t is 1-based
-    size_t n_seqs(void);
-    size_t seq_id_at(size_t pos);
+    void to_fasta(std::ostream& out, size_t linewidth = 60) const;
+    std::string nth_name(size_t n) const;
+    size_t rank_of_seq_named(const std::string& name) const;
+    size_t nth_seq_length(size_t n) const;
+    size_t nth_seq_offset(size_t n) const;
+    std::string seq(const std::string& name) const;
+    std::string subseq(const std::string& name, size_t pos, size_t count) const;
+    std::string subseq(size_t n, size_t pos, size_t count) const;
+    std::string subseq(size_t pos, size_t count) const;
+    size_t pos_in_all_seqs(const std::string& name, size_t pos, bool is_rev) const;
+    size_t pos_in_all_seqs(size_t n, size_t pos, bool is_rev) const;
+    size_t seq_length(void) const;
+    char at(size_t pos) const;
+    char at_pos(pos_t pos) const;
+    size_t n_seqs(void) const;
+    size_t seq_id_at(size_t pos) const;
+    bool seq_start(size_t pos) const;
 
 };
 

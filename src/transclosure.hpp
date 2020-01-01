@@ -34,11 +34,13 @@ void flush_ranges(const uint64_t& s_pos,
 
 void for_each_fresh_range(const match_t& range,
                           atomicbitvector::atomic_bv_t& seen_bv,
+                          const seqindex_t& seqidx,
                           const std::function<void(match_t)>& lambda);
 
 void handle_range(match_t s,
                   atomicbitvector::atomic_bv_t& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
+                  const seqindex_t& seqidx,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
@@ -48,13 +50,14 @@ void handle_range(match_t s,
 void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
+                      const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
                       range_atomic_queue_t& todo,
                       std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 size_t compute_transitive_closures(
-    seqindex_t& seqidx,
+    const seqindex_t& seqidx,
     mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
     const std::string& seq_v_file,
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph to input
