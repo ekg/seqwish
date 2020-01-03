@@ -239,22 +239,24 @@ size_t compute_transitive_closures(
                 // spin while waiting to get our first range
                 //std::cerr << "about to spin in thread " << tid << std::endl;
                 std::pair<pos_t, uint64_t> item;
-                while (work_todo.load() && !todo.try_pop(item));
-                if (!work_todo.load()) return;
+                //while (work_todo.load() && !todo.try_pop(item));
+                //if (!work_todo.load()) return;
                 // then continue until the work queue is apparently empty
-                do {
-                    auto& pos = item.first;
-                    auto& match_len = item.second;
-                    uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
-                    uint64_t range_start = n;
-                    uint64_t range_end = n + match_len;
-                    explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, seqidx, aln_iitree, ovlp, todo, overflow);
-                    // try to flush items from our thread local overflow into todo
-                    //std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
+                while (work_todo.load()) {
+                    if (todo.try_pop(item)) {
+                        auto& pos = item.first;
+                        auto& match_len = item.second;
+                        uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
+                        uint64_t range_start = n;
+                        uint64_t range_end = n + match_len;
+                        explore_overlaps({range_start, range_end, pos}, q_seen_bv, q_curr_bv, seqidx, aln_iitree, ovlp, todo, overflow);
+                        // try to flush items from our thread local overflow into todo
+                        //std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
+                    }
                     while (overflow.size() && todo.try_push(overflow.back())) {
                         overflow.pop_back();
                     }
-                } while (todo.try_pop(item) || work_todo.load());
+                }
             };
         // launch our threads to expand the overlap set in parallel
         std::vector<std::thread> workers; workers.reserve(nthreads);
@@ -349,15 +351,9 @@ size_t compute_transitive_closures(
             auto& s = ovlp.at(k);
             auto& r = s.first;
             pos_t p = r.pos;
-            //bool flip = s.second;
             for (uint64_t j = r.start; j != r.end; ++j) {
-                // XXX todo skip if we've already closed either of these bases
-                if (!q_seen_bv[j] && !q_seen_bv[offset(p)]) {
-                    // unite both sides of the overlap
-                    disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
-                    //} else {
-                    //assert(false);
-                }
+                // unite both sides of the overlap
+                disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
                 incr_pos(p);
             }
         }
