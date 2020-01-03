@@ -135,9 +135,11 @@ void handle_range(match_t s,
         ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
         // check if we haven't closed the entire range before adding to todo
         bool all_set = true;
+        pos_t n = s.pos;
         for (uint64_t i = s.start; i < s.end; ++i) {
             assert(!seen_bv[i]);
-            all_set &= curr_bv.set(i);
+            all_set &= curr_bv.set(offset(n));
+            incr_pos(n);
         }
         //std::cerr << "all_set ? " << all_set << std::endl;
         if (!all_set) {
@@ -151,17 +153,6 @@ void handle_range(match_t s,
             if (!todo.try_push(item)) {
                 // if not, put into a thread-local overflow
                 overflow.push_back(item); // TODO check if this ever occurs and toss a warning?
-            }
-        } else {
-            // mark the opposite end of the match
-            uint64_t match_len = s.end - s.start;
-            uint64_t n = !is_rev(s.pos) ? offset(s.pos) : offset(s.pos) - match_len + 1;
-            uint64_t range_start = n;
-            uint64_t range_end = n + match_len;
-            for (uint64_t i = range_start; i < range_end; ++i) {
-                //if (!seen_bv[i]) curr_bv.set(i);
-                //assert(!seen_bv[i]);
-                curr_bv.set(i);
             }
         }
     }
