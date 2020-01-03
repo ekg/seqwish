@@ -132,17 +132,17 @@ void handle_range(match_t s,
         assert(s.start < s.end);
         // record the adjusted range
 //#pragma omp critical (ovlp)
-        ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
-        // check if we haven't closed the entire range before adding to todo
-        bool all_set = true;
+        // check if we haven't closed the target range before adding to todo
+        bool all_set_there = true;
         pos_t n = s.pos;
         for (uint64_t i = s.start; i < s.end; ++i) {
             assert(!seen_bv[i]);
-            all_set &= curr_bv.set(offset(n));
+            all_set_there = curr_bv.set(offset(n)) && all_set_there;
             incr_pos(n);
         }
+        ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
         //std::cerr << "all_set ? " << all_set << std::endl;
-        if (!all_set) {
+        if (!all_set_there) {
             /*
             std::cerr << "todo_insert "
                       << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
