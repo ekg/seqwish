@@ -231,10 +231,12 @@ size_t compute_transitive_closures(
         //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlap_collect" << std::endl;
         std::atomic<bool> work_todo;
+        std::vector<std::atomic<bool>> explorings(nthreads);
         work_todo.store(true);
         auto worker_lambda =
             [&](uint64_t tid) {
                 auto& ovlp = ovlps[tid];
+                auto& exploring = explorings[tid];
                 std::vector<std::pair<pos_t, uint64_t>> overflow;
                 // spin while waiting to get our first range
                 //std::cerr << "about to spin in thread " << tid << std::endl;
@@ -244,6 +246,7 @@ size_t compute_transitive_closures(
                 // then continue until the work queue is apparently empty
                 while (work_todo.load()) {
                     if (todo.try_pop(item)) {
+                        exploring.store(true);
                         auto& pos = item.first;
                         auto& match_len = item.second;
                         uint64_t n = !is_rev(pos) ? offset(pos) : offset(pos) - match_len + 1;
@@ -256,6 +259,7 @@ size_t compute_transitive_closures(
                     while (overflow.size() && todo.try_push(overflow.back())) {
                         overflow.pop_back();
                     }
+                    exploring.store(false);
                 }
             };
         // launch our threads to expand the overlap set in parallel
@@ -283,9 +287,17 @@ size_t compute_transitive_closures(
         // avoid a potential race that occurs when we don't have enough work for all the threads
         std::this_thread::sleep_for(1ms);
         uint64_t empty_iter_count = 0;
-        while (!todo.was_empty() || empty_iter_count < 10) {
+        auto still_exploring
+            = [&explorings](void) {
+                  bool ongoing = false;
+                  for (auto& e : explorings) {
+                      ongoing = ongoing || e.load();
+                  }
+                  return ongoing;
+              };
+        while (!todo.was_empty() || still_exploring()) {// || empty_iter_count < 10) {
             std::this_thread::sleep_for(1ms);
-            ++empty_iter_count;
+            //++empty_iter_count;
         }
         work_todo.store(false);
         //std::cerr << "gonna join" << std::endl;
@@ -310,41 +322,29 @@ size_t compute_transitive_closures(
         }
         */
         // run the transclosure for this region using lock-free union find
-        
         // convert the ranges into positions in the input sequence space
         uint64_t q_curr_bv_count = 0;
         //std::cerr << "q_subset_bv ";
         for (auto x : q_curr_bv) {
-            //std::cerr << x << " ";
             ++q_curr_bv_count;
         }
-        //std::cerr << std::endl;
-        //assert(q_curr_bv_count == q_subset.size());
-        //std::vector<uint64_t> q_curr_clone;
-        //for (auto x : q_curr_bv) q_curr_clone.push_back(x); //make_pos_t(x, false));
-        //assert(q_curr_clone == q_subset);
-        // we should already have done this above
-        double gammaFactor = 4.0; // lowest bit/elem is achieved with gamma=1, higher values lead to larger mphf but faster construction/query
-                                  // gamma = 2 is a good tradeoff (leads to approx 3.7 bits/key )
-        // how to query: bphf.lookup(key) maps ids into [0..N)
-        // make a dense mapping
-        // broken??
-        //auto data_iterator = boomphf::range(q_curr_bv.begin(), q_curr_bv.end());
-        //atomicbitvector::atomic_bv_t::iterator data_iterator = q_curr_bv.begin();
-        //this can't work because bbhash wants iterators that are equivalent to pointers
-        //for now, store the list of bases in memory, possibly on disk using mmapable_vector if this becomes a limitation
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "bbhash_build" << std::endl;
+        // use a rank support to make a dense mapping from the current bases to an integer range
+        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "rank_build" << std::endl;
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
         for (auto p : q_curr_bv) {
             q_curr_bv_vec.push_back(p);
         }
-        auto bphf = boomphf::mphf<uint64_t, boomphf::SingleHashFunctor<uint64_t>>(q_curr_bv_count,q_curr_bv_vec,nthreads,gammaFactor,false,false);
+        sdsl::bit_vector q_curr_bv_sd(seqidx.seq_length());
+        for (auto p : q_curr_bv_vec) {
+            q_curr_bv_sd[p] = 1;
+        }
+        sdsl::bit_vector::rank_1_type q_curr_rank;
+        sdsl::util::assign(q_curr_rank, sdsl::bit_vector::rank_1_type(&q_curr_bv_sd));
         //q_curr_bv_vec.clear();
         // disjoint set structure
         std::vector<DisjointSets::Aint> q_sets_data(q_curr_bv_count);
         // this initializes everything
         auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
-        //std::cerr << "graph {" << std::endl;
         std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "parallel_union_find" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
@@ -353,11 +353,10 @@ size_t compute_transitive_closures(
             pos_t p = r.pos;
             for (uint64_t j = r.start; j != r.end; ++j) {
                 // unite both sides of the overlap
-                disjoint_sets.unite(bphf.lookup(j), bphf.lookup(offset(p)));
+                disjoint_sets.unite(q_curr_rank(j), q_curr_rank(offset(p)));
                 incr_pos(p);
             }
         }
-        //std::cerr << "}" << std::endl;
         // now read out our transclosures
         std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_write" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
@@ -366,7 +365,7 @@ size_t compute_transitive_closures(
         for (uint64_t j = 0; j < q_curr_bv_count; ++j) {
             auto& p = q_curr_bv_vec[j];
             if (!q_seen_bv[p]) {
-                dsets[j] = std::make_pair(disjoint_sets.find(bphf.lookup(p)), p);
+                dsets[j] = std::make_pair(disjoint_sets.find(q_curr_rank(p)), p);
             } else {
                 dsets[j] = max_pair;
             }
