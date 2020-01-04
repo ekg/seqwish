@@ -119,6 +119,7 @@ void handle_range(match_t s,
               << std::endl;
     */
     if (s.start < query_end && s.end > query_start) {
+//#pragma omp critical (cerr)
         //std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
         if (query_start > s.start) {
             uint64_t trim_from_start = query_start - s.start;
@@ -334,12 +335,12 @@ size_t compute_transitive_closures(
         for (auto p : q_curr_bv) {
             q_curr_bv_vec.push_back(p);
         }
-        sdsl::bit_vector q_curr_bv_sd(seqidx.seq_length());
+        sdsl::bit_vector q_curr_bv_sdsl(seqidx.seq_length());
         for (auto p : q_curr_bv_vec) {
-            q_curr_bv_sd[p] = 1;
+            q_curr_bv_sdsl[p] = 1;
         }
         sdsl::bit_vector::rank_1_type q_curr_rank;
-        sdsl::util::assign(q_curr_rank, sdsl::bit_vector::rank_1_type(&q_curr_bv_sd));
+        sdsl::util::assign(q_curr_rank, sdsl::bit_vector::rank_1_type(&q_curr_bv_sdsl));
         //q_curr_bv_vec.clear();
         // disjoint set structure
         std::vector<DisjointSets::Aint> q_sets_data(q_curr_bv_count);
@@ -370,7 +371,7 @@ size_t compute_transitive_closures(
                 dsets[j] = max_pair;
             }
         }
-        q_curr_bv_vec.clear();
+        //q_curr_bv_vec.clear();
         // remove excluded elements
         dsets.erase(std::remove_if(dsets.begin(), dsets.end(),
                                    [&max_pair](const std::pair<uint64_t, uint64_t>& x) {
@@ -484,7 +485,7 @@ size_t compute_transitive_closures(
 	    */
         }
         // mark our q_seen_bv for later
-        for (auto p : q_curr_bv) {
+        for (auto p : q_curr_bv_vec) {
             //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv.set(p); // mark that we're closing over these bases
         }
