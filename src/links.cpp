@@ -55,6 +55,7 @@ void derive_links(seqindex_t& seqidx,
             //std::cerr << "seq boundaries " << seq_start << "-" << seq_end << std::endl;
             std::vector<size_t> path_before_ovlp, path_after_ovlp;
             // and only consider cases where we'd be within the boundaries
+            /*
             if (start_in_q-1 >= seq_start) {
                 path_iitree.overlap(start_in_q-1, start_in_q, path_before_ovlp);
                 // map these back into positions and orientations in S
@@ -73,24 +74,21 @@ void derive_links(seqindex_t& seqidx,
                     }
                     // now calculate where we should land with respect to our current node
                     // start_in_s and end_in_s be respecting
-                    /*
-                    std::cerr << "path_iitree before ovlp " << ovlp_start_in_q << ".." << ovlp_end_in_q << " vs " << start_in_q << ".." << end_in_q
-                              << " prev pos_end_in_s " << pos_to_string(pos_end_in_s)
-                              << " node boundaries " << node_start_in_s << ".." << node_end_in_s << std::endl;
-                    */
+                    //std::cerr << "path_iitree before ovlp " << ovlp_start_in_q << ".." << ovlp_end_in_q << " vs " << start_in_q << ".." << end_in_q
+                    //<< " prev pos_end_in_s " << pos_to_string(pos_end_in_s)
+                    //<< " node boundaries " << node_start_in_s << ".." << node_end_in_s << std::endl;
                     // find which node we're in here, and record a link
                     uint64_t prev_id = seq_id_cbv_rank(offset(pos_end_in_s)+1);
                     //std::cerr << "id? " << prev_id << std::endl;
                     // relative orientations please
                     bool prev_step_is_rev = is_rev(pos_end_in_s);
                     //std::cerr << "link " << (prev_step_is_rev ? "-" : "+") << " " << (curr_step_is_rev ? "-" : "+") << std::endl;
-                    /*
-                    std::cerr << "link " << pos_to_string(make_pos_t(prev_id, prev_step_is_rev))
-                              << " " << pos_to_string(make_pos_t(id, curr_step_is_rev)) << std::endl;
-                    */
-                    link_mmset.append(std::make_pair(make_pos_t(prev_id, prev_step_is_rev), make_pos_t(id, curr_step_is_rev)));
+                    //std::cerr << "link " << pos_to_string(make_pos_t(prev_id, prev_step_is_rev))
+                    //<< " " << pos_to_string(make_pos_t(id, curr_step_is_rev)) << std::endl;
+                    //link_mmset.append(std::make_pair(make_pos_t(prev_id, prev_step_is_rev), make_pos_t(id, curr_step_is_rev)));
                 }
             }
+            */
             if (end_in_q+1 <= seq_end) {
                 path_iitree.overlap(end_in_q, end_in_q+1, path_after_ovlp);
                 for (auto& idx : path_after_ovlp) {
