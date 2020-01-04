@@ -1,5 +1,4 @@
-#ifndef TRANSCLOSURE_HPP_INCLUDED
-#define TRANSCLOSURE_HPP_INCLUDED
+#pragma once
 
 #include <string>
 #include <fstream>
@@ -16,7 +15,6 @@
 #include "ips4o.hpp"
 #include "spinlock.hpp"
 #include "dset64-gccAtomic.hpp"
-#include "BooPHF.h"
 #include "atomic_queue.h"
 
 namespace seqwish {
@@ -78,5 +76,3 @@ public:
 };
 
 }
-
-#endif
