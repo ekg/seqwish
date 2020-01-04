@@ -64,15 +64,4 @@ size_t compute_transitive_closures(
     uint64_t min_transclose_len,
     uint64_t transclose_batch_size);
 
-class pos_t_hasher {
-public:
-    // the class should have operator () with this signature         
-    uint64_t operator () (const uint64_t& key, uint64_t seed=0) const {
-        uint64_t hash = hash_fn(key);
-        hash ^= seed;
-        return hash;
-    }
-    std::hash<uint64_t> hash_fn;
-};
-
 }
