@@ -46,6 +46,7 @@ void handle_range(match_t s,
                   std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 void explore_overlaps(const match_t& b,
+                      const uint64_t& min_transclose_length,
                       atomicbitvector::atomic_bv_t& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       const seqindex_t& seqidx,
