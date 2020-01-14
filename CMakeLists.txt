@@ -82,7 +82,8 @@ ExternalProject_Add(mmmultimap
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmmultimap"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
-  INSTALL_COMMAND "")
+  INSTALL_COMMAND ""
+  CONFIGURE_COMMAND "")
 ExternalProject_Get_property(mmmultimap SOURCE_DIR)
 set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
 
