@@ -51,22 +51,19 @@ include(${CMAKE_ROOT}/Modules/ExternalProject.cmake)
 
 # sdsl-lite (full build using its cmake config)
 ExternalProject_Add(sdsl-lite
-  GIT_REPOSITORY "https://github.com/simongog/sdsl-lite.git"
-  GIT_TAG "d52aa9a71513d132e30c09491b5899af449ebb94"
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${INSTALL_DIR} # TODO ADD static build flag
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/sdsl-lite"
+  CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(sdsl-lite INSTALL_DIR)
 set(sdsl-lite_INCLUDE "${INSTALL_DIR}/src/sdsl-lite-build/include")
 set(sdsl-lite-divsufsort_INCLUDE "${INSTALL_DIR}/src/sdsl-lite-build/external/libdivsufsort/include")
-message("${sdsl-lite_INCLUDE}")
 set(sdsl-lite_LIB "${INSTALL_DIR}/src/sdsl-lite-build/lib")
 set(sdsl-lite-divsufsort_LIB "${INSTALL_DIR}/src/sdsl-lite-build/external/libdivsufsort/lib")
 
 # taywee's C++ args library, header only
 ExternalProject_Add(tayweeargs
-  GIT_REPOSITORY "https://github.com/Taywee/args.git"
-  GIT_TAG "3de44ec671db452cc0c4ef86399b108939768abb"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/args"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(tayweeargs SOURCE_DIR)
@@ -74,8 +71,7 @@ set(tayweeargs_INCLUDE "${SOURCE_DIR}")
 
 # gzip file reader, header only
 ExternalProject_Add(gzipreader
-  GIT_REPOSITORY "https://github.com/gatoravi/gzip_reader.git"
-  GIT_TAG "0ef26c0399e926087f9d6c4a56067a7bf1fc4f5e"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/gzip_reader"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(gzipreader SOURCE_DIR)
@@ -83,49 +79,41 @@ set(gzipreader_INCLUDE "${SOURCE_DIR}")
 
 # mmmultimap (memory mapped multimap)
 ExternalProject_Add(mmmultimap
-  GIT_REPOSITORY "https://github.com/ekg/mmmultimap.git"
-  GIT_TAG "88c734c36563048b0f3acc04dd8856f19e02b75f"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmmultimap"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(mmmultimap SOURCE_DIR)
 set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
 
-# mmmultimap (memory mapped multimap)
+# iitii, like cgranges in mmmultimap
 ExternalProject_Add(iitii
-  GIT_REPOSITORY "https://github.com/ekg/iitii.git"
-  GIT_TAG "85209e07a3ee403fb6557387a7f897cd76be4406"
-  BUILD_COMMAND ""
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/iitii"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(iitii SOURCE_DIR)
 set(iitii_INCLUDE "${SOURCE_DIR}/src")
 
 ExternalProject_Add(mmap_allocator
-  GIT_REPOSITORY "https://github.com/ekg/mmap_allocator.git"
-  GIT_TAG "ed61daf094de1c2e1adbe8306287ad52da5f0264"
-  BUILD_IN_SOURCE TRUE
-  UPDATE_COMMAND ""
-  INSTALL_COMMAND ""
-  BUILD_COMMAND "make"
-  CONFIGURE_COMMAND "")
-ExternalProject_Get_property(mmap_allocator SOURCE_DIR)
-set(mmap_allocator_INCLUDE "${SOURCE_DIR}")
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmap_allocator"
+  CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
+  UPDATE_COMMAND "")
+ExternalProject_Get_property(mmap_allocator INSTALL_DIR)
+set(mmap_allocator_INCLUDE "${INSTALL_DIR}/include/mmap_allocator")
+set(mmap_allocator_LIB "${INSTALL_DIR}/lib")
 
 # In-place Parallel Super Scalar Samplesort (IPS⁴o), header only
 ExternalProject_Add(ips4o
-  GIT_REPOSITORY "https://github.com/SaschaWitt/ips4o.git"
-  GIT_TAG "bff3ccf0bf349497f2bb10f825d160b792236367"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/ips4o"
   INSTALL_COMMAND ""
   BUILD_COMMAND ""
   CONFIGURE_COMMAND "")
 ExternalProject_Get_property(ips4o SOURCE_DIR)
 set(ips4o_INCLUDE "${SOURCE_DIR}")
 
-# BBHash perfect hasher, alltypes branch
+# BBHash perfect hasher
 ExternalProject_Add(bbhash
-  GIT_REPOSITORY "https://github.com/vgteam/BBHash.git"
-  GIT_TAG "36e4fe3eaeef762c831c49cdc01f1a3a2c7a97a4"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/BBHash"
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
   BUILD_COMMAND ""
@@ -135,8 +123,7 @@ set(bbhash_INCLUDE "${SOURCE_DIR}")
 
 # atomic bitvector class
 ExternalProject_Add(atomicbitvector
-  GIT_REPOSITORY "https://github.com/ekg/atomicbitvector.git"
-  GIT_TAG "ebf6435171a47ad216294645d528c2c9fe030c96"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/atomicbitvector"
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
   BUILD_COMMAND ""
@@ -146,8 +133,7 @@ set(atomicbitvector_INCLUDE "${SOURCE_DIR}/include")
 
 # atomic queue library
 ExternalProject_Add(atomicqueue
-  GIT_REPOSITORY "https://github.com/max0x7ba/atomic_queue.git"
-  GIT_TAG "7568faad3ccc8fcfd68e1217356c94996f7f9e15"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/atomic_queue"
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
   BUILD_COMMAND ""
@@ -204,9 +190,11 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
-  "${mmap_allocator_INCLUDE}/libmmap_allocator.a"
+  "${mmap_allocator_LIB}/libmmap_allocator.a"
   "-latomic"
   z)
 if (BUILD_STATIC)
   set(CMAKE_EXE_LINKER_FLAGS "-static")
 endif()
+
+install(TARGETS seqwish DESTINATION bin)
