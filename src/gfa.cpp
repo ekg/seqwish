@@ -21,6 +21,7 @@ void emit_gfa(std::ostream& out,
     // these are delimited in the seq_v_file by the markers in seq_id_civ
     auto show_links = [&](const pos_t& p) { std::cerr << pos_to_string(p) << " " << pos_to_string(make_pos_t(seq_id_cbv_rank(offset(p)), is_rev(p))) << ", "; };
     size_t n_nodes = seq_id_cbv_rank(seq_id_cbv.size()-1);
+//#pragma omp parallel for
     for (size_t id = 1; id <= n_nodes; ++id) {
         //std::cerr << "id " << id << " n_nodes " << n_nodes << std::endl;
         size_t node_start = seq_id_cbv_select(id);
@@ -29,14 +30,17 @@ void emit_gfa(std::ostream& out,
         //std::cerr << id << " "  << node_start << " " << node_length << std::endl;
         std::string seq; seq.resize(node_length);
         memcpy((void*)seq.c_str(), &seq_v_buf[node_start], node_length);
+//#pragma omp critical (out)
         out << "S" << "\t" << id << "\t" << seq << std::endl;
         // get the links of this node
         // to the forward or reverse start
+        /*
         pos_t node_start_fwd = make_pos_t(node_start+1, false);
         pos_t node_end_fwd = make_pos_t(node_start+node_length, false);
         // from the forward or reverse end
         pos_t node_start_rev = make_pos_t(node_start+node_length, true);
         pos_t node_end_rev = make_pos_t(node_start+1, true);
+        */
 
         /*
         std::cerr << "node extents "
@@ -75,8 +79,9 @@ void emit_gfa(std::ostream& out,
     // write the paths
     // iterate over the sequence positions, emitting a node at every edge crossing
     size_t num_seqs = seqidx.n_seqs();
+//#pragma omp parallel for
     for (size_t i = 1; i <= num_seqs; ++i) {
-        size_t j = seqidx.nth_seq_offset(i)+1;
+        size_t j = seqidx.nth_seq_offset(i);
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
@@ -101,8 +106,8 @@ void emit_gfa(std::ostream& out,
             // validate the path
             // for each base in the range pointed to by the match, check that the input sequence we're processing matches the graph
             for (uint64_t k = 0; k < length; ++k) {
-                if (seq_id_cbv[offset(p)-1]) {
-                    uint64_t node_id = seq_id_cbv_rank(offset(p));
+                if (seq_id_cbv[offset(p)]) {
+                    uint64_t node_id = seq_id_cbv_rank(offset(p)+1);
                     //std::cerr << "got to node " << node_id << (match_is_rev ? "-" : "+") << std::endl;
                     path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
@@ -112,7 +117,7 @@ void emit_gfa(std::ostream& out,
                     path_v.push_back(make_pos_t(node_id, match_is_rev));
                 }
                 */
-                char c = seq_v_buf[offset(p)-1];
+                char c = seq_v_buf[offset(p)];
                 if (is_rev(p)) c = dna_reverse_complement(c);
                 //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
                 if (seqidx.at_pos(q) != c) {
@@ -149,6 +154,7 @@ void emit_gfa(std::ostream& out,
         pathss << '\t';
         //cigarss.seekp(-1, cigarss.cur);
         cigarss << std::endl;
+//#pragma omp critical (out)
         out << "P" << "\t"
             << seqidx.nth_name(i) << "\t"
             << pathss.str()

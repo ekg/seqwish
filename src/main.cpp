@@ -15,16 +15,16 @@
 #include "gfa.hpp"
 #include "vgp.hpp"
 #include "pos.hpp"
+#include "match.hpp"
 #include "threads.hpp"
 #include "exists.hpp"
-#include "iitii_types.hpp"
+//#include "iitii_types.hpp"
 
 using namespace seqwish;
 
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
-    args::ValueFlag<std::string> sxs_alns(parser, "FILE", "induce the graph from these .sxs formatted alignments", {'a', "sxs-alns"});
     args::ValueFlag<std::string> paf_alns(parser, "FILE", "induce the graph from these PAF formatted alignments", {'p', "paf-alns"});
     args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
     args::ValueFlag<std::string> base(parser, "BASE", "build graph using this basename", {'b', "base"});
@@ -35,7 +35,8 @@ int main(int argc, char** argv) {
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "filter exact matches below this length", {'L', "min-match-len"});
     args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
-    args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
+    args::ValueFlag<uint64_t> transclose_batch(parser, "N", "number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
+    //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
     try {
@@ -64,10 +65,6 @@ int main(int argc, char** argv) {
         std::cerr << "[seqwish] ERROR: input sequence file " << args::get(seqs) << " does not exist" << std::endl;
         return 2;
     }
-    if (!args::get(sxs_alns).empty() && !file_exists(args::get(sxs_alns))) {
-        std::cerr << "[seqwish] ERROR: input alignment file " << args::get(sxs_alns) << " does not exist" << std::endl;
-        return 4;
-    }
     if (!args::get(paf_alns).empty() && !file_exists(args::get(paf_alns))) {
         std::cerr << "[seqwish] ERROR: input alignment file " << args::get(paf_alns) << " does not exist" << std::endl;
         return 4;
@@ -86,27 +83,19 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
-    //mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
-    range_pos_iitii::builder aln_iitree_builder(aln_idx);
-    if (!args::get(sxs_alns).empty()) {
-        unpack_sxs_alignments(args::get(sxs_alns), aln_iitree_builder, seqidx, args::get(min_match_len)); // constructs interval set of our matches
-        if (args::get(debug)) dump_sxs_alignments(args::get(sxs_alns));
-    } else if (!args::get(paf_alns).empty()) {
-        unpack_paf_alignments(args::get(paf_alns), aln_iitree_builder, seqidx, args::get(min_match_len));
-        if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
-    } else {
-        assert(false);
+    mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
+    if (!args::get(paf_alns).empty()) {
+        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
     }
-    uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
-    range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);
+    //if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
+    //uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
+    //range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);
 
-    /*
     if (args::get(debug)) {
         for (auto& interval : aln_iitree) {
             std::cerr << "aln_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
         }
     }
-    */
 
     // 3) find the transitive closures via the alignments and construct the graph sequence S, and the N and P interval sets
     std::string seq_v_file = work_base + ".sqs";
@@ -118,7 +107,8 @@ int main(int argc, char** argv) {
     mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
     mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
-                                                      args::get(repeat_max), args::get(min_transclose_len));
+                                                      args::get(repeat_max), args::get(min_transclose_len),
+                                                      !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch));
 
     if (args::get(debug)) {
         for (auto& interval : node_iitree) {
@@ -160,7 +150,7 @@ int main(int argc, char** argv) {
 
     if (!args::get(keep_temp_files)) {
         seqidx.remove_index_files();
-        //std::remove(aln_idx.c_str());
+        std::remove(aln_idx.c_str());
         std::remove(seq_v_file.c_str());
         std::remove(node_iitree_idx.c_str());
         std::remove(path_iitree_idx.c_str());
