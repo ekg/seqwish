@@ -233,7 +233,7 @@ size_t compute_transitive_closures(
         // a shared work queue for our threads
         range_atomic_queue_t todo; // 16M elements
         //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlap_collect" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlap_collect" << std::endl;
         std::atomic<bool> work_todo;
         std::vector<std::atomic<bool>> explorings(nthreads);
         work_todo.store(true);
@@ -317,7 +317,7 @@ size_t compute_transitive_closures(
             workers[t].join();
         }
         // TODO use a thread to collect these during runtime from another atomic ring buffer
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlaps_vector_merge" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlaps_vector_merge" << std::endl;
         uint64_t novlps = 0;
         for (auto& v : ovlps) novlps += v.size();
         std::vector<std::pair<match_t, bool>> ovlp;
@@ -341,7 +341,7 @@ size_t compute_transitive_closures(
             ++q_curr_bv_count;
         }
         // use a rank support to make a dense mapping from the current bases to an integer range
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "rank_build" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "rank_build" << std::endl;
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
         for (auto p : q_curr_bv) {
             q_curr_bv_vec.push_back(p);
@@ -357,7 +357,7 @@ size_t compute_transitive_closures(
         std::vector<DisjointSets::Aint> q_sets_data(q_curr_bv_count);
         // this initializes everything
         auto disjoint_sets = DisjointSets(q_sets_data.data(), q_sets_data.size());
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "parallel_union_find" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "parallel_union_find" << std::endl;
 #pragma omp parallel for
         for (uint64_t k = 0; k < ovlp.size(); ++k) {
             auto& s = ovlp.at(k);
@@ -370,7 +370,7 @@ size_t compute_transitive_closures(
             }
         }
         // now read out our transclosures
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_write" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_write" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
 #pragma omp parallel for
@@ -390,7 +390,7 @@ size_t compute_transitive_closures(
                                    }),
                     dsets.end());
         // compress the dsets
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_compression" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_compression" << std::endl;
         ips4o::parallel::sort(dsets.begin(), dsets.end());
 
         uint64_t c = 0;
@@ -409,7 +409,7 @@ size_t compute_transitive_closures(
         }
         */
         // sort by the smallest starting position in each disjoint set
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_sort" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_sort" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> dsets_by_min_pos(c+1);
         for (uint64_t x = 0; x < c+1; ++x) {
             dsets_by_min_pos[x].second = x;
@@ -426,7 +426,7 @@ size_t compute_transitive_closures(
         }
         */
         // invert the naming
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_invert" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_invert" << std::endl;
         std::vector<uint64_t> dset_names(c+1);
         uint64_t x = 0;
         for (auto& d : dsets_by_min_pos) {
@@ -443,8 +443,7 @@ size_t compute_transitive_closures(
         }
         */
         // now, run the graph emission
-
-        std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "graph_emission" << std::endl;
+        //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "graph_emission" << std::endl;
         size_t seq_v_length = seq_v_out.tellp();
         //uint64_t flushed = range_buffer.size();
         uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
