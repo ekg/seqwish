@@ -8,24 +8,34 @@ project(seqwish)
 set(CMAKE_CXX_STANDARD 14)
 
 # Use all standard-compliant optimizations
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3 -g")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -g")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3 -mcx16 -g")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -mcx16 -g")
 
-# We use OpenMP for parallelism
-# Use openmp for parallelism, but it's configured differently on OSX
-find_package(OpenMP)
-if (OPENMP_FOUND)
-  if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fopenmp")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fopenmp")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-  elseif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    # assumes clang build
-    # we can't reliably detect when we're using clang, so for the time being we assume
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Xpreprocessor -fopenmp")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Xpreprocessor -fopenmp")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS} -lomp")
-  endif()
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  # assumes clang build
+  # we can't reliably detect when we're using clang, so for the time being we assume
+  # TODO: can't we though?
+  # adapted from https://stackoverflow.com/questions/46414660/macos-cmake-and-openmp
+  # find_package(OpenMP) does not work reliably on macOS, so we do its work ourselves
+  set (OpenMP_C "${CMAKE_C_COMPILER}")
+  set (OpenMP_C_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
+  set (OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5")
+  set (OpenMP_CXX "${CMAKE_CXX_COMPILER}")
+  set (OpenMP_CXX_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
+  set (OpenMP_CXX_LIB_NAMES "libomp" "libgomp" "libiomp5")
+  set (OpenMP_libomp_LIBRARY "omp")
+  set (OpenMP_libgomp_LIBRARY "gomp")
+  set (OpenMP_libiomp5_LIBRARY "iomp5")
+  # and now add the OpenMP parameters to the compile flags
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS} -lomp")
+elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  find_package(OpenMP REQUIRED)
+  # add the flags it detects to the compile flags
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fopenmp")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fopenmp")
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
 # Set the output folder where your program will be created
@@ -112,6 +122,39 @@ ExternalProject_Add(ips4o
 ExternalProject_Get_property(ips4o SOURCE_DIR)
 set(ips4o_INCLUDE "${SOURCE_DIR}")
 
+# BBHash perfect hasher, alltypes branch
+ExternalProject_Add(bbhash
+  GIT_REPOSITORY "https://github.com/vgteam/BBHash.git"
+  GIT_TAG "36e4fe3eaeef762c831c49cdc01f1a3a2c7a97a4"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(bbhash SOURCE_DIR)
+set(bbhash_INCLUDE "${SOURCE_DIR}")
+
+# atomic bitvector class
+ExternalProject_Add(atomicbitvector
+  GIT_REPOSITORY "https://github.com/ekg/atomicbitvector.git"
+  GIT_TAG "ebf6435171a47ad216294645d528c2c9fe030c96"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(atomicbitvector SOURCE_DIR)
+set(atomicbitvector_INCLUDE "${SOURCE_DIR}/include")
+
+# atomic queue library
+ExternalProject_Add(atomicqueue
+  GIT_REPOSITORY "https://github.com/max0x7ba/atomic_queue.git"
+  GIT_TAG "7568faad3ccc8fcfd68e1217356c94996f7f9e15"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(atomicqueue SOURCE_DIR)
+set(atomicqueue_INCLUDE "${SOURCE_DIR}")
+
 set(CMAKE_BUILD_TYPE Debug)
 
 # set up our target executable and specify its dependencies and includes
@@ -123,6 +166,7 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/cigar.cpp
   ${CMAKE_SOURCE_DIR}/src/alignments.cpp
   ${CMAKE_SOURCE_DIR}/src/pos.cpp
+  ${CMAKE_SOURCE_DIR}/src/match.cpp
   ${CMAKE_SOURCE_DIR}/src/transclosure.cpp
   ${CMAKE_SOURCE_DIR}/src/links.cpp
   ${CMAKE_SOURCE_DIR}/src/compact.cpp
@@ -141,6 +185,9 @@ add_dependencies(seqwish mmmultimap)
 add_dependencies(seqwish iitii)
 add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
+add_dependencies(seqwish bbhash)
+add_dependencies(seqwish atomicbitvector)
+add_dependencies(seqwish atomicqueue)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -149,7 +196,10 @@ target_include_directories(seqwish PUBLIC
   "${ips4o_INCLUDE}"
   "${mmmultimap_INCLUDE}"
   "${iitii_INCLUDE}"
-  "${mmap_allocator_INCLUDE}")
+  "${mmap_allocator_INCLUDE}"
+  "${bbhash_INCLUDE}"
+  "${atomicbitvector_INCLUDE}"
+  "${atomicqueue_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
