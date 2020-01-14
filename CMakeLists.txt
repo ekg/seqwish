@@ -91,7 +91,8 @@ ExternalProject_Add(iitii
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/iitii"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
-  INSTALL_COMMAND "")
+  INSTALL_COMMAND ""
+  CONFIGURE_COMMAND "")
 ExternalProject_Get_property(iitii SOURCE_DIR)
 set(iitii_INCLUDE "${SOURCE_DIR}/src")
 
