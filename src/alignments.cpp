@@ -83,7 +83,6 @@ void unpack_paf_alignments(const std::string& paf_file,
             }
         }
     }
-    aln_iitree.index();
 }
 
 /*
