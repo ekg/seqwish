@@ -160,7 +160,6 @@ void handle_range(match_t s,
 }
 
 void explore_overlaps(const match_t& b,
-                      const uint64_t& min_transclose_length,
                       atomicbitvector::atomic_bv_t& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       const seqindex_t& seqidx,
@@ -172,15 +171,13 @@ void explore_overlaps(const match_t& b,
     aln_iitree.overlap(b.start, b.end, o);
     for (auto& idx : o) {
         auto r = get_match(aln_iitree, idx);
-        if (r.end - r.start >= min_transclose_length) {
-            for_each_fresh_range(
-                r,
-                seen_bv,
-                seqidx,
-                [&](match_t s) {
-                    handle_range(s, seen_bv, curr_bv, seqidx, b.start, b.end, ovlp, todo, overflow);
-                });
-        }
+        for_each_fresh_range(
+            r,
+            seen_bv,
+            seqidx,
+            [&](match_t s) {
+                handle_range(s, seen_bv, curr_bv, seqidx, b.start, b.end, ovlp, todo, overflow);
+            });
     }
 }
 
@@ -191,7 +188,6 @@ size_t compute_transitive_closures(
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
     uint64_t repeat_max,
-    uint64_t min_transclose_length,
     uint64_t transclose_batch_size) { // size of a batch to collect for lock-free transitive closure
     // get our thread count as set for openmp (nb: we'll only partly use openmp here)
     uint nthreads = get_thread_count();
@@ -257,7 +253,6 @@ size_t compute_transitive_closures(
                         uint64_t range_start = n;
                         uint64_t range_end = n + match_len;
                         explore_overlaps({range_start, range_end, pos},
-                                         min_transclose_length,
                                          q_seen_bv,
                                          q_curr_bv,
                                          seqidx,

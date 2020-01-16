@@ -46,7 +46,6 @@ void handle_range(match_t s,
                   std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 void explore_overlaps(const match_t& b,
-                      const uint64_t& min_transclose_length,
                       atomicbitvector::atomic_bv_t& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       const seqindex_t& seqidx,
@@ -62,7 +61,6 @@ size_t compute_transitive_closures(
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph to input
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input to graph
     uint64_t repeat_max,
-    uint64_t min_transclose_len,
     uint64_t transclose_batch_size);
 
 }
