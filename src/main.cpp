@@ -25,17 +25,17 @@ using namespace seqwish;
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
-    args::ValueFlag<std::string> paf_alns(parser, "FILE", "induce the graph from these PAF formatted alignments", {'p', "paf-alns"});
-    args::ValueFlag<std::string> seqs(parser, "FILE", "the sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
-    args::ValueFlag<std::string> base(parser, "BASE", "build graph using this basename", {'b', "base"});
-    args::ValueFlag<std::string> gfa_out(parser, "FILE", "write the graph in GFA to FILE", {'g', "gfa"});
-    args::ValueFlag<std::string> sml_in(parser, "FILE", "use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
-    args::ValueFlag<std::string> vgp_base(parser, "BASE", "write the graph in VGP format with basename FILE", {'o', "vgp-out"});
-    args::ValueFlag<uint64_t> num_threads(parser, "N", "use this many threads during parallel steps", {'t', "threads"});
-    args::ValueFlag<uint64_t> repeat_max(parser, "N", "limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
-    args::ValueFlag<uint64_t> min_match_len(parser, "N", "filter exact matches below this length", {'L', "min-match-len"});
-    args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
-    args::ValueFlag<uint64_t> transclose_batch(parser, "N", "number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
+    args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths of the form [file_1]:[min_match_length_1],[file_2]:[min_match_length_2],... This allows the differential filtering of short matches from some but not all inputs.", {'p', "paf-alns"});
+    args::ValueFlag<std::string> seqs(parser, "FILE", "The sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
+    args::ValueFlag<std::string> base(parser, "BASE", "Build graph using this basename", {'b', "base"});
+    args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});
+    args::ValueFlag<std::string> sml_in(parser, "FILE", "Use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
+    args::ValueFlag<std::string> vgp_base(parser, "BASE", "Write the graph in VGP format with basename FILE", {'o', "vgp-out"});
+    args::ValueFlag<uint64_t> num_threads(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
+    args::ValueFlag<uint64_t> repeat_max(parser, "N", "Limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
+    args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length", {'L', "min-match-len"});
+    args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "Follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
+    args::ValueFlag<uint64_t> transclose_batch(parser, "N", "Number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
     //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
@@ -65,9 +65,17 @@ int main(int argc, char** argv) {
         std::cerr << "[seqwish] ERROR: input sequence file " << args::get(seqs) << " does not exist" << std::endl;
         return 2;
     }
-    if (!args::get(paf_alns).empty() && !file_exists(args::get(paf_alns))) {
-        std::cerr << "[seqwish] ERROR: input alignment file " << args::get(paf_alns) << " does not exist" << std::endl;
-        return 4;
+
+    // parse paf args
+    std::vector<std::pair<std::string, uint64_t>> pafs_and_min_lengths;
+    if (!args::get(paf_alns).empty()) {
+        pafs_and_min_lengths = parse_paf_spec(args::get(paf_alns));
+        for (auto& p : pafs_and_min_lengths) {
+            if (!file_exists(p.first)) {
+                std::cerr << "[seqwish] ERROR: input alignment file " << args::get(paf_alns) << " does not exist" << std::endl;
+                return 4;
+            }
+        }
     }
 
     std::string work_base = args::get(base);
@@ -87,6 +95,7 @@ int main(int argc, char** argv) {
     if (!args::get(paf_alns).empty()) {
         unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
     }
+    aln_iitree.index();
     //if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     //uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
     //range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);

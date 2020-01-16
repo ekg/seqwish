@@ -57,4 +57,21 @@ void dump_paf_alignments(const std::string& filename) {
     }
 }
 
+
+std::vector<std::pair<std::string, uint64_t>> parse_paf_spec(const std::string& spec) {
+    std::vector<std::pair<std::string, uint64_t>> parsed;
+    std::vector<std::string> files;
+    tokenize(spec, files, ":");
+    for (auto& file : files) {
+        std::vector<std::string> fields;
+        tokenize(file, fields, ",");
+        if (fields.size() == 2) {
+            parsed.push_back(std::make_pair(fields.front(), std::stol(fields.back())));
+        } else if (fields.size() == 1) {
+            parsed.push_back(std::make_pair(fields.front(), 0));
+        }
+    }
+    return parsed;
+}
+
 }

@@ -30,6 +30,8 @@ public:
 
 void dump_paf_alignments(const std::string& filename);
 
+std::vector<std::pair<std::string, uint64_t>> parse_paf_spec(const std::string& spec);
+
 }
 
 #endif

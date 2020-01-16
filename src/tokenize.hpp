@@ -1,5 +1,4 @@
-#ifndef TOKENIZE_HPP_INCLUDED
-#define TOKENIZE_HPP_INCLUDED
+#pragma once
 
 #include <string>
 
@@ -27,5 +26,3 @@ void tokenize(const std::string& str, ContainerT& tokens,
         lastPos = pos + 1;
     }
 }
-
-#endif
