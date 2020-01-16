@@ -25,7 +25,7 @@ using namespace seqwish;
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer");
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
-    args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths of the form [file_1]:[min_match_length_1],[file_2]:[min_match_length_2],... This allows the differential filtering of short matches from some but not all inputs.", {'p', "paf-alns"});
+    args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths: [file_1]:[min_match_length_1],... This allows the differential filtering of short matches from some but not all inputs, in effect allowing `-k` to be specified differently for each input.", {'p', "paf-alns"});
     args::ValueFlag<std::string> seqs(parser, "FILE", "The sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
     args::ValueFlag<std::string> base(parser, "BASE", "Build graph using this basename", {'b', "base"});
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});
@@ -33,8 +33,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "Write the graph in VGP format with basename FILE", {'o', "vgp-out"});
     args::ValueFlag<uint64_t> num_threads(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "Limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
-    args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length", {'L', "min-match-len"});
-    args::ValueFlag<uint64_t> min_transclose_len(parser, "N", "Follow transitive closures only through matches >= this", {'k', "min-transclose-len"});
+    args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length. This can smooth the graph locally and prevent the formation of complex local graph topologies from forming due to differential alignments.", {'k', "min-match-len"});
     args::ValueFlag<uint64_t> transclose_batch(parser, "N", "Number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
     //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
@@ -92,8 +91,15 @@ int main(int argc, char** argv) {
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
     mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
-    if (!args::get(paf_alns).empty()) {
-        unpack_paf_alignments(args::get(paf_alns), aln_iitree, seqidx, args::get(min_match_len));
+    if (!pafs_and_min_lengths.empty()) {
+        for (auto& p : pafs_and_min_lengths) {
+            auto& file = p.first;
+            uint64_t min_length = p.second;
+            if (!min_length && args::get(min_match_len)) {
+                min_length = args::get(min_match_len);
+            }
+            unpack_paf_alignments(file, aln_iitree, seqidx, min_length);
+        }
     }
     aln_iitree.index();
     //if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
@@ -116,7 +122,7 @@ int main(int argc, char** argv) {
     mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
     mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
-                                                      args::get(repeat_max), args::get(min_transclose_len),
+                                                      args::get(repeat_max),
                                                       !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch));
 
     if (args::get(debug)) {

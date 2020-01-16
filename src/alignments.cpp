@@ -36,19 +36,20 @@ void unpack_paf_alignments(const std::string& paf_file,
                 pos_t q_pos_match_start = q_pos;
                 pos_t t_pos_match_start = t_pos;
                 uint64_t match_len = 0;
-                auto add_match = [&](void) {
-                    if (match_len && match_len >= min_match_len) {
-                        if (is_rev(q_pos)) {
-                            pos_t x_pos = q_pos;
-                            decr_pos(x_pos); // to guard against underflow when our start is 0-, we need to decr in pos_t space
-                            aln_iitree.add(offset(x_pos), offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
-                        } else {
-                            aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
-                            aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                auto add_match =
+                    [&](void) {
+                        if (match_len && match_len >= min_match_len) {
+                            if (is_rev(q_pos)) {
+                                pos_t x_pos = q_pos;
+                                decr_pos(x_pos); // to guard against underflow when our start is 0-, we need to decr in pos_t space
+                                aln_iitree.add(offset(x_pos), offset(q_pos_match_start)+1, make_pos_t(offset(t_pos)-1, true));
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), make_pos_t(offset(q_pos_match_start), true));
+                            } else {
+                                aln_iitree.add(offset(q_pos_match_start), offset(q_pos), t_pos_match_start);
+                                aln_iitree.add(offset(t_pos_match_start), offset(t_pos), q_pos_match_start);
+                            }
                         }
-                    }
-                };
+                    };
                 for (size_t i = 0; i < c.len; ++i) {
                     if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
                         && offset(q_pos) != offset(t_pos)) { // guard against self mappings
