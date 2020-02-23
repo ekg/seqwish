@@ -6,7 +6,7 @@ using namespace std::chrono_literals;
 
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
-                  std::map<pos_t, std::pair<uint64_t, uint64_t>>& range_buffer) {
+                  std::map<pos_t, range_t>& range_buffer) {
     // find a position in the map that we can add onto
     // it must match position and orientation
     pos_t q_last_pos = q_pos;
@@ -14,47 +14,48 @@ void extend_range(const uint64_t& s_pos,
     auto f = range_buffer.find(q_last_pos);
     // if one doesn't exist, add the range
     if (f == range_buffer.end()) {
-        range_buffer[q_pos] = std::make_pair(s_pos, 1);
+        range_buffer[q_pos] = {s_pos, s_pos+1}; // std::make_pair(s_pos, 1);
     } else {
         // if one does, check that it matches our extension,
-        std::pair<uint64_t, uint64_t> x = f->second;
-        if (x.first + x.second == s_pos) {
+        range_t x = f->second;
+        if (x.end == s_pos) {
             // if so we expand its range and drop it back into the map at the new Q end pos
             range_buffer.erase(f);
-            ++x.second; // increment the match length
+            ++x.end; // increment the match length
             range_buffer[q_pos] = x; // and stash it
         } else {
             // if it doesn't, we store a new range
-            range_buffer[q_pos] = std::make_pair(s_pos, 1);
+            range_buffer[q_pos] = {s_pos, s_pos+1};
         }
     }
 }
 
 void flush_ranges(const uint64_t& s_pos,
-                  std::map<pos_t, std::pair<uint64_t, uint64_t>>& range_buffer,
+                  std::map<pos_t, range_t>& range_buffer,
                   mmmulti::iitree<uint64_t, pos_t>& node_iitree,
                   mmmulti::iitree<uint64_t, pos_t>& path_iitree) {
     // for each range, we're going to see if we've stepped more than one past the end
     // if we have, we'll write them out
-    std::map<pos_t, std::pair<uint64_t, uint64_t>>::iterator it = range_buffer.begin();
+    std::map<pos_t, range_t>::iterator it = range_buffer.begin();
     while (it != range_buffer.end()) {
-        if (it->second.first + it->second.second != s_pos) {
+        auto& range_in_s = it->second;
+        if (range_in_s.end != s_pos) {
             uint64_t match_length, match_start_in_s, match_end_in_s, match_start_in_q, match_end_in_q;
             pos_t match_pos_in_q, match_pos_in_s, match_start_pos_in_q;
             pos_t match_end_pos_in_q = it->first;
             bool is_rev_match = is_rev(match_end_pos_in_q);
             if (!is_rev_match) {
-                match_length = it->second.second;
-                match_start_in_s = it->second.first;
-                match_end_in_s = match_start_in_s + match_length;
+                match_length = range_in_s.end - range_in_s.begin;
+                match_start_in_s = range_in_s.begin;
+                match_end_in_s = range_in_s.end;
                 match_end_in_q = offset(match_end_pos_in_q) + 1;
                 match_start_in_q = match_end_in_q - match_length;
                 match_pos_in_s = make_pos_t(match_start_in_s, false);
                 match_pos_in_q = make_pos_t(match_start_in_q, false);
             } else {
-                match_length = it->second.second;
-                match_start_in_s = it->second.first;
-                match_end_in_s = match_start_in_s + match_length;
+                match_length = range_in_s.end - range_in_s.begin;
+                match_start_in_s = range_in_s.begin;
+                match_end_in_s = range_in_s.end;
                 match_end_in_q = offset(match_end_pos_in_q);
                 decr_pos(match_end_pos_in_q, match_length);
                 match_pos_in_s = make_pos_t(match_end_in_s-1, true);
@@ -203,7 +204,7 @@ size_t compute_transitive_closures(
     // this maps from a position in Q (our input seqs concatenated, offset and orientation)
     // to a range (start and length) in S (our graph sequence vector)
     // we are mapping from the /last/ position in the matched range, not the first
-    std::map<pos_t, std::pair<uint64_t, uint64_t>> range_buffer;
+    std::map<pos_t, range_t> range_buffer;
     uint64_t last_seq_id = seqidx.seq_id_at(0);
     // collect based on a seed chunk of a given length
     for (uint64_t i = 0; i < input_seq_length; ) {
@@ -458,6 +459,10 @@ size_t compute_transitive_closures(
                 // this check assumes that we're walking up through the Q vector
                 // we take the minimum position in Q in the dset and ask if it implies a sequence switch
                 uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
+                // but this is totally broken
+                // we shouldn't have this check, we should change the extension to depend on sequence id
+                // XXX ^^^^^ dis
+                // 
                 // if we've changed basis sequences, flush
                 if (curr_seq_id != last_seq_id) {
                     flush_ranges(seq_v_length, range_buffer, node_iitree, path_iitree); // hack to force flush at sequence change
