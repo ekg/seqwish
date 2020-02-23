@@ -21,12 +21,18 @@ namespace seqwish {
 
 typedef atomic_queue::AtomicQueue2<std::pair<pos_t, uint64_t>, 2 << 16> range_atomic_queue_t;
 
+struct range_t {
+    //uint64_t seq_id = 0;
+    uint64_t begin = 0;
+    uint64_t end = 0;
+};
+
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
-                  std::map<pos_t, std::pair<uint64_t, uint64_t>>& range_buffer);
+                  std::map<pos_t, range_t>& range_buffer);
 
 void flush_ranges(const uint64_t& s_pos,
-                  std::map<pos_t, std::pair<uint64_t, uint64_t>>& range_buffer,
+                  std::map<pos_t, range_t>& range_buffer,
                   mmmulti::iitree<uint64_t, pos_t>& node_iitree,
                   mmmulti::iitree<uint64_t, pos_t>& path_iitree);
 
