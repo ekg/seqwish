@@ -119,7 +119,7 @@ void emit_gfa(std::ostream& out,
                 */
                 char c = seq_v_buf[offset(p)];
                 if (is_rev(p)) c = dna_reverse_complement(c);
-                //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << std::endl;
+                //std::cerr << pos_to_string(q) << " -> " << pos_to_string(p) << " " << seqidx.at_pos(q) << " vs " << c << " " << seq_id_cbv[offset(p)] << std::endl;
                 if (seqidx.at_pos(q) != c) {
                     std::cerr << "GRAPH BROKEN @ "
                         << seqidx.nth_name(i) << " " << pos_to_string(q) << " -> "
