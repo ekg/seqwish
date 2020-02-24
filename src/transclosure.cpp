@@ -6,7 +6,10 @@ using namespace std::chrono_literals;
 
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
-                  std::map<pos_t, range_t>& range_buffer) {
+                  std::map<pos_t, range_t>& range_buffer,
+                  const seqindex_t& seqidx,
+                  mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                  mmmulti::iitree<uint64_t, pos_t>& path_iitree) {
     // find a position in the map that we can add onto
     // it must match position and orientation
     pos_t q_last_pos = q_pos;
@@ -14,7 +17,12 @@ void extend_range(const uint64_t& s_pos,
     auto f = range_buffer.find(q_last_pos);
     // if one doesn't exist, add the range
     if (f == range_buffer.end()) {
-        range_buffer[q_pos] = {s_pos, s_pos+1}; // std::make_pair(s_pos, 1);
+        range_buffer[q_pos] = {s_pos, s_pos+1};
+    } else if (seqidx.seq_start(offset(q_pos))) {
+        // flush the buffer we found, so we don't extend across node boundaries
+        flush_range(f, node_iitree, path_iitree);
+        range_buffer.erase(f);
+        range_buffer[q_pos] = {s_pos, s_pos+1};
     } else {
         // if one does, check that it matches our extension,
         range_t x = f->second;
@@ -38,38 +46,46 @@ void flush_ranges(const uint64_t& s_pos,
     // if we have, we'll write them out
     std::map<pos_t, range_t>::iterator it = range_buffer.begin();
     while (it != range_buffer.end()) {
-        auto& range_in_s = it->second;
-        if (range_in_s.end != s_pos) {
-            uint64_t match_length, match_start_in_s, match_end_in_s, match_start_in_q, match_end_in_q;
-            pos_t match_pos_in_q, match_pos_in_s, match_start_pos_in_q;
-            pos_t match_end_pos_in_q = it->first;
-            bool is_rev_match = is_rev(match_end_pos_in_q);
-            if (!is_rev_match) {
-                match_length = range_in_s.end - range_in_s.begin;
-                match_start_in_s = range_in_s.begin;
-                match_end_in_s = range_in_s.end;
-                match_end_in_q = offset(match_end_pos_in_q) + 1;
-                match_start_in_q = match_end_in_q - match_length;
-                match_pos_in_s = make_pos_t(match_start_in_s, false);
-                match_pos_in_q = make_pos_t(match_start_in_q, false);
-            } else {
-                match_length = range_in_s.end - range_in_s.begin;
-                match_start_in_s = range_in_s.begin;
-                match_end_in_s = range_in_s.end;
-                match_end_in_q = offset(match_end_pos_in_q);
-                decr_pos(match_end_pos_in_q, match_length);
-                match_pos_in_s = make_pos_t(match_end_in_s-1, true);
-                match_pos_in_q = make_pos_t(offset(match_end_pos_in_q)-1, true);
-                match_start_in_q = match_end_in_q;
-                match_end_in_q = offset(match_end_pos_in_q);
-            }
-            node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
-            path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
+        if (it->second.end != s_pos) {
+            flush_range(it, node_iitree, path_iitree);
             it = range_buffer.erase(it);
         } else {
             ++it;
         }
     }
+}
+
+void flush_range(std::map<pos_t, range_t>::iterator it,
+                 //const seqindex_t& seqidx,
+                 mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                 mmmulti::iitree<uint64_t, pos_t>& path_iitree) {
+    //|| seqidx.seq_start(range_in_s.end+1)) {
+    auto& range_in_s = it->second;
+    uint64_t match_length, match_start_in_s, match_end_in_s, match_start_in_q, match_end_in_q;
+    pos_t match_pos_in_q, match_pos_in_s, match_start_pos_in_q;
+    pos_t match_end_pos_in_q = it->first;
+    bool is_rev_match = is_rev(match_end_pos_in_q);
+    if (!is_rev_match) {
+        match_length = range_in_s.end - range_in_s.begin;
+        match_start_in_s = range_in_s.begin;
+        match_end_in_s = range_in_s.end;
+        match_end_in_q = offset(match_end_pos_in_q) + 1;
+        match_start_in_q = match_end_in_q - match_length;
+        match_pos_in_s = make_pos_t(match_start_in_s, false);
+        match_pos_in_q = make_pos_t(match_start_in_q, false);
+    } else {
+        match_length = range_in_s.end - range_in_s.begin;
+        match_start_in_s = range_in_s.begin;
+        match_end_in_s = range_in_s.end;
+        match_end_in_q = offset(match_end_pos_in_q);
+        decr_pos(match_end_pos_in_q, match_length);
+        match_pos_in_s = make_pos_t(match_end_in_s-1, true);
+        match_pos_in_q = make_pos_t(offset(match_end_pos_in_q)-1, true);
+        match_start_in_q = match_end_in_q;
+        match_end_in_q = offset(match_end_pos_in_q);
+    }
+    node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
+    path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
 }
 
 // break the big range into its component ranges that we haven't already closed,
@@ -205,7 +221,7 @@ size_t compute_transitive_closures(
     // to a range (start and length) in S (our graph sequence vector)
     // we are mapping from the /last/ position in the matched range, not the first
     std::map<pos_t, range_t> range_buffer;
-    uint64_t last_seq_id = seqidx.seq_id_at(0);
+    //uint64_t last_seq_id = seqidx.seq_id_at(0);
     // collect based on a seed chunk of a given length
     for (uint64_t i = 0; i < input_seq_length; ) {
         // scan our q_seen_bv to find our next start
@@ -458,18 +474,23 @@ size_t compute_transitive_closures(
                 // check to see if we've switched sequences
                 // this check assumes that we're walking up through the Q vector
                 // we take the minimum position in Q in the dset and ask if it implies a sequence switch
-                uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
+
                 // but this is totally broken
                 // we shouldn't have this check, we should change the extension to depend on sequence id
                 // XXX ^^^^^ dis
                 // 
                 // if we've changed basis sequences, flush
+                //flush_ranges(seq_v_length-1, range_buffer, seqidx, node_iitree, path_iitree);
+                /*
+                uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
                 if (curr_seq_id != last_seq_id) {
                     flush_ranges(seq_v_length, range_buffer, node_iitree, path_iitree); // hack to force flush at sequence change
                     last_seq_id = curr_seq_id;
                 } else {
                     flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
                 }
+                */
+                flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
                 last_dset_id = curr_dset_id;
             }
             pos_t curr_q_pos = make_pos_t(curr_offset, false);
@@ -477,7 +498,7 @@ size_t compute_transitive_closures(
                 curr_q_pos = make_pos_t(curr_offset, true);
             }
             assert(current_base = seqidx.at_pos(curr_q_pos));
-            extend_range(seq_v_length-1, curr_q_pos, range_buffer);
+            extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
             //for (auto curr_q_pos : {make_pos_t(d.second, false), make_pos_t(d.second, true) })
             //char base = seqidx.at(offset(curr_q_pos));
             // filter one strand

@@ -29,12 +29,19 @@ struct range_t {
 
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
-                  std::map<pos_t, range_t>& range_buffer);
+                  std::map<pos_t, range_t>& range_buffer,
+                  const seqindex_t& seqidx,
+                  mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                  mmmulti::iitree<uint64_t, pos_t>& path_iitree);
 
 void flush_ranges(const uint64_t& s_pos,
                   std::map<pos_t, range_t>& range_buffer,
                   mmmulti::iitree<uint64_t, pos_t>& node_iitree,
                   mmmulti::iitree<uint64_t, pos_t>& path_iitree);
+
+void flush_range(std::map<pos_t, range_t>::iterator it,
+                 mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                 mmmulti::iitree<uint64_t, pos_t>& path_iitree);
 
 void for_each_fresh_range(const match_t& range,
                           atomicbitvector::atomic_bv_t& seen_bv,
