@@ -87,7 +87,6 @@ void emit_gfa(std::ostream& out,
         //std::cerr << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         std::vector<pos_t> path_v;
         uint64_t seen_bp = 0;
-        uint64_t accumulated_bp = 0;
         while (j < k) {
             std::vector<size_t> ovlp;
             path_iitree.overlap(j, j+1, ovlp);
@@ -134,7 +133,7 @@ void emit_gfa(std::ostream& out,
             j = ovlp_end_in_q;
         }
         if (seen_bp != seq_len) {
-            std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << accumulated_bp << std::endl;
+            std::cerr << "length for " << seqidx.nth_name(i) << ", expected " << seqidx.nth_seq_length(i) << " but got " << seen_bp << std::endl;
             assert(false);
             exit(1); // for release builds
         }
