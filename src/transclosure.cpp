@@ -471,25 +471,6 @@ size_t compute_transitive_closures(
                 current_base = base;
                 seq_v_out << base;
                 ++seq_v_length;
-                // check to see if we've switched sequences
-                // this check assumes that we're walking up through the Q vector
-                // we take the minimum position in Q in the dset and ask if it implies a sequence switch
-
-                // but this is totally broken
-                // we shouldn't have this check, we should change the extension to depend on sequence id
-                // XXX ^^^^^ dis
-                // 
-                // if we've changed basis sequences, flush
-                //flush_ranges(seq_v_length-1, range_buffer, seqidx, node_iitree, path_iitree);
-                /*
-                uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
-                if (curr_seq_id != last_seq_id) {
-                    flush_ranges(seq_v_length, range_buffer, node_iitree, path_iitree); // hack to force flush at sequence change
-                    last_seq_id = curr_seq_id;
-                } else {
-                    flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
-                }
-                */
                 flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
                 last_dset_id = curr_dset_id;
             }
@@ -499,40 +480,11 @@ size_t compute_transitive_closures(
             }
             assert(current_base = seqidx.at_pos(curr_q_pos));
             extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
-            //for (auto curr_q_pos : {make_pos_t(d.second, false), make_pos_t(d.second, true) })
-            //char base = seqidx.at(offset(curr_q_pos));
-            // filter one strand
-            //if (current_base == seqidx.at_pos(curr_q_pos)) {
-                // in any case, use extend_range
-            //extend_range(seq_v_length-1, curr_q_pos, range_buffer);
-            //}
-            // dump the range buffer
-	    /*
-            std::cerr << "============================================================" << std::endl;
-            std::cerr << "dset_pos " << seq_v_length << std::endl;
-            for (auto& r : range_buffer) {
-                std::cerr << "range_buffer " << pos_to_string(r.first) << " " << r.second.first << " " << r.second.second << std::endl;
-            }
-	    */
         }
         // mark our q_seen_bv for later
         for (auto p : q_curr_bv_vec) {
-            //std::cerr << "marking_q_seen_bv " << offset(p) << std::endl;
             q_seen_bv.set(p); // mark that we're closing over these bases
         }
-        /*
-        std::cerr << "q_curr_bv\t";
-        for (uint64_t j = 0; j < q_curr_bv.size(); ++j) {
-            std::cerr << q_curr_bv[j];
-        }
-        std::cerr << std::endl;
-        std::cerr << "q_seen_bv\t";
-        for (uint64_t j = 0; j < q_seen_bv.size(); ++j) {
-            std::cerr << q_seen_bv[j];
-        }
-        std::cerr << std::endl;
-        */
-        //flush_ranges(seq_v_length);
         i = chunk_end; // update our chunk end here!
     }
     //exit(1);
