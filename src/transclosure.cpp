@@ -18,7 +18,7 @@ void extend_range(const uint64_t& s_pos,
     // if one doesn't exist, add the range
     if (f == range_buffer.end()) {
         range_buffer[q_pos] = {s_pos, s_pos+1};
-    } else if (seqidx.seq_start(offset(q_pos))) {
+    } else if (seqidx.seq_start(offset(q_pos)) || (is_rev(q_pos) && seqidx.seq_start(offset(q_last_pos)))) {
         // flush the buffer we found, so we don't extend across node boundaries
         flush_range(f, node_iitree, path_iitree);
         range_buffer.erase(f);
