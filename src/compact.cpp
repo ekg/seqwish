@@ -22,19 +22,17 @@ void compact_nodes(
         //std::cerr << "compact " << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         while (j < k) {
             std::vector<size_t> ovlp;
-            //std::cerr <<"overlap at " << j << std::endl;
             path_iitree.overlap(j, j+1, ovlp);
             // each input base should only map one place in the graph
-            //std::cerr << "found " << ovlp.size()  << " overlaps" << std::endl;
-            /*
-            for (auto& o : ovlp) {
-                std::cerr << "ovlp_start_in_q = " << path_iitree.start(o) << " "
-                          << "ovlp_end_in_q = " << path_iitree.end(o) << " "
-                          << "pos_start_in_s = " << pos_to_string(path_iitree.data(o)) << std::endl;
-                //bool match_is_rev = is_rev(pos_start_in_s);
+            if (ovlp.size() != 1) {
+                std::cerr << "found " << ovlp.size()  << " overlaps for seq " << seqidx.nth_name(i) << " idx " << i << " at j=" << j << " of " << k << std::endl;
+                for (auto& o : ovlp) {
+                    std::cerr << "ovlp_start_in_q = " << path_iitree.start(o) << " "
+                              << "ovlp_end_in_q = " << path_iitree.end(o) << " "
+                              << "pos_start_in_s = " << pos_to_string(path_iitree.data(o)) << std::endl;
+                }
+                assert(false);
             }
-            */
-            assert(ovlp.size() == 1);
             size_t idx = ovlp.front();
             uint64_t ovlp_start_in_q = path_iitree.start(idx);
             uint64_t ovlp_end_in_q = path_iitree.end(idx);

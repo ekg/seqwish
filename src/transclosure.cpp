@@ -383,6 +383,7 @@ size_t compute_transitive_closures(
         }
         // now read out our transclosures
         //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "dset_write" << std::endl;
+        // maps from dset id to query base
         std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
 #pragma omp parallel for
@@ -461,12 +462,19 @@ size_t compute_transitive_closures(
         uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
         char current_base = '\0';
         // determine if we've switched references
+        // here we implement a count of the number of times we touch the current sequence
+        std::map<uint64_t, uint64_t> seq_counts;
+        // TODO: check if this is ordered (notes: should be, based on the dense id creation, and that's based on input, or "query" seq order)
         for (auto& d : dsets) {
             const auto& curr_dset_id = d.first;
             const auto& curr_offset = d.second;
             char base = seqidx.at(curr_offset);
             // if we're on a new position
             if (curr_dset_id != last_dset_id) {
+                if (repeat_max) {
+                    // empty out our seq counts
+                    seq_counts.clear();
+                }
                 // emit our new position
                 current_base = base;
                 seq_v_out << base;
@@ -479,15 +487,14 @@ size_t compute_transitive_closures(
                 curr_q_pos = make_pos_t(curr_offset, true);
             }
             assert(current_base = seqidx.at_pos(curr_q_pos));
-            extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
+            if (repeat_max == 0 ||
+                seq_counts[seqidx.seq_id_at(curr_offset)]++ < repeat_max) {
+                extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
+                q_seen_bv.set(curr_offset);
+            }
         }
-        // mark our q_seen_bv for later
-        for (auto p : q_curr_bv_vec) {
-            q_seen_bv.set(p); // mark that we're closing over these bases
-        }
-        i = chunk_end; // update our chunk end here!
+        //for (uint64_t j = 0; j < q_seen_bv.size(); ++j) { std::cerr << q_seen_bv[j]; } std::cerr << std::endl;
     }
-    //exit(1);
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
     seq_v_out.close();
