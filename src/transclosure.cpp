@@ -464,6 +464,7 @@ size_t compute_transitive_closures(
         // determine if we've switched references
         // here we implement a count of the number of times we touch the current sequence
         std::map<uint64_t, uint64_t> seq_counts;
+        std::map<uint64_t, std::vector<pos_t>> todos;
         // TODO: check if this is ordered (notes: should be, based on the dense id creation, and that's based on input, or "query" seq order)
         for (auto& d : dsets) {
             const auto& curr_dset_id = d.first;
@@ -472,8 +473,18 @@ size_t compute_transitive_closures(
             // if we're on a new position
             if (curr_dset_id != last_dset_id) {
                 if (repeat_max) {
-                    // empty out our seq counts
+                    // finish out todos stashed from repeat_max limitations
+                    for (auto& t : todos) {
+                        seq_v_out << current_base;
+                        ++seq_v_length;
+                        for (auto& pos : t.second) {
+                            extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
+                            q_seen_bv.set(offset(pos));
+                        }
+                    }
+                    // empty out our seq counts and todos
                     seq_counts.clear();
+                    todos.clear();
                 }
                 // emit our new position
                 current_base = base;
@@ -491,6 +502,8 @@ size_t compute_transitive_closures(
                 seq_counts[seqidx.seq_id_at(curr_offset)]++ < repeat_max) {
                 extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
                 q_seen_bv.set(curr_offset);
+            } else {
+                todos[seq_counts[seqidx.seq_id_at(curr_offset)]].push_back(curr_q_pos);
             }
         }
         //for (uint64_t j = 0; j < q_seen_bv.size(); ++j) { std::cerr << q_seen_bv[j]; } std::cerr << std::endl;
