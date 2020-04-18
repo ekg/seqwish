@@ -1,0 +1,10 @@
+#!/bin/bash
+
+x=$1
+shift
+while [[ "$@" != "" ]];
+do
+    y=$1
+    echo $x $y
+    shift
+done
