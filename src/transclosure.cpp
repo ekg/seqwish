@@ -205,6 +205,7 @@ size_t compute_transitive_closures(
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
     uint64_t repeat_max,
+    uint64_t min_repeat_dist,
     uint64_t transclose_batch_size) { // size of a batch to collect for lock-free transitive closure
     // get our thread count as set for openmp (nb: we'll only partly use openmp here)
     uint nthreads = get_thread_count();
@@ -458,21 +459,37 @@ size_t compute_transitive_closures(
         // now, run the graph emission
         //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "graph_emission" << std::endl;
         size_t seq_v_length = seq_v_out.tellp();
-        //uint64_t flushed = range_buffer.size();
         uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
         char current_base = '\0';
         // determine if we've switched references
         // here we implement a count of the number of times we touch the current sequence
         std::map<uint64_t, uint64_t> seq_counts;
+        std::map<uint64_t, pos_t> last_seq_pos;
+        auto close_to_prev =
+            [&last_seq_pos,
+             &min_repeat_dist]
+            (const uint64_t& seq_id,
+             const pos_t& pos) {
+                auto f = last_seq_pos.find(seq_id);
+                if (f == last_seq_pos.end()) {
+                    return false;
+                } else {
+                    if (min_repeat_dist > std::abs((int64_t)offset(pos) - (int64_t)offset(f->second))) {
+                        return true;
+                    } else {
+                        return false;
+                    }
+                }
+            };
+        // run the closure for each dset, avoiding looping as configured
         std::map<uint64_t, std::vector<pos_t>> todos;
-        // TODO: check if this is ordered (notes: should be, based on the dense id creation, and that's based on input, or "query" seq order)
         for (auto& d : dsets) {
             const auto& curr_dset_id = d.first;
             const auto& curr_offset = d.second;
             char base = seqidx.at(curr_offset);
             // if we're on a new position
             if (curr_dset_id != last_dset_id) {
-                if (repeat_max) {
+                if (repeat_max || min_repeat_dist) {
                     // finish out todos stashed from repeat_max limitations
                     for (auto& t : todos) {
                         seq_v_out << current_base;
@@ -485,6 +502,7 @@ size_t compute_transitive_closures(
                     // empty out our seq counts and todos
                     seq_counts.clear();
                     todos.clear();
+                    last_seq_pos.clear();
                 }
                 // emit our new position
                 current_base = base;
@@ -498,13 +516,21 @@ size_t compute_transitive_closures(
                 curr_q_pos = make_pos_t(curr_offset, true);
             }
             assert(current_base = seqidx.at_pos(curr_q_pos));
-            if (repeat_max == 0 ||
-                seq_counts[seqidx.seq_id_at(curr_offset)]++ < repeat_max) {
+            uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
+            uint64_t curr_seq_count = 0;
+            if ((min_repeat_dist != 0 && close_to_prev(curr_seq_id, curr_q_pos))
+                || (repeat_max != 0 && seq_counts[curr_seq_id]+1 > repeat_max)) {
+                curr_seq_count = ++seq_counts[curr_seq_id];
+            } else if (repeat_max != 0 || min_repeat_dist != 0) {
+                ++seq_counts[curr_seq_id];
+            }
+            if (curr_seq_count == 0) {
                 extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
                 q_seen_bv.set(curr_offset);
             } else {
-                todos[seq_counts[seqidx.seq_id_at(curr_offset)]].push_back(curr_q_pos);
+                todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);
             }
+            last_seq_pos[curr_seq_id] = curr_q_pos;
         }
         //for (uint64_t j = 0; j < q_seen_bv.size(); ++j) { std::cerr << q_seen_bv[j]; } std::cerr << std::endl;
     }

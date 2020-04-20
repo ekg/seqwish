@@ -74,6 +74,7 @@ size_t compute_transitive_closures(
     mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph to input
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input to graph
     uint64_t repeat_max,
+    uint64_t min_repeat_dist,
     uint64_t transclose_batch_size);
 
 }
