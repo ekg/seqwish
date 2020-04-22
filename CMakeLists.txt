@@ -164,6 +164,7 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/vgp.cpp
   ${CMAKE_SOURCE_DIR}/src/threads.cpp
   ${CMAKE_SOURCE_DIR}/src/exists.cpp
+  ${CMAKE_SOURCE_DIR}/src/time.cpp
   ${CMAKE_SOURCE_DIR}/src/mmap.cpp
   ${CMAKE_SOURCE_DIR}/src/iitii_types.cpp
   )

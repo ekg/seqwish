@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <chrono>
 #include "args.hxx"
 #include "mmmultimap.hpp"
 #include "mmiitree.hpp"
@@ -18,6 +19,7 @@
 #include "match.hpp"
 #include "threads.hpp"
 #include "exists.hpp"
+#include "time.hpp"
 //#include "iitii_types.hpp"
 
 using namespace seqwish;
@@ -38,7 +40,8 @@ int main(int argc, char** argv) {
     args::ValueFlag<uint64_t> transclose_batch(parser, "N", "Number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
     //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
-    args::Flag debug(parser, "debug", "enable debugging", {'d', "debug"});
+    args::Flag show_progress(parser, "show-progress", "log algorithm progress", {'P', "show-progress"});
+    args::Flag verbose_debug(parser, "verbose-debug", "enable verbose debugging", {'V', "verbose-debug"});
     try {
         parser.ParseCLI(argc, argv);
     } catch (args::Help) {
@@ -54,6 +57,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::chrono::time_point<std::chrono::steady_clock> start_time = std::chrono::steady_clock::now();
+    
     size_t n_threads = args::get(num_threads);
     if (n_threads) {
         omp_set_num_threads(args::get(num_threads));
@@ -84,10 +89,13 @@ int main(int argc, char** argv) {
     }
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
+    if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing sequences" << std::endl;
     seqindex_t seqidx;
     seqidx.build_index(args::get(seqs), work_base);
     seqidx.save();
+    if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " index built" << std::endl;
 
+    if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " processing alignments" << std::endl;
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
@@ -102,12 +110,14 @@ int main(int argc, char** argv) {
             unpack_paf_alignments(file, aln_iitree, seqidx, min_length);
         }
     }
+    if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing" << std::endl;
     aln_iitree.index();
+    if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " index built" << std::endl;
     //if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     //uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
     //range_pos_iitii aln_iitree = aln_iitree_builder.build(n_domains);
 
-    if (args::get(debug)) {
+    if (args::get(verbose_debug)) {
         for (auto& interval : aln_iitree) {
             std::cerr << "aln_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
         }
@@ -122,12 +132,16 @@ int main(int argc, char** argv) {
     std::remove(path_iitree_idx.c_str());
     mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
     mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
+    if (args::get(show_progress)) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " computing transitive closures" << std::endl;
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max),
                                                       args::get(min_repeat_dist),
-                                                      !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch));
+                                                      !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch),
+                                                      args::get(show_progress),
+                                                      start_time);
+    if (args::get(show_progress)) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done with transitive closures" << std::endl;
 
-    if (args::get(debug)) {
+    if (args::get(verbose_debug)) {
         for (auto& interval : node_iitree) {
             std::cerr << "node_iitree " << interval.st << "-" << interval.en << " " << pos_to_string(interval.data) << std::endl;
         }
@@ -137,9 +151,11 @@ int main(int argc, char** argv) {
     }
 
     // 4) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
+    if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " compacting nodes" << std::endl;
     sdsl::bit_vector seq_id_bv(graph_length+1);
     compact_nodes(seqidx, graph_length, node_iitree, path_iitree, seq_id_bv);
-    if (args::get(debug)) std::cerr << seq_id_bv << std::endl;
+    if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done compacting" << std::endl;
+    if (args::get(verbose_debug)) std::cerr << seq_id_bv << std::endl;
     sdsl::sd_vector<> seq_id_cbv;
     sdsl::sd_vector<>::rank_1_type seq_id_cbv_rank;
     sdsl::sd_vector<>::select_1_type seq_id_cbv_select;
@@ -147,13 +163,17 @@ int main(int argc, char** argv) {
     seq_id_bv = sdsl::bit_vector(); // clear bitvector
     sdsl::util::assign(seq_id_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_id_cbv));
     sdsl::util::assign(seq_id_cbv_select, sdsl::sd_vector<>::select_1_type(&seq_id_cbv));
+    if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " built node index" << std::endl;
 
     // 5) determine links between nodes
+    if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " finding graph links" << std::endl;
     std::string link_mm_idx = work_base + ".sql";
     std::remove(link_mm_idx.c_str());
     mmmulti::set<std::pair<pos_t, pos_t>> link_mmset(link_mm_idx);
     derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset);
-    
+    if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " links derived" << std::endl;
+
+    if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " writing graph" << std::endl;
     // 6) emit the graph in GFA or VGP format
     if (!args::get(gfa_out).empty()) {
         std::ofstream out(args::get(gfa_out).c_str());
@@ -164,6 +184,7 @@ int main(int argc, char** argv) {
     } else {
         emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);
     }
+    if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done" << std::endl;
 
     if (!args::get(keep_temp_files)) {
         seqidx.remove_index_files();
