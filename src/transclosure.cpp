@@ -162,6 +162,7 @@ void handle_range(match_t s,
         //std::cerr << "all_set ? " << all_set << std::endl;
         if (!all_set_there) {
             /*
+#pragma omp critical (cerr)
             std::cerr << "todo_insert "
                       << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
                       << s.end - s.start << std::endl;
@@ -245,7 +246,9 @@ size_t compute_transitive_closures(
         // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
         // a shared work queue for our threads
-        range_atomic_queue_t todo; // 16M elements
+        range_atomic_queue_t todo_in; // 16M elements
+        std::deque<std::pair<pos_t, uint64_t>> todo;
+        range_atomic_queue_t todo_out; // 16M elements
         //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
         //std::cerr << "transclosure" << "\t" << chunk_start << "-" << chunk_end << "\t" << "overlap_collect" << std::endl;
         std::atomic<bool> work_todo;
@@ -276,13 +279,18 @@ size_t compute_transitive_closures(
                                          seqidx,
                                          aln_iitree,
                                          ovlp,
-                                         todo,
+                                         todo_in,
+                                         todo_out,
                                          overflow);
                         // try to flush items from our thread local overflow into todo
                         //std::cerr << "thread " << tid << " overflow.size() " << overflow.size() << std::endl;
                     }
-                    while (overflow.size() && todo.try_push(overflow.back())) {
-                        overflow.pop_back();
+                    while (overflow.size()) {
+#pragma omp critical (cerr)
+                        std::cerr << "overflow size " << overflow.size() << std::endl;
+                        if (todo.try_push(overflow.back())) {
+                            overflow.pop_back();
+                        }
                     }
                     exploring.store(false);
                 }
@@ -320,9 +328,20 @@ size_t compute_transitive_closures(
                   }
                   return ongoing;
               };
-        while (!todo.was_empty() || still_exploring()) {// || empty_iter_count < 10) {
-            std::this_thread::sleep_for(1ms);
+        while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || still_exploring()) {// || empty_iter_count < 10) {
+            std::this_thread::sleep_for(100ns);
             //++empty_iter_count;
+            // read from todo_in, into todo
+            std::pair<pos_t, uint64_t> item;
+            //auto r = todo_out.try_pop();
+            while (todo_in.try_pop(item)) {
+                todo.push_back(item);
+            }
+            do {
+                item = todo.front();
+            } while (todo_out.try_push(item) && todo.pop_front());
+            //while (todo_out.try_push() || todo.size())
+            // write from todo_v into todo_out
         }
         work_todo.store(false);
         //std::cerr << "gonna join" << std::endl;
