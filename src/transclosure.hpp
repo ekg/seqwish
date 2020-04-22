@@ -16,8 +16,11 @@
 #include "spinlock.hpp"
 #include "dset64-gccAtomic.hpp"
 #include "atomic_queue.h"
+#include "time.hpp"
 
 namespace seqwish {
+
+#define DEBUG_TRANSCLOSURE true
 
 typedef atomic_queue::AtomicQueue2<std::pair<pos_t, uint64_t>, 2 << 16> range_atomic_queue_t;
 
@@ -55,8 +58,7 @@ void handle_range(match_t s,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
-                  range_atomic_queue_t& todo,
-                  std::vector<std::pair<pos_t, uint64_t>>& overflow);
+                  range_atomic_queue_t& todo_in);
 
 void explore_overlaps(const match_t& b,
                       atomicbitvector::atomic_bv_t& seen_bv,
@@ -64,8 +66,7 @@ void explore_overlaps(const match_t& b,
                       const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
-                      range_atomic_queue_t& todo,
-                      std::vector<std::pair<pos_t, uint64_t>>& overflow);
+                      range_atomic_queue_t& todo_in);
 
 size_t compute_transitive_closures(
     const seqindex_t& seqidx,
@@ -75,6 +76,8 @@ size_t compute_transitive_closures(
     mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input to graph
     uint64_t repeat_max,
     uint64_t min_repeat_dist,
-    uint64_t transclose_batch_size);
+    uint64_t transclose_batch_size,
+    bool show_progress,
+    const std::chrono::time_point<std::chrono::steady_clock>& start_time);
 
 }
