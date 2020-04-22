@@ -55,7 +55,8 @@ void handle_range(match_t s,
                   const uint64_t& query_start,
                   const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
-                  range_atomic_queue_t& todo,
+                  range_atomic_queue_t& todo_in,
+                  range_atomic_queue_t& todo_out,
                   std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 void explore_overlaps(const match_t& b,
@@ -64,7 +65,8 @@ void explore_overlaps(const match_t& b,
                       const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
-                      range_atomic_queue_t& todo,
+                      range_atomic_queue_t& todo_in,
+                      range_atomic_queue_t& todo_out,
                       std::vector<std::pair<pos_t, uint64_t>>& overflow);
 
 size_t compute_transitive_closures(
