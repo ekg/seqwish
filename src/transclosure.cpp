@@ -252,6 +252,7 @@ size_t compute_transitive_closures(
         range_atomic_queue_t todo_in; // 16M elements
         range_atomic_queue_t todo_out; // 16M elements
         std::deque<std::pair<pos_t, uint64_t>> todo; // intermediate for master thread
+        ska::flat_hash_set<std::pair<pos_t, uint64_t>, wang_hash<std::pair<pos_t, uint64_t>>> todo_seen; // filter to prevent duplicate work
         //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlap_collect" << std::endl;
@@ -268,6 +269,7 @@ size_t compute_transitive_closures(
                 auto range = std::make_pair(make_pos_t(b.start, false), b.end - b.start);
                 if (!todo_out.try_push(range)) {
                     todo.push_back(range);
+                    todo_seen.insert(range);
                 }
             });
         std::atomic<bool> work_todo;
@@ -284,7 +286,7 @@ size_t compute_transitive_closures(
                 exploring.store(true);
                 std::pair<pos_t, uint64_t> item;
                 while (work_todo.load()) {
-                    std::this_thread::sleep_for(0.1ns);
+                    std::this_thread::sleep_for(0.001ns);
                     //std::this_thread::yield();
                     if (todo_out.try_pop(item)) {
                         exploring.store(true);
@@ -323,11 +325,14 @@ size_t compute_transitive_closures(
               };
         work_todo.store(true);
         while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
-            std::this_thread::sleep_for(1ns);
+            std::this_thread::sleep_for(0.001ns);
             // read from todo_in, into todo
             std::pair<pos_t, uint64_t> item;
             while (todo_in.try_pop(item)) {
-                todo.push_back(item);
+                if (!todo_seen.count(item)) {
+                    todo_seen.insert(item);
+                    todo.push_back(item);
+                }
             }
             // then transfer to todo_out, until it's full
             while (!todo.empty()) {

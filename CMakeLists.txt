@@ -144,6 +144,16 @@ ExternalProject_Add(atomicqueue
 ExternalProject_Get_property(atomicqueue SOURCE_DIR)
 set(atomicqueue_INCLUDE "${SOURCE_DIR}")
 
+# ska
+ExternalProject_Add(ska
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/flat_hash_map"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(ska SOURCE_DIR)
+set(ska_INCLUDE "${SOURCE_DIR}")
+
 set(CMAKE_BUILD_TYPE Debug)
 
 # set up our target executable and specify its dependencies and includes
@@ -178,6 +188,7 @@ add_dependencies(seqwish ips4o)
 add_dependencies(seqwish bbhash)
 add_dependencies(seqwish atomicbitvector)
 add_dependencies(seqwish atomicqueue)
+add_dependencies(seqwish ska)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -189,7 +200,8 @@ target_include_directories(seqwish PUBLIC
   "${mmap_allocator_INCLUDE}"
   "${bbhash_INCLUDE}"
   "${atomicbitvector_INCLUDE}"
-  "${atomicqueue_INCLUDE}")
+  "${atomicqueue_INCLUDE}"
+  "${ska_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
