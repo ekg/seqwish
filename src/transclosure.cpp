@@ -286,7 +286,6 @@ size_t compute_transitive_closures(
                 exploring.store(true);
                 std::pair<pos_t, uint64_t> item;
                 while (work_todo.load()) {
-                    std::this_thread::sleep_for(0.001ns);
                     //std::this_thread::yield();
                     if (todo_out.try_pop(item)) {
                         exploring.store(true);
@@ -304,6 +303,7 @@ size_t compute_transitive_closures(
                                          todo_in);
                     } else {
                         exploring.store(false);
+                        std::this_thread::sleep_for(0.001ns);
                     }
                 }
                 exploring.store(false);
