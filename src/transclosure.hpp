@@ -8,6 +8,7 @@
 #include <thread>
 #include "sdsl/bit_vectors.hpp"
 #include "atomic_bitvector.hpp"
+#include "flat_hash_map.hpp"
 #include "seqindex.hpp"
 #include "mmiitree.hpp"
 #include "pos.hpp"
@@ -17,6 +18,7 @@
 #include "dset64-gccAtomic.hpp"
 #include "atomic_queue.h"
 #include "time.hpp"
+#include "wang.hpp"
 
 namespace seqwish {
 
