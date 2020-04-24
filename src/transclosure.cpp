@@ -91,7 +91,7 @@ void flush_range(std::map<pos_t, range_t>::iterator it,
 // break the big range into its component ranges that we haven't already closed,
 // breaking on sequence breaks
 void for_each_fresh_range(const match_t& range,
-                          atomicbitvector::atomic_bv_t& seen_bv,
+                          const std::vector<bool>& seen_bv,
                           const seqindex_t& seqidx,
                           const std::function<void(match_t)>& lambda) {
     // walk range, breaking where we've seen it, emiting new ranges
@@ -101,14 +101,14 @@ void for_each_fresh_range(const match_t& range,
     while (p < range.end) {
         // if we haven't seen p, start making a range
         //std::cerr << "looking at " << p << std::endl;
-        if (seen_bv.test(p)) { // || seqidx.seq_start(p)) {
+        if (seen_bv[p]) { // || seqidx.seq_start(p)) {
             ++p;
             incr_pos(t);
         } else {
             // otherwise, skip along
             uint64_t q = p;
             pos_t v = t;
-            while (p < range.end && !seen_bv.test(p)) {
+            while (p < range.end && !seen_bv[p]) {
                 ++p;
                 incr_pos(t);
                 //if (seqidx.seq_start(p)) break; // works, but is this the right place?
@@ -120,7 +120,7 @@ void for_each_fresh_range(const match_t& range,
 }
 
 void handle_range(match_t s,
-                  atomicbitvector::atomic_bv_t& seen_bv,
+                  const std::vector<bool>& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
                   const seqindex_t& seqidx,
                   const uint64_t& query_start,
@@ -179,7 +179,7 @@ void handle_range(match_t s,
 }
 
 void explore_overlaps(const match_t& b,
-                      atomicbitvector::atomic_bv_t& seen_bv,
+                      const std::vector<bool>& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
@@ -216,8 +216,8 @@ size_t compute_transitive_closures(
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
     //std::cerr << "seq_size " << seqidx.seq_length() << std::endl;
-    //sdsl::bit_vector q_seen_bv(seqidx.seq_length());
-    atomicbitvector::atomic_bv_t q_seen_bv(seqidx.seq_length());
+    std::vector<bool> q_seen_bv(seqidx.seq_length());
+    //atomicbitvector::atomic_bv_t q_seen_bv(seqidx.seq_length());
     uint64_t input_seq_length = seqidx.seq_length();
     // a buffer of ranges to write into our iitree, arranged by range ending position in Q
     // we flush those intervals that don't get extended into the next position in S
@@ -264,7 +264,7 @@ size_t compute_transitive_closures(
                 // we need to close these even if they aren't matched to anything
                 for (uint64_t j = b.start; j < b.end; ++j) {
                     assert(!q_seen_bv[j]);
-                    q_curr_bv.set(j);
+                    q_curr_bv.set(j); // = 1;
                 }
                 auto range = std::make_pair(make_pos_t(b.start, false), b.end - b.start);
                 if (!todo_out.try_push(range)) {
@@ -539,7 +539,7 @@ size_t compute_transitive_closures(
                         ++seq_v_length;
                         for (auto& pos : t.second) {
                             extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
-                            q_seen_bv.set(offset(pos));
+                            q_seen_bv[offset(pos)] = 1;
                             ++bases_seen;
                         }
                     }
@@ -570,7 +570,7 @@ size_t compute_transitive_closures(
             }
             if (curr_seq_count == 0) {
                 extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
-                q_seen_bv.set(curr_offset);
+                q_seen_bv[curr_offset] = 1;
                 ++bases_seen;
             } else {
                 todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);
