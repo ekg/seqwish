@@ -117,7 +117,7 @@ void for_each_fresh_range(const match_t& range,
 
 void handle_range(match_t s,
                   atomicbitvector::atomic_bv_t& curr_bv,
-                  std::vector<std::pair<match_t, bool>>& ovlp,
+                  overlap_atomic_queue_t& ovlp_q,
                   range_atomic_queue_t& todo_in) {
     bool all_set_there = true;
     pos_t n = s.pos;
@@ -125,7 +125,7 @@ void handle_range(match_t s,
         all_set_there = curr_bv.set(offset(n)) && all_set_there;
         incr_pos(n);
     }
-    ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
+    ovlp_q.push(std::make_pair(s, is_rev(s.pos)));
     if (!all_set_there) {
         auto item = std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start);
         todo_in.push(item);
@@ -136,7 +136,7 @@ void explore_overlaps(const match_t& b,
                       const std::vector<bool>& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
-                      std::vector<std::pair<match_t, bool>>& ovlp,
+                      overlap_atomic_queue_t& ovlp_q,
                       range_atomic_queue_t& todo_in) {
     std::vector<size_t> o;
     aln_iitree.overlap(b.start, b.end, o);
@@ -158,7 +158,7 @@ void explore_overlaps(const match_t& b,
             r,
             seen_bv,
             [&](match_t s) {
-                handle_range(s, curr_bv, ovlp, todo_in);
+                handle_range(s, curr_bv, ovlp_q, todo_in);
             });
     }
 }
@@ -209,15 +209,21 @@ size_t compute_transitive_closures(
         // and where it ends (not past the end of the sequence)
         //chunk_end = std::min(input_seq_length, chunk_end); // chunk_start + transclose_batch_size);
         // collect ranges overlapping, per thread to avoid contention
-        std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
+        //std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
         // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
-        // a shared work queue for our threads
-        range_atomic_queue_t todo_in; // 16M elements
-        range_atomic_queue_t todo_out; // 16M elements
+        // shared work queues for our threads
+        auto todo_in_ptr = new range_atomic_queue_t;
+        auto& todo_in = *todo_in_ptr;
+        auto todo_out_ptr = new range_atomic_queue_t;
+        auto& todo_out = *todo_out_ptr;
+        auto ovlp_q_ptr = new overlap_atomic_queue_t;
+        auto& ovlp_q = *ovlp_q_ptr;
         std::deque<std::pair<pos_t, uint64_t>> todo; // intermediate for master thread
-        ska::flat_hash_set<std::pair<pos_t, uint64_t>, wang_hash<std::pair<pos_t, uint64_t>>> todo_seen; // filter to prevent duplicate work
-        //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
+        // filter to prevent duplicate work
+        auto todo_seen_ptr = new ska::flat_hash_set<std::pair<pos_t, uint64_t>, wang_hash<std::pair<pos_t, uint64_t>>>;
+        auto& todo_seen = *todo_seen_ptr;
+        std::vector<std::pair<match_t, bool>> ovlp;
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlap_collect" << std::endl;
 #endif
@@ -241,7 +247,7 @@ size_t compute_transitive_closures(
         work_todo.store(false);
         auto worker_lambda =
             [&](uint64_t tid) {
-                auto& ovlp = ovlps[tid];
+                //auto& ovlp = ovlps[tid];
                 auto& exploring = explorings[tid];
                 while (!work_todo.load()) {
                     std::this_thread::sleep_for(1ns);
@@ -260,7 +266,7 @@ size_t compute_transitive_closures(
                                          q_seen_bv,
                                          q_curr_bv,
                                          aln_iitree,
-                                         ovlp,
+                                         ovlp_q,
                                          todo_in);
                     } else {
                         exploring.store(false);
@@ -285,7 +291,7 @@ size_t compute_transitive_closures(
                   return ongoing;
               };
         work_todo.store(true);
-        while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
+        while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || !ovlp_q.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
             std::this_thread::sleep_for(0.001ns);
             // read from todo_in, into todo
             std::pair<pos_t, uint64_t> item;
@@ -305,29 +311,41 @@ size_t compute_transitive_closures(
                     break;
                 }
             }
+            std::pair<match_t, bool> o;
+            while (ovlp_q.try_pop(o)) {
+                ovlp.push_back(o);
+            }
             //while (todo_out.try_push() || todo.size())
             // write from todo_v into todo_out
         }
         //std::cerr << "telling threads to stop" << std::endl;
         work_todo.store(false);
-        assert(todo.empty() && todo_in.was_empty() && todo_out.was_empty() && !still_exploring());
+        assert(todo.empty() && todo_in.was_empty() && todo_out.was_empty() && ovlp_q.was_empty() && !still_exploring());
         //std::cerr << "gonna join" << std::endl;
         for (uint64_t t = 0; t < nthreads; ++t) {
             workers[t].join();
         }
+        delete todo_in_ptr;
+        delete todo_out_ptr;
+        delete ovlp_q_ptr;
+        delete todo_seen_ptr;
         //std::cerr << "we done" << std::endl;
         // TODO use a thread to collect these during runtime from another atomic ring buffer
+        /*
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlaps_vector_merge" << std::endl;
 #endif
+        */
+        /*
         uint64_t novlps = 0;
         for (auto& v : ovlps) novlps += v.size();
-        std::vector<std::pair<match_t, bool>> ovlp;
+
         ovlp.reserve(novlps);
         for (auto& v : ovlps) {
             ovlp.insert(ovlp.end(), v.begin(), v.end());
             v.clear(); // attempt to free memory
         }
+        */
         // print our overlaps
         //std::cerr << "overlap count " << ovlp.size() << std::endl;
         /*
@@ -336,6 +354,9 @@ size_t compute_transitive_closures(
             std::cerr << "ovlp" << "\t" << s.first.start << "-" << s.first.end << "\t" << offset(s.first.pos) << (is_rev(s.first.pos)?"-":"+") << "\t" << (s.second?"-":"+") << std::endl;
         }
         */
+#ifdef DEBUG_TRANSCLOSURE
+        if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " rank_build" << std::endl;
+#endif
         // run the transclosure for this region using lock-free union find
         // convert the ranges into positions in the input sequence space
         uint64_t q_curr_bv_count = 0;
@@ -344,9 +365,6 @@ size_t compute_transitive_closures(
             ++q_curr_bv_count;
         }
         // use a rank support to make a dense mapping from the current bases to an integer range
-#ifdef DEBUG_TRANSCLOSURE
-        if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " rank_build" << std::endl;
-#endif
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
         for (auto p : q_curr_bv) {
             q_curr_bv_vec.push_back(p);
