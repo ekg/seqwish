@@ -25,6 +25,7 @@ namespace seqwish {
 #define DEBUG_TRANSCLOSURE true
 
 typedef atomic_queue::AtomicQueue2<std::pair<pos_t, uint64_t>, 2 << 16> range_atomic_queue_t;
+typedef atomic_queue::AtomicQueue2<std::pair<match_t, bool>, 2 << 16> overlap_atomic_queue_t;
 
 struct range_t {
     //uint64_t seq_id = 0;
@@ -54,14 +55,14 @@ void for_each_fresh_range(const match_t& range,
 
 void handle_range(match_t s,
                   atomicbitvector::atomic_bv_t& curr_bv,
-                  std::vector<std::pair<match_t, bool>>& ovlp,
+                  overlap_atomic_queue_t& ovlp_q,
                   range_atomic_queue_t& todo_in);
 
 void explore_overlaps(const match_t& b,
                       const std::vector<bool>& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
-                      std::vector<std::pair<match_t, bool>>& ovlp,
+                      overlap_atomic_queue_t& ovlp_q,
                       range_atomic_queue_t& todo_in);
 
 size_t compute_transitive_closures(
