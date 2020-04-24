@@ -56,10 +56,8 @@ void flush_ranges(const uint64_t& s_pos,
 }
 
 void flush_range(std::map<pos_t, range_t>::iterator it,
-                 //const seqindex_t& seqidx,
                  mmmulti::iitree<uint64_t, pos_t>& node_iitree,
                  mmmulti::iitree<uint64_t, pos_t>& path_iitree) {
-    //|| seqidx.seq_start(range_in_s.end+1)) {
     auto& range_in_s = it->second;
     uint64_t match_length, match_start_in_s, match_end_in_s, match_start_in_q, match_end_in_q;
     pos_t match_pos_in_q, match_pos_in_s, match_start_pos_in_q;
@@ -91,8 +89,7 @@ void flush_range(std::map<pos_t, range_t>::iterator it,
 // break the big range into its component ranges that we haven't already closed,
 // breaking on sequence breaks
 void for_each_fresh_range(const match_t& range,
-                          atomicbitvector::atomic_bv_t& seen_bv,
-                          const seqindex_t& seqidx,
+                          const std::vector<bool>& seen_bv,
                           const std::function<void(match_t)>& lambda) {
     // walk range, breaking where we've seen it, emiting new ranges
     uint64_t p = range.start;
@@ -101,17 +98,16 @@ void for_each_fresh_range(const match_t& range,
     while (p < range.end) {
         // if we haven't seen p, start making a range
         //std::cerr << "looking at " << p << std::endl;
-        if (seen_bv.test(p)) { // || seqidx.seq_start(p)) {
+        if (seen_bv[p]) {
             ++p;
             incr_pos(t);
         } else {
             // otherwise, skip along
             uint64_t q = p;
             pos_t v = t;
-            while (p < range.end && !seen_bv.test(p)) {
+            while (p < range.end && !seen_bv[p]) {
                 ++p;
                 incr_pos(t);
-                //if (seqidx.seq_start(p)) break; // works, but is this the right place?
             }
             //std::cerr << "lambda\t" << q << " " << p << " " << pos_to_string(v) << std::endl;
             lambda({q, p, v});
@@ -120,68 +116,25 @@ void for_each_fresh_range(const match_t& range,
 }
 
 void handle_range(match_t s,
-                  atomicbitvector::atomic_bv_t& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
-                  const seqindex_t& seqidx,
-                  const uint64_t& query_start,
-                  const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
                   range_atomic_queue_t& todo_in) {
-    /*
-    std::cerr << "handle_range "
-              << s.start << "-" << s.end << " "
-              << pos_to_string(s.pos) << " "
-              << query_start << " " << query_end << " "
-              << std::endl;
-    */
-    if (s.start < query_end && s.end > query_start) {
-//#pragma omp critical (cerr)
-        //std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
-        if (query_start > s.start) {
-            uint64_t trim_from_start = query_start - s.start;
-            s.start += trim_from_start;
-            incr_pos(s.pos, trim_from_start);
-        }
-        if (s.end > query_end) {
-            uint64_t trim_from_end = s.end - query_end;
-            s.end -= trim_from_end;
-        }
-        assert(s.start < s.end);
-        // record the adjusted range
-//#pragma omp critical (ovlp)
-        // check if we haven't closed the target range before adding to todo
-        bool all_set_there = true;
-        pos_t n = s.pos;
-        for (uint64_t i = s.start; i < s.end; ++i) {
-            assert(!seen_bv[i]);
-            all_set_there = curr_bv.set(offset(n)) && all_set_there;
-            incr_pos(n);
-        }
-        ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
-        //std::cerr << "all_set ? " << all_set << std::endl;
-        if (!all_set_there) {
-            /*
-#pragma omp critical (cerr)
-            std::cerr << "todo_insert "
-                      << pos_to_string(make_pos_t(offset(s.pos),is_rev(s.pos))) << " "
-                      << s.end - s.start << std::endl;
-            */
-            auto item = std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start);
-            // spin/sleep until we can instert in todo_in
-            todo_in.push(item);
-            /*
-            while (!todo_in.try_push(item)) {
-                std::this_thread::sleep_for(1ns);
-            }
-            */
-        }
+    bool all_set_there = true;
+    pos_t n = s.pos;
+    for (uint64_t i = s.start; i < s.end; ++i) {
+        all_set_there = curr_bv.set(offset(n)) && all_set_there;
+        incr_pos(n);
+    }
+    ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
+    if (!all_set_there) {
+        auto item = std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start);
+        todo_in.push(item);
     }
 }
 
 void explore_overlaps(const match_t& b,
-                      atomicbitvector::atomic_bv_t& seen_bv,
+                      const std::vector<bool>& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
-                      const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
                       range_atomic_queue_t& todo_in) {
@@ -189,12 +142,23 @@ void explore_overlaps(const match_t& b,
     aln_iitree.overlap(b.start, b.end, o);
     for (auto& idx : o) {
         auto r = get_match(aln_iitree, idx);
+//#pragma omp critical (cerr)
+        //std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
+        if (b.start > r.start) {
+            uint64_t trim_from_start = b.start - r.start;
+            r.start += trim_from_start;
+            incr_pos(r.pos, trim_from_start);
+        }
+        if (r.end > b.end) {
+            uint64_t trim_from_end = r.end - b.end;
+            r.end -= trim_from_end;
+        }
+        assert(r.start < r.end);
         for_each_fresh_range(
             r,
             seen_bv,
-            seqidx,
             [&](match_t s) {
-                handle_range(s, seen_bv, curr_bv, seqidx, b.start, b.end, ovlp, todo_in);
+                handle_range(s, curr_bv, ovlp, todo_in);
             });
     }
 }
@@ -216,8 +180,8 @@ size_t compute_transitive_closures(
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
     //std::cerr << "seq_size " << seqidx.seq_length() << std::endl;
-    //sdsl::bit_vector q_seen_bv(seqidx.seq_length());
-    atomicbitvector::atomic_bv_t q_seen_bv(seqidx.seq_length());
+    std::vector<bool> q_seen_bv(seqidx.seq_length());
+    //atomicbitvector::atomic_bv_t q_seen_bv(seqidx.seq_length());
     uint64_t input_seq_length = seqidx.seq_length();
     // a buffer of ranges to write into our iitree, arranged by range ending position in Q
     // we flush those intervals that don't get extended into the next position in S
@@ -259,7 +223,7 @@ size_t compute_transitive_closures(
 #endif
         // seed the initial ranges
         // the chunk range isn't an actual alignment, so we handle it differently
-        for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, seqidx, [&](match_t b) {
+        for_each_fresh_range({chunk_start, chunk_end, 0}, q_seen_bv, [&](match_t b) {
                 // the special case is handling ranges that have no matches
                 // we need to close these even if they aren't matched to anything
                 for (uint64_t j = b.start; j < b.end; ++j) {
@@ -281,12 +245,10 @@ size_t compute_transitive_closures(
                 auto& exploring = explorings[tid];
                 while (!work_todo.load()) {
                     std::this_thread::sleep_for(1ns);
-                    //std::this_thread::yield();
                 }
                 exploring.store(true);
                 std::pair<pos_t, uint64_t> item;
                 while (work_todo.load()) {
-                    //std::this_thread::yield();
                     if (todo_out.try_pop(item)) {
                         exploring.store(true);
                         auto& pos = item.first;
@@ -297,7 +259,6 @@ size_t compute_transitive_closures(
                         explore_overlaps({range_start, range_end, pos},
                                          q_seen_bv,
                                          q_curr_bv,
-                                         seqidx,
                                          aln_iitree,
                                          ovlp,
                                          todo_in);
@@ -539,7 +500,7 @@ size_t compute_transitive_closures(
                         ++seq_v_length;
                         for (auto& pos : t.second) {
                             extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
-                            q_seen_bv.set(offset(pos));
+                            q_seen_bv[offset(pos)] = 1;
                             ++bases_seen;
                         }
                     }
@@ -570,7 +531,7 @@ size_t compute_transitive_closures(
             }
             if (curr_seq_count == 0) {
                 extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
-                q_seen_bv.set(curr_offset);
+                q_seen_bv[curr_offset] = 1;
                 ++bases_seen;
             } else {
                 todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);

@@ -49,23 +49,17 @@ void flush_range(std::map<pos_t, range_t>::iterator it,
                  mmmulti::iitree<uint64_t, pos_t>& path_iitree);
 
 void for_each_fresh_range(const match_t& range,
-                          atomicbitvector::atomic_bv_t& seen_bv,
-                          const seqindex_t& seqidx,
+                          const std::vector<bool>& seen_bv,
                           const std::function<void(match_t)>& lambda);
 
 void handle_range(match_t s,
-                  atomicbitvector::atomic_bv_t& seen_bv,
                   atomicbitvector::atomic_bv_t& curr_bv,
-                  const seqindex_t& seqidx,
-                  const uint64_t& query_start,
-                  const uint64_t& query_end,
                   std::vector<std::pair<match_t, bool>>& ovlp,
                   range_atomic_queue_t& todo_in);
 
 void explore_overlaps(const match_t& b,
-                      atomicbitvector::atomic_bv_t& seen_bv,
+                      const std::vector<bool>& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
-                      const seqindex_t& seqidx,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       std::vector<std::pair<match_t, bool>>& ovlp,
                       range_atomic_queue_t& todo_in);
