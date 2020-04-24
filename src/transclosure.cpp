@@ -219,11 +219,8 @@ size_t compute_transitive_closures(
         auto& todo_out = *todo_out_ptr;
         auto ovlp_q_ptr = new overlap_atomic_queue_t;
         auto& ovlp_q = *ovlp_q_ptr;
-        std::deque<std::pair<pos_t, uint64_t>> todo; // intermediate for master thread
-        // filter to prevent duplicate work
-        auto todo_seen_ptr = new ska::flat_hash_set<std::pair<pos_t, uint64_t>, wang_hash<std::pair<pos_t, uint64_t>>>;
-        auto& todo_seen = *todo_seen_ptr;
-        std::vector<std::pair<match_t, bool>> ovlp;
+        std::deque<std::pair<pos_t, uint64_t>> todo; // intermediate buffer for master thread
+        std::vector<std::pair<match_t, bool>> ovlp; // written into by the master thread
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlap_collect" << std::endl;
 #endif
@@ -239,7 +236,7 @@ size_t compute_transitive_closures(
                 auto range = std::make_pair(make_pos_t(b.start, false), b.end - b.start);
                 if (!todo_out.try_push(range)) {
                     todo.push_back(range);
-                    todo_seen.insert(range);
+                    //todo_seen.insert(range);
                 }
             });
         std::atomic<bool> work_todo;
@@ -296,10 +293,7 @@ size_t compute_transitive_closures(
             // read from todo_in, into todo
             std::pair<pos_t, uint64_t> item;
             while (todo_in.try_pop(item)) {
-                if (!todo_seen.count(item)) {
-                    todo_seen.insert(item);
-                    todo.push_back(item);
-                }
+                todo.push_back(item);
             }
             // then transfer to todo_out, until it's full
             while (!todo.empty()) {
@@ -311,12 +305,11 @@ size_t compute_transitive_closures(
                     break;
                 }
             }
+            // collect our overlaps
             std::pair<match_t, bool> o;
             while (ovlp_q.try_pop(o)) {
                 ovlp.push_back(o);
             }
-            //while (todo_out.try_push() || todo.size())
-            // write from todo_v into todo_out
         }
         //std::cerr << "telling threads to stop" << std::endl;
         work_todo.store(false);
@@ -328,32 +321,7 @@ size_t compute_transitive_closures(
         delete todo_in_ptr;
         delete todo_out_ptr;
         delete ovlp_q_ptr;
-        delete todo_seen_ptr;
-        //std::cerr << "we done" << std::endl;
-        // TODO use a thread to collect these during runtime from another atomic ring buffer
-        /*
-#ifdef DEBUG_TRANSCLOSURE
-        if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlaps_vector_merge" << std::endl;
-#endif
-        */
-        /*
-        uint64_t novlps = 0;
-        for (auto& v : ovlps) novlps += v.size();
 
-        ovlp.reserve(novlps);
-        for (auto& v : ovlps) {
-            ovlp.insert(ovlp.end(), v.begin(), v.end());
-            v.clear(); // attempt to free memory
-        }
-        */
-        // print our overlaps
-        //std::cerr << "overlap count " << ovlp.size() << std::endl;
-        /*
-        std::cerr << "transc" << "\t" << chunk_start << "-" << chunk_end << std::endl;
-        for (auto& s : ovlp) {
-            std::cerr << "ovlp" << "\t" << s.first.start << "-" << s.first.end << "\t" << offset(s.first.pos) << (is_rev(s.first.pos)?"-":"+") << "\t" << (s.second?"-":"+") << std::endl;
-        }
-        */
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " rank_build" << std::endl;
 #endif
@@ -480,6 +448,9 @@ size_t compute_transitive_closures(
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " graph_emission" << std::endl;
 #endif
+
+        // spawn the dset emission
+
         size_t seq_v_length = seq_v_out.tellp();
         uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
         char current_base = '\0';
@@ -505,6 +476,7 @@ size_t compute_transitive_closures(
             };
         // run the closure for each dset, avoiding looping as configured
         std::map<uint64_t, std::vector<pos_t>> todos;
+        std::string seq_out;
         for (auto& d : dsets) {
             const auto& curr_dset_id = d.first;
             const auto& curr_offset = d.second;
@@ -514,7 +486,7 @@ size_t compute_transitive_closures(
                 if (repeat_max || min_repeat_dist) {
                     // finish out todos stashed from repeat_max limitations
                     for (auto& t : todos) {
-                        seq_v_out << current_base;
+                        seq_out.push_back(current_base);
                         ++seq_v_length;
                         for (auto& pos : t.second) {
                             extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
@@ -529,7 +501,7 @@ size_t compute_transitive_closures(
                 }
                 // emit our new position
                 current_base = base;
-                seq_v_out << base;
+                seq_out.push_back(current_base);
                 ++seq_v_length;
                 flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
                 last_dset_id = curr_dset_id;
@@ -556,6 +528,7 @@ size_t compute_transitive_closures(
             }
             last_seq_pos[curr_seq_id] = curr_q_pos;
         }
+        seq_v_out << seq_out;
         //for (uint64_t j = 0; j < q_seen_bv.size(); ++j) { std::cerr << q_seen_bv[j]; } std::cerr << std::endl;
     }
     // close the graph sequence vector
