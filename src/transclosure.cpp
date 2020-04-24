@@ -228,7 +228,7 @@ size_t compute_transitive_closures(
                 // we need to close these even if they aren't matched to anything
                 for (uint64_t j = b.start; j < b.end; ++j) {
                     assert(!q_seen_bv[j]);
-                    q_curr_bv.set(j); // = 1;
+                    q_curr_bv.set(j);
                 }
                 auto range = std::make_pair(make_pos_t(b.start, false), b.end - b.start);
                 if (!todo_out.try_push(range)) {
@@ -245,12 +245,10 @@ size_t compute_transitive_closures(
                 auto& exploring = explorings[tid];
                 while (!work_todo.load()) {
                     std::this_thread::sleep_for(1ns);
-                    //std::this_thread::yield();
                 }
                 exploring.store(true);
                 std::pair<pos_t, uint64_t> item;
                 while (work_todo.load()) {
-                    //std::this_thread::yield();
                     if (todo_out.try_pop(item)) {
                         exploring.store(true);
                         auto& pos = item.first;
