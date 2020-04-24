@@ -163,6 +163,93 @@ void explore_overlaps(const match_t& b,
     }
 }
 
+void write_graph_chunk(const seqindex_t& seqidx,
+                       mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                       mmmulti::iitree<uint64_t, pos_t>& path_iitree,
+                       std::ofstream& seq_v_out,
+                       std::map<pos_t, range_t>& range_buffer,
+                       std::vector<std::pair<uint64_t, uint64_t>>* dsets_ptr,
+                       uint64_t repeat_max,
+                       uint64_t min_repeat_dist) {
+    auto& dsets = *dsets_ptr;
+    size_t seq_v_length = seq_v_out.tellp();
+    uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
+    char current_base = '\0';
+    // determine if we've switched references
+    // here we implement a count of the number of times we touch the current sequence
+    std::map<uint64_t, uint64_t> seq_counts;
+    std::map<uint64_t, pos_t> last_seq_pos;
+    auto close_to_prev =
+        [&last_seq_pos,
+         &min_repeat_dist]
+        (const uint64_t& seq_id,
+         const pos_t& pos) {
+            auto f = last_seq_pos.find(seq_id);
+            if (f == last_seq_pos.end()) {
+                return false;
+            } else {
+                if (min_repeat_dist > std::abs((int64_t)offset(pos) - (int64_t)offset(f->second))) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        };
+    // run the closure for each dset, avoiding looping as configured
+    std::map<uint64_t, std::vector<pos_t>> todos;
+    std::string seq_out;
+    for (auto& d : dsets) {
+        const auto& curr_dset_id = d.first;
+        const auto& curr_offset = d.second;
+        char base = seqidx.at(curr_offset);
+        // if we're on a new position
+        if (curr_dset_id != last_dset_id) {
+            if (repeat_max || min_repeat_dist) {
+                // finish out todos stashed from repeat_max limitations
+                for (auto& t : todos) {
+                    seq_out.push_back(current_base);
+                    ++seq_v_length;
+                    for (auto& pos : t.second) {
+                        extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
+                    }
+                }
+                // empty out our seq counts and todos
+                seq_counts.clear();
+                todos.clear();
+                last_seq_pos.clear();
+            }
+            // emit our new position
+            current_base = base;
+            seq_out.push_back(current_base);
+            ++seq_v_length;
+            flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
+            last_dset_id = curr_dset_id;
+        }
+        pos_t curr_q_pos = make_pos_t(curr_offset, false);
+        if (current_base != seqidx.at_pos(curr_q_pos)) {
+            curr_q_pos = make_pos_t(curr_offset, true);
+        }
+        assert(current_base = seqidx.at_pos(curr_q_pos));
+        uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
+        uint64_t curr_seq_count = 0;
+        if ((min_repeat_dist != 0 && close_to_prev(curr_seq_id, curr_q_pos))
+            || (repeat_max != 0 && seq_counts[curr_seq_id]+1 > repeat_max)) {
+            curr_seq_count = ++seq_counts[curr_seq_id];
+        } else if (repeat_max != 0 || min_repeat_dist != 0) {
+            ++seq_counts[curr_seq_id];
+        }
+        if (curr_seq_count == 0) {
+            extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
+        } else {
+            todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);
+        }
+        last_seq_pos[curr_seq_id] = curr_q_pos;
+    }
+    seq_v_out << seq_out;
+    delete dsets_ptr;
+}
+
+
 size_t compute_transitive_closures(
     const seqindex_t& seqidx,
     mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
@@ -190,6 +277,7 @@ size_t compute_transitive_closures(
     // we are mapping from the /last/ position in the matched range, not the first
     std::map<pos_t, range_t> range_buffer;
     uint64_t bases_seen = 0;
+    std::thread* graph_writer = nullptr;
     //uint64_t last_seq_id = seqidx.seq_id_at(0);
     // collect based on a seed chunk of a given length
     for (uint64_t i = 0; i < input_seq_length; ) {
@@ -267,7 +355,7 @@ size_t compute_transitive_closures(
                                          todo_in);
                     } else {
                         exploring.store(false);
-                        std::this_thread::sleep_for(0.001ns);
+                        std::this_thread::sleep_for(0.00001ns);
                     }
                 }
                 exploring.store(false);
@@ -289,7 +377,7 @@ size_t compute_transitive_closures(
               };
         work_todo.store(true);
         while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || !ovlp_q.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
-            std::this_thread::sleep_for(0.001ns);
+            std::this_thread::sleep_for(0.00001ns);
             // read from todo_in, into todo
             std::pair<pos_t, uint64_t> item;
             while (todo_in.try_pop(item)) {
@@ -367,7 +455,8 @@ size_t compute_transitive_closures(
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " dset_write" << std::endl;
 #endif
         // maps from dset id to query base
-        std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
+        auto* dsets_ptr = new std::vector<std::pair<uint64_t, uint64_t>>(q_curr_bv_count);
+        auto& dsets = *dsets_ptr;
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
 #pragma omp parallel for
         for (uint64_t j = 0; j < q_curr_bv_count; ++j) {
@@ -448,88 +537,32 @@ size_t compute_transitive_closures(
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " graph_emission" << std::endl;
 #endif
-
-        // spawn the dset emission
-
-        size_t seq_v_length = seq_v_out.tellp();
-        uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
-        char current_base = '\0';
-        // determine if we've switched references
-        // here we implement a count of the number of times we touch the current sequence
-        std::map<uint64_t, uint64_t> seq_counts;
-        std::map<uint64_t, pos_t> last_seq_pos;
-        auto close_to_prev =
-            [&last_seq_pos,
-             &min_repeat_dist]
-            (const uint64_t& seq_id,
-             const pos_t& pos) {
-                auto f = last_seq_pos.find(seq_id);
-                if (f == last_seq_pos.end()) {
-                    return false;
-                } else {
-                    if (min_repeat_dist > std::abs((int64_t)offset(pos) - (int64_t)offset(f->second))) {
-                        return true;
-                    } else {
-                        return false;
-                    }
-                }
-            };
-        // run the closure for each dset, avoiding looping as configured
-        std::map<uint64_t, std::vector<pos_t>> todos;
-        std::string seq_out;
+        // mark q_seen_bv
         for (auto& d : dsets) {
-            const auto& curr_dset_id = d.first;
             const auto& curr_offset = d.second;
-            char base = seqidx.at(curr_offset);
-            // if we're on a new position
-            if (curr_dset_id != last_dset_id) {
-                if (repeat_max || min_repeat_dist) {
-                    // finish out todos stashed from repeat_max limitations
-                    for (auto& t : todos) {
-                        seq_out.push_back(current_base);
-                        ++seq_v_length;
-                        for (auto& pos : t.second) {
-                            extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
-                            q_seen_bv[offset(pos)] = 1;
-                            ++bases_seen;
-                        }
-                    }
-                    // empty out our seq counts and todos
-                    seq_counts.clear();
-                    todos.clear();
-                    last_seq_pos.clear();
-                }
-                // emit our new position
-                current_base = base;
-                seq_out.push_back(current_base);
-                ++seq_v_length;
-                flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
-                last_dset_id = curr_dset_id;
-            }
-            pos_t curr_q_pos = make_pos_t(curr_offset, false);
-            if (current_base != seqidx.at_pos(curr_q_pos)) {
-                curr_q_pos = make_pos_t(curr_offset, true);
-            }
-            assert(current_base = seqidx.at_pos(curr_q_pos));
-            uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
-            uint64_t curr_seq_count = 0;
-            if ((min_repeat_dist != 0 && close_to_prev(curr_seq_id, curr_q_pos))
-                || (repeat_max != 0 && seq_counts[curr_seq_id]+1 > repeat_max)) {
-                curr_seq_count = ++seq_counts[curr_seq_id];
-            } else if (repeat_max != 0 || min_repeat_dist != 0) {
-                ++seq_counts[curr_seq_id];
-            }
-            if (curr_seq_count == 0) {
-                extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
-                q_seen_bv[curr_offset] = 1;
-                ++bases_seen;
-            } else {
-                todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);
-            }
-            last_seq_pos[curr_seq_id] = curr_q_pos;
+            q_seen_bv[curr_offset] = 1;
+            ++bases_seen;
         }
-        seq_v_out << seq_out;
-        //for (uint64_t j = 0; j < q_seen_bv.size(); ++j) { std::cerr << q_seen_bv[j]; } std::cerr << std::endl;
+        // wait for completion of the last writer
+        if (graph_writer != nullptr) {
+            graph_writer->join();
+            delete graph_writer;
+        }
+        // spawn the graph writer thread
+        graph_writer = new std::thread(write_graph_chunk,
+                                       std::ref(seqidx),
+                                       std::ref(node_iitree),
+                                       std::ref(path_iitree),
+                                       std::ref(seq_v_out),
+                                       std::ref(range_buffer),
+                                       dsets_ptr,
+                                       repeat_max,
+                                       min_repeat_dist);
+    }
+    // clean up the last writer
+    if (graph_writer != nullptr) {
+        graph_writer->join();
+        delete graph_writer;
     }
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();
