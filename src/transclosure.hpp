@@ -28,7 +28,6 @@ typedef atomic_queue::AtomicQueue2<std::pair<pos_t, uint64_t>, 2 << 16> range_at
 typedef atomic_queue::AtomicQueue2<std::pair<match_t, bool>, 2 << 16> overlap_atomic_queue_t;
 
 struct range_t {
-    //uint64_t seq_id = 0;
     uint64_t begin = 0;
     uint64_t end = 0;
 };
