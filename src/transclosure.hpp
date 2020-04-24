@@ -64,6 +64,15 @@ void explore_overlaps(const match_t& b,
                       overlap_atomic_queue_t& ovlp_q,
                       range_atomic_queue_t& todo_in);
 
+void write_graph_chunk(const seqindex_t& seqidx,
+                       mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                       mmmulti::iitree<uint64_t, pos_t>& path_iitree,
+                       std::ofstream& seq_v_out,
+                       std::map<pos_t, range_t>& range_buffer,
+                       std::vector<std::pair<uint64_t, uint64_t>>* dsets_ptr,
+                       uint64_t repeat_max,
+                       uint64_t min_repeat_dist);
+
 size_t compute_transitive_closures(
     const seqindex_t& seqidx,
     mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
