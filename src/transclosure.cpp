@@ -117,7 +117,7 @@ void for_each_fresh_range(const match_t& range,
 
 void handle_range(match_t s,
                   atomicbitvector::atomic_bv_t& curr_bv,
-                  std::vector<std::pair<match_t, bool>>& ovlp,
+                  overlap_atomic_queue_t& ovlp_q,
                   range_atomic_queue_t& todo_in) {
     bool all_set_there = true;
     pos_t n = s.pos;
@@ -125,7 +125,7 @@ void handle_range(match_t s,
         all_set_there = curr_bv.set(offset(n)) && all_set_there;
         incr_pos(n);
     }
-    ovlp.push_back(std::make_pair(s, is_rev(s.pos)));
+    ovlp_q.push(std::make_pair(s, is_rev(s.pos)));
     if (!all_set_there) {
         auto item = std::make_pair(make_pos_t(offset(s.pos),is_rev(s.pos)), s.end - s.start);
         todo_in.push(item);
@@ -136,7 +136,7 @@ void explore_overlaps(const match_t& b,
                       const std::vector<bool>& seen_bv,
                       atomicbitvector::atomic_bv_t& curr_bv,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
-                      std::vector<std::pair<match_t, bool>>& ovlp,
+                      overlap_atomic_queue_t& ovlp_q,
                       range_atomic_queue_t& todo_in) {
     std::vector<size_t> o;
     aln_iitree.overlap(b.start, b.end, o);
@@ -158,10 +158,97 @@ void explore_overlaps(const match_t& b,
             r,
             seen_bv,
             [&](match_t s) {
-                handle_range(s, curr_bv, ovlp, todo_in);
+                handle_range(s, curr_bv, ovlp_q, todo_in);
             });
     }
 }
+
+void write_graph_chunk(const seqindex_t& seqidx,
+                       mmmulti::iitree<uint64_t, pos_t>& node_iitree,
+                       mmmulti::iitree<uint64_t, pos_t>& path_iitree,
+                       std::ofstream& seq_v_out,
+                       std::map<pos_t, range_t>& range_buffer,
+                       std::vector<std::pair<uint64_t, uint64_t>>* dsets_ptr,
+                       uint64_t repeat_max,
+                       uint64_t min_repeat_dist) {
+    auto& dsets = *dsets_ptr;
+    size_t seq_v_length = seq_v_out.tellp();
+    uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
+    char current_base = '\0';
+    // determine if we've switched references
+    // here we implement a count of the number of times we touch the current sequence
+    std::map<uint64_t, uint64_t> seq_counts;
+    std::map<uint64_t, pos_t> last_seq_pos;
+    auto close_to_prev =
+        [&last_seq_pos,
+         &min_repeat_dist]
+        (const uint64_t& seq_id,
+         const pos_t& pos) {
+            auto f = last_seq_pos.find(seq_id);
+            if (f == last_seq_pos.end()) {
+                return false;
+            } else {
+                if (min_repeat_dist > std::abs((int64_t)offset(pos) - (int64_t)offset(f->second))) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        };
+    // run the closure for each dset, avoiding looping as configured
+    std::map<uint64_t, std::vector<pos_t>> todos;
+    std::string seq_out;
+    for (auto& d : dsets) {
+        const auto& curr_dset_id = d.first;
+        const auto& curr_offset = d.second;
+        char base = seqidx.at(curr_offset);
+        // if we're on a new position
+        if (curr_dset_id != last_dset_id) {
+            if (repeat_max || min_repeat_dist) {
+                // finish out todos stashed from repeat_max limitations
+                for (auto& t : todos) {
+                    seq_out.push_back(current_base);
+                    ++seq_v_length;
+                    for (auto& pos : t.second) {
+                        extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
+                    }
+                }
+                // empty out our seq counts and todos
+                seq_counts.clear();
+                todos.clear();
+                last_seq_pos.clear();
+            }
+            // emit our new position
+            current_base = base;
+            seq_out.push_back(current_base);
+            ++seq_v_length;
+            flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
+            last_dset_id = curr_dset_id;
+        }
+        pos_t curr_q_pos = make_pos_t(curr_offset, false);
+        if (current_base != seqidx.at_pos(curr_q_pos)) {
+            curr_q_pos = make_pos_t(curr_offset, true);
+        }
+        assert(current_base = seqidx.at_pos(curr_q_pos));
+        uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
+        uint64_t curr_seq_count = 0;
+        if ((min_repeat_dist != 0 && close_to_prev(curr_seq_id, curr_q_pos))
+            || (repeat_max != 0 && seq_counts[curr_seq_id]+1 > repeat_max)) {
+            curr_seq_count = ++seq_counts[curr_seq_id];
+        } else if (repeat_max != 0 || min_repeat_dist != 0) {
+            ++seq_counts[curr_seq_id];
+        }
+        if (curr_seq_count == 0) {
+            extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
+        } else {
+            todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);
+        }
+        last_seq_pos[curr_seq_id] = curr_q_pos;
+    }
+    seq_v_out << seq_out;
+    delete dsets_ptr;
+}
+
 
 size_t compute_transitive_closures(
     const seqindex_t& seqidx,
@@ -190,6 +277,7 @@ size_t compute_transitive_closures(
     // we are mapping from the /last/ position in the matched range, not the first
     std::map<pos_t, range_t> range_buffer;
     uint64_t bases_seen = 0;
+    std::thread* graph_writer = nullptr;
     //uint64_t last_seq_id = seqidx.seq_id_at(0);
     // collect based on a seed chunk of a given length
     for (uint64_t i = 0; i < input_seq_length; ) {
@@ -209,15 +297,18 @@ size_t compute_transitive_closures(
         // and where it ends (not past the end of the sequence)
         //chunk_end = std::min(input_seq_length, chunk_end); // chunk_start + transclose_batch_size);
         // collect ranges overlapping, per thread to avoid contention
-        std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
+        //std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
         // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
-        // a shared work queue for our threads
-        range_atomic_queue_t todo_in; // 16M elements
-        range_atomic_queue_t todo_out; // 16M elements
-        std::deque<std::pair<pos_t, uint64_t>> todo; // intermediate for master thread
-        ska::flat_hash_set<std::pair<pos_t, uint64_t>, wang_hash<std::pair<pos_t, uint64_t>>> todo_seen; // filter to prevent duplicate work
-        //std::cerr << "chunk\t" << chunk_start << "\t" << chunk_end << std::endl;
+        // shared work queues for our threads
+        auto todo_in_ptr = new range_atomic_queue_t;
+        auto& todo_in = *todo_in_ptr;
+        auto todo_out_ptr = new range_atomic_queue_t;
+        auto& todo_out = *todo_out_ptr;
+        auto ovlp_q_ptr = new overlap_atomic_queue_t;
+        auto& ovlp_q = *ovlp_q_ptr;
+        std::deque<std::pair<pos_t, uint64_t>> todo; // intermediate buffer for master thread
+        std::vector<std::pair<match_t, bool>> ovlp; // written into by the master thread
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlap_collect" << std::endl;
 #endif
@@ -233,7 +324,7 @@ size_t compute_transitive_closures(
                 auto range = std::make_pair(make_pos_t(b.start, false), b.end - b.start);
                 if (!todo_out.try_push(range)) {
                     todo.push_back(range);
-                    todo_seen.insert(range);
+                    //todo_seen.insert(range);
                 }
             });
         std::atomic<bool> work_todo;
@@ -241,7 +332,7 @@ size_t compute_transitive_closures(
         work_todo.store(false);
         auto worker_lambda =
             [&](uint64_t tid) {
-                auto& ovlp = ovlps[tid];
+                //auto& ovlp = ovlps[tid];
                 auto& exploring = explorings[tid];
                 while (!work_todo.load()) {
                     std::this_thread::sleep_for(1ns);
@@ -260,11 +351,11 @@ size_t compute_transitive_closures(
                                          q_seen_bv,
                                          q_curr_bv,
                                          aln_iitree,
-                                         ovlp,
+                                         ovlp_q,
                                          todo_in);
                     } else {
                         exploring.store(false);
-                        std::this_thread::sleep_for(0.001ns);
+                        std::this_thread::sleep_for(0.00001ns);
                     }
                 }
                 exploring.store(false);
@@ -285,15 +376,12 @@ size_t compute_transitive_closures(
                   return ongoing;
               };
         work_todo.store(true);
-        while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
-            std::this_thread::sleep_for(0.001ns);
+        while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || !ovlp_q.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
+            std::this_thread::sleep_for(0.00001ns);
             // read from todo_in, into todo
             std::pair<pos_t, uint64_t> item;
             while (todo_in.try_pop(item)) {
-                if (!todo_seen.count(item)) {
-                    todo_seen.insert(item);
-                    todo.push_back(item);
-                }
+                todo.push_back(item);
             }
             // then transfer to todo_out, until it's full
             while (!todo.empty()) {
@@ -305,37 +393,26 @@ size_t compute_transitive_closures(
                     break;
                 }
             }
-            //while (todo_out.try_push() || todo.size())
-            // write from todo_v into todo_out
+            // collect our overlaps
+            std::pair<match_t, bool> o;
+            while (ovlp_q.try_pop(o)) {
+                ovlp.push_back(o);
+            }
         }
         //std::cerr << "telling threads to stop" << std::endl;
         work_todo.store(false);
-        assert(todo.empty() && todo_in.was_empty() && todo_out.was_empty() && !still_exploring());
+        assert(todo.empty() && todo_in.was_empty() && todo_out.was_empty() && ovlp_q.was_empty() && !still_exploring());
         //std::cerr << "gonna join" << std::endl;
         for (uint64_t t = 0; t < nthreads; ++t) {
             workers[t].join();
         }
-        //std::cerr << "we done" << std::endl;
-        // TODO use a thread to collect these during runtime from another atomic ring buffer
+        delete todo_in_ptr;
+        delete todo_out_ptr;
+        delete ovlp_q_ptr;
+
 #ifdef DEBUG_TRANSCLOSURE
-        if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " overlaps_vector_merge" << std::endl;
+        if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " rank_build" << std::endl;
 #endif
-        uint64_t novlps = 0;
-        for (auto& v : ovlps) novlps += v.size();
-        std::vector<std::pair<match_t, bool>> ovlp;
-        ovlp.reserve(novlps);
-        for (auto& v : ovlps) {
-            ovlp.insert(ovlp.end(), v.begin(), v.end());
-            v.clear(); // attempt to free memory
-        }
-        // print our overlaps
-        //std::cerr << "overlap count " << ovlp.size() << std::endl;
-        /*
-        std::cerr << "transc" << "\t" << chunk_start << "-" << chunk_end << std::endl;
-        for (auto& s : ovlp) {
-            std::cerr << "ovlp" << "\t" << s.first.start << "-" << s.first.end << "\t" << offset(s.first.pos) << (is_rev(s.first.pos)?"-":"+") << "\t" << (s.second?"-":"+") << std::endl;
-        }
-        */
         // run the transclosure for this region using lock-free union find
         // convert the ranges into positions in the input sequence space
         uint64_t q_curr_bv_count = 0;
@@ -344,9 +421,6 @@ size_t compute_transitive_closures(
             ++q_curr_bv_count;
         }
         // use a rank support to make a dense mapping from the current bases to an integer range
-#ifdef DEBUG_TRANSCLOSURE
-        if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " rank_build" << std::endl;
-#endif
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
         for (auto p : q_curr_bv) {
             q_curr_bv_vec.push_back(p);
@@ -381,7 +455,8 @@ size_t compute_transitive_closures(
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " dset_write" << std::endl;
 #endif
         // maps from dset id to query base
-        std::vector<std::pair<uint64_t, uint64_t>> dsets(q_curr_bv_count);
+        auto* dsets_ptr = new std::vector<std::pair<uint64_t, uint64_t>>(q_curr_bv_count);
+        auto& dsets = *dsets_ptr;
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
 #pragma omp parallel for
         for (uint64_t j = 0; j < q_curr_bv_count; ++j) {
@@ -462,83 +537,32 @@ size_t compute_transitive_closures(
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " graph_emission" << std::endl;
 #endif
-        size_t seq_v_length = seq_v_out.tellp();
-        uint64_t last_dset_id = std::numeric_limits<uint64_t>::max(); // ~inf
-        char current_base = '\0';
-        // determine if we've switched references
-        // here we implement a count of the number of times we touch the current sequence
-        std::map<uint64_t, uint64_t> seq_counts;
-        std::map<uint64_t, pos_t> last_seq_pos;
-        auto close_to_prev =
-            [&last_seq_pos,
-             &min_repeat_dist]
-            (const uint64_t& seq_id,
-             const pos_t& pos) {
-                auto f = last_seq_pos.find(seq_id);
-                if (f == last_seq_pos.end()) {
-                    return false;
-                } else {
-                    if (min_repeat_dist > std::abs((int64_t)offset(pos) - (int64_t)offset(f->second))) {
-                        return true;
-                    } else {
-                        return false;
-                    }
-                }
-            };
-        // run the closure for each dset, avoiding looping as configured
-        std::map<uint64_t, std::vector<pos_t>> todos;
+        // mark q_seen_bv
         for (auto& d : dsets) {
-            const auto& curr_dset_id = d.first;
             const auto& curr_offset = d.second;
-            char base = seqidx.at(curr_offset);
-            // if we're on a new position
-            if (curr_dset_id != last_dset_id) {
-                if (repeat_max || min_repeat_dist) {
-                    // finish out todos stashed from repeat_max limitations
-                    for (auto& t : todos) {
-                        seq_v_out << current_base;
-                        ++seq_v_length;
-                        for (auto& pos : t.second) {
-                            extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
-                            q_seen_bv[offset(pos)] = 1;
-                            ++bases_seen;
-                        }
-                    }
-                    // empty out our seq counts and todos
-                    seq_counts.clear();
-                    todos.clear();
-                    last_seq_pos.clear();
-                }
-                // emit our new position
-                current_base = base;
-                seq_v_out << base;
-                ++seq_v_length;
-                flush_ranges(seq_v_length-1, range_buffer, node_iitree, path_iitree);
-                last_dset_id = curr_dset_id;
-            }
-            pos_t curr_q_pos = make_pos_t(curr_offset, false);
-            if (current_base != seqidx.at_pos(curr_q_pos)) {
-                curr_q_pos = make_pos_t(curr_offset, true);
-            }
-            assert(current_base = seqidx.at_pos(curr_q_pos));
-            uint64_t curr_seq_id = seqidx.seq_id_at(curr_offset);
-            uint64_t curr_seq_count = 0;
-            if ((min_repeat_dist != 0 && close_to_prev(curr_seq_id, curr_q_pos))
-                || (repeat_max != 0 && seq_counts[curr_seq_id]+1 > repeat_max)) {
-                curr_seq_count = ++seq_counts[curr_seq_id];
-            } else if (repeat_max != 0 || min_repeat_dist != 0) {
-                ++seq_counts[curr_seq_id];
-            }
-            if (curr_seq_count == 0) {
-                extend_range(seq_v_length-1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree);
-                q_seen_bv[curr_offset] = 1;
-                ++bases_seen;
-            } else {
-                todos[seq_counts[curr_seq_id]].push_back(curr_q_pos);
-            }
-            last_seq_pos[curr_seq_id] = curr_q_pos;
+            q_seen_bv[curr_offset] = 1;
+            ++bases_seen;
         }
-        //for (uint64_t j = 0; j < q_seen_bv.size(); ++j) { std::cerr << q_seen_bv[j]; } std::cerr << std::endl;
+        // wait for completion of the last writer
+        if (graph_writer != nullptr) {
+            graph_writer->join();
+            delete graph_writer;
+        }
+        // spawn the graph writer thread
+        graph_writer = new std::thread(write_graph_chunk,
+                                       std::ref(seqidx),
+                                       std::ref(node_iitree),
+                                       std::ref(path_iitree),
+                                       std::ref(seq_v_out),
+                                       std::ref(range_buffer),
+                                       dsets_ptr,
+                                       repeat_max,
+                                       min_repeat_dist);
+    }
+    // clean up the last writer
+    if (graph_writer != nullptr) {
+        graph_writer->join();
+        delete graph_writer;
     }
     // close the graph sequence vector
     size_t seq_bytes = seq_v_out.tellp();

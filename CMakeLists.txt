@@ -154,7 +154,8 @@ ExternalProject_Add(ska
 ExternalProject_Get_property(ska SOURCE_DIR)
 set(ska_INCLUDE "${SOURCE_DIR}")
 
-set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish
