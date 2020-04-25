@@ -2,6 +2,8 @@
 
 namespace seqwish {
 
+using namespace std::chrono_literals;
+
 void emit_gfa(std::ostream& out,
               size_t graph_length,
               const std::string& seq_v_file,
@@ -13,55 +15,81 @@ void emit_gfa(std::ostream& out,
               seqindex_t& seqidx,
               mmmulti::set<std::pair<pos_t, pos_t>>& link_mmset) {
 
+    uint nthreads = get_thread_count();
+
     out << "H" << "\t" << "VN:Z:1.0" << std::endl;
     int seq_v_fd = -1;
     char* seq_v_buf = nullptr;
     size_t seq_v_filesize = mmap_open(seq_v_file, seq_v_buf, seq_v_fd);
+
+    auto show_links = [&](const pos_t& p) { std::cerr << pos_to_string(p) << " " << pos_to_string(make_pos_t(seq_id_cbv_rank(offset(p)), is_rev(p))) << ", "; };
+
     // write the nodes
     // these are delimited in the seq_v_file by the markers in seq_id_civ
-    auto show_links = [&](const pos_t& p) { std::cerr << pos_to_string(p) << " " << pos_to_string(make_pos_t(seq_id_cbv_rank(offset(p)), is_rev(p))) << ", "; };
-    size_t n_nodes = seq_id_cbv_rank(seq_id_cbv.size()-1);
-//#pragma omp parallel for
-    for (size_t id = 1; id <= n_nodes; ++id) {
+
+    uint64_t n_nodes = seq_id_cbv_rank(seq_id_cbv.size()-1);
+
+    // producer/consumer queues
+    atomic_queue::AtomicQueue2<uint64_t, 2 << 16> seq_todo_q;
+    atomic_queue::AtomicQueue2<std::pair<uint64_t, std::string*>, 2 << 16> seq_done_q;
+    std::atomic<bool> work_todo;
+    std::map<uint64_t, std::string*> node_records;
+
+    //#pragma omp parallel for
+        //for (size_t id = 1; id <= n_nodes; ++id) {
         //std::cerr << "id " << id << " n_nodes " << n_nodes << std::endl;
-        size_t node_start = seq_id_cbv_select(id);
-        //size_t node_length = (id==n_nodes ? seq_id_cbv.size() : seq_id_cbv_select(id+1)) - node_start;
-        size_t node_length = seq_id_cbv_select(id+1) - node_start;
-        //std::cerr << id << " "  << node_start << " " << node_length << std::endl;
-        std::string seq; seq.resize(node_length);
-        memcpy((void*)seq.c_str(), &seq_v_buf[node_start], node_length);
-//#pragma omp critical (out)
-        out << "S" << "\t" << id << "\t" << seq << std::endl;
-        // get the links of this node
-        // to the forward or reverse start
-        /*
-        pos_t node_start_fwd = make_pos_t(node_start+1, false);
-        pos_t node_end_fwd = make_pos_t(node_start+node_length, false);
-        // from the forward or reverse end
-        pos_t node_start_rev = make_pos_t(node_start+node_length, true);
-        pos_t node_end_rev = make_pos_t(node_start+1, true);
-        */
 
-        /*
-        std::cerr << "node extents "
-                  << pos_to_string(node_start_fwd) << " "
-                  << pos_to_string(node_end_fwd) << " "
-                  << pos_to_string(node_start_rev) << " "
-                  << pos_to_string(node_end_rev) << std::endl;
-        std::cerr << "things to this node fwd" << " ";
-        link_rev_mm.for_values_of(node_start_fwd, show_links);
-        std::cerr << std::endl;
-        std::cerr << "things to this node rev" << " ";
-        link_rev_mm.for_values_of(node_start_rev, show_links);
-        std::cerr << std::endl;
-        std::cerr << "things from this node fwd" << " ";
-        link_fwd_mm.for_values_of(node_end_fwd, show_links);
-        std::cerr << std::endl;
-        std::cerr << "things from this node rev" << " ";
-        link_fwd_mm.for_values_of(node_end_rev, show_links);
-        std::cerr << std::endl;
-        */
+    auto worker_lambda =
+        [&](void) {
+            uint64_t id = 0;
+            while (work_todo.load()) {
+                if (seq_todo_q.try_pop(id)) {
+                    //std::stringstream s;
+                    size_t node_start = seq_id_cbv_select(id);
+                    //size_t node_length = (id==n_nodes ? seq_id_cbv.size() : seq_id_cbv_select(id+1)) - node_start;
+                    size_t node_length = seq_id_cbv_select(id+1) - node_start;
+                    //std::cerr << id << " "  << node_start << " " << node_length << std::endl;
+                    std::string* seq = new std::string;
+                    seq->resize(node_length);
+                    memcpy((void*)seq->c_str(), &seq_v_buf[node_start], node_length);
+                    seq_done_q.push(std::make_pair(id, seq));
+                } else {
+                    std::this_thread::sleep_for(0.00001ns);
+                }
+            }
+        };
 
+    std::vector<std::thread> workers; workers.reserve(nthreads);
+    work_todo.store(true);
+    for (uint64_t t = 0; t < nthreads; ++t) {
+        workers.emplace_back(worker_lambda);
+    }
+    uint64_t todo_id = 1;
+    uint64_t done_id = 0;
+    while (done_id < n_nodes) {
+        // put ids in todo
+        while (todo_id <= n_nodes && seq_todo_q.try_push(todo_id)) {
+            ++todo_id;
+        }
+        // read from done queue
+        std::pair<uint64_t, std::string*> item;
+        if (seq_done_q.try_pop(item)) {
+            node_records[item.first] = item.second;
+        }
+        if (node_records.size()) {
+            auto b = node_records.begin();
+            if (b->first == done_id+1) {
+                //out << node_records.begin()->second << std::endl;
+                out << "S" << "\t" << b->first << "\t" << *b->second << std::endl;
+                ++done_id;
+                delete b->second;
+                node_records.erase(b);
+            }
+        }
+    }
+    work_todo.store(false);
+    for (uint64_t t = 0; t < nthreads; ++t) {
+        workers[t].join();
     }
 
     auto print_link = [&out](const std::pair<pos_t, pos_t>& p) {
