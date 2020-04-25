@@ -1,8 +1,8 @@
-#ifndef GFA_HPP_INCLUDED
-#define GFA_HPP_INCLUDED
+#pragma once
 
 #include <iostream>
 #include <sstream>
+#include "atomic_queue.h"
 #include "mmiitree.hpp"
 #include "mmmultiset.hpp"
 #include "seqindex.hpp"
@@ -24,5 +24,3 @@ void emit_gfa(std::ostream& out,
               mmmulti::set<std::pair<pos_t, pos_t>>& link_mmset);
 
 }
-
-#endif
