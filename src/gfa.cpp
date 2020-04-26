@@ -73,14 +73,14 @@ void emit_gfa(std::ostream& out,
         }
         // read from done queue
         std::pair<uint64_t, std::string*> item;
-        if (seq_done_q.try_pop(item)) {
+        while (seq_done_q.try_pop(item)) {
             node_records[item.first] = item.second;
         }
         if (node_records.size()) {
             auto b = node_records.begin();
             if (b->first == done_id+1) {
                 //out << node_records.begin()->second << std::endl;
-                out << "S" << "\t" << b->first << "\t" << *b->second << std::endl;
+                out << "S" << "\t" << b->first << "\t" << *b->second << "\n";
                 ++done_id;
                 delete b->second;
                 node_records.erase(b);
@@ -99,7 +99,7 @@ void emit_gfa(std::ostream& out,
             out << "L" << "\t"
                 << offset(from) << "\t" << (is_rev(from)?"-":"+") << "\t"
                 << offset(to) << "\t" << (is_rev(to)?"-":"+") << "\t"
-                << "0M" << std::endl;
+                << "0M" << "\n";
         }
     };
     link_mmset.for_each_unique_value(print_link);
@@ -180,7 +180,7 @@ void emit_gfa(std::ostream& out,
         }
         pathss << '\t';
         //cigarss.seekp(-1, cigarss.cur);
-        cigarss << std::endl;
+        cigarss << "\n";
 //#pragma omp critical (out)
         out << "P" << "\t"
             << seqidx.nth_name(i) << "\t"
