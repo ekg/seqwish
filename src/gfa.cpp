@@ -30,8 +30,10 @@ void emit_gfa(std::ostream& out,
     uint64_t n_nodes = seq_id_cbv_rank(seq_id_cbv.size()-1);
 
     // producer/consumer queues
-    atomic_queue::AtomicQueue2<uint64_t, 2 << 16> seq_todo_q;
-    atomic_queue::AtomicQueue2<std::pair<uint64_t, std::string*>, 2 << 16> seq_done_q;
+    auto seq_todo_q_ptr = new atomic_queue::AtomicQueue2<uint64_t, 2 << 16>;
+    auto& seq_todo_q = *seq_todo_q_ptr;
+    auto seq_done_q_ptr = new atomic_queue::AtomicQueue2<std::pair<uint64_t, std::string*>, 2 << 16>;
+    auto& seq_done_q = *seq_done_q_ptr;
     std::atomic<bool> work_todo;
     std::map<uint64_t, std::string*> node_records;
 
