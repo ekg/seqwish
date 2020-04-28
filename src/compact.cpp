@@ -21,22 +21,36 @@ void compact_nodes(
         size_t k = j + seq_len;
         //std::cerr << "compact " << seqidx.nth_name(i) << " " << seqidx.nth_seq_length(i) << " " << j << " " << k << std::endl;
         while (j < k) {
-            std::vector<size_t> ovlp;
-            path_iitree.overlap(j, j+1, ovlp);
+            uint64_t overlap_count = 0;
+            uint64_t ovlp_start_in_q;
+            uint64_t ovlp_end_in_q;
+            pos_t pos_start_in_s;
+            path_iitree.overlap(
+                j, j+1,
+                [&](const uint64_t& start,
+                    const uint64_t& end,
+                    const pos_t& pos) {
+                    ++overlap_count;
+                    ovlp_start_in_q = start;
+                    ovlp_end_in_q = end;
+                    pos_start_in_s = pos;
+                });
             // each input base should only map one place in the graph
-            if (ovlp.size() != 1) {
-                std::cerr << "found " << ovlp.size()  << " overlaps for seq " << seqidx.nth_name(i) << " idx " << i << " at j=" << j << " of " << k << std::endl;
-                for (auto& o : ovlp) {
-                    std::cerr << "ovlp_start_in_q = " << path_iitree.start(o) << " "
-                              << "ovlp_end_in_q = " << path_iitree.end(o) << " "
-                              << "pos_start_in_s = " << pos_to_string(path_iitree.data(o)) << std::endl;
-                }
+            if (overlap_count != 1) {
+                std::cerr << "[seqwish::compact] error: found " << overlap_count << " overlaps for seq " << seqidx.nth_name(i) << " idx " << i << " at j=" << j << " of " << k << std::endl;
+                path_iitree.overlap(
+                    j, j+1,
+                    [&](const uint64_t& start,
+                    const uint64_t& end,
+                    const pos_t& pos) {
+                        std::cerr << "ovlp_start_in_q = " << start << " "
+                                  << "ovlp_end_in_q = " << end << " "
+                                  << "pos_start_in_s = " << pos_to_string(pos) << std::endl;
+                    });
                 assert(false);
+                exit(1);
             }
-            size_t idx = ovlp.front();
-            uint64_t ovlp_start_in_q = path_iitree.start(idx);
-            uint64_t ovlp_end_in_q = path_iitree.end(idx);
-            pos_t pos_start_in_s = path_iitree.data(idx);
+
             bool match_is_rev = is_rev(pos_start_in_s);
             // mark a node start and end
             pos_t pos_end_in_s = pos_start_in_s;

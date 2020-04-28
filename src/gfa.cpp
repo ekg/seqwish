@@ -118,14 +118,35 @@ void emit_gfa(std::ostream& out,
         std::vector<pos_t> path_v;
         uint64_t seen_bp = 0;
         while (j < k) {
-            std::vector<size_t> ovlp;
-            path_iitree.overlap(j, j+1, ovlp);
+            uint64_t overlap_count = 0;
+            uint64_t ovlp_start_in_q;
+            uint64_t ovlp_end_in_q;
+            pos_t pos_start_in_s;
+            path_iitree.overlap(
+                j, j+1,
+                [&](const uint64_t& start,
+                    const uint64_t& end,
+                    const pos_t& pos) {
+                    ++overlap_count;
+                    ovlp_start_in_q = start;
+                    ovlp_end_in_q = end;
+                    pos_start_in_s = pos;
+                });
             // each input base should only map one place in the graph
-            assert(ovlp.size() == 1);
-            size_t idx = ovlp.front();
-            uint64_t ovlp_start_in_q = path_iitree.start(idx);
-            uint64_t ovlp_end_in_q = path_iitree.end(idx);
-            pos_t pos_start_in_s = path_iitree.data(idx);
+            if (overlap_count != 1) {
+                std::cerr << "[seqwish::gfa] error: found " << overlap_count << " overlaps for seq " << seqidx.nth_name(i) << " idx " << i << " at j=" << j << " of " << k << std::endl;
+                path_iitree.overlap(
+                    j, j+1,
+                    [&](const uint64_t& start,
+                    const uint64_t& end,
+                    const pos_t& pos) {
+                        std::cerr << "ovlp_start_in_q = " << start << " "
+                                  << "ovlp_end_in_q = " << end << " "
+                                  << "pos_start_in_s = " << pos_to_string(pos) << std::endl;
+                    });
+                assert(false);
+                exit(1);
+            }
             bool match_is_rev = is_rev(pos_start_in_s);
             // iterate through the nodes in this range
             uint64_t length = ovlp_end_in_q - ovlp_start_in_q;
