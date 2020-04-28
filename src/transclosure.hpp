@@ -19,6 +19,7 @@
 #include "atomic_queue.h"
 #include "time.hpp"
 #include "wang.hpp"
+#include "paryfor.hpp"
 
 namespace seqwish {
 

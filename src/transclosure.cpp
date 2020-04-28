@@ -446,17 +446,18 @@ size_t compute_transitive_closures(
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " parallel_union_find" << std::endl;
 #endif
-#pragma omp parallel for
-        for (uint64_t k = 0; k < ovlp.size(); ++k) {
-            auto& s = ovlp.at(k);
-            auto& r = s.first;
-            pos_t p = r.pos;
-            for (uint64_t j = r.start; j != r.end; ++j) {
-                // unite both sides of the overlap
-                disjoint_sets.unite(q_curr_rank(j), q_curr_rank(offset(p)));
-                incr_pos(p);
-            }
-        }
+        paryfor::parallel_for<uint64_t>(
+            0, ovlp.size(), num_threads,
+            [&](uint64_t k) {
+                auto& s = ovlp.at(k);
+                auto& r = s.first;
+                pos_t p = r.pos;
+                for (uint64_t j = r.start; j != r.end; ++j) {
+                    // unite both sides of the overlap
+                    disjoint_sets.unite(q_curr_rank(j), q_curr_rank(offset(p)));
+                    incr_pos(p);
+                }
+            });
         // now read out our transclosures
 #ifdef DEBUG_TRANSCLOSURE
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " dset_write" << std::endl;
@@ -465,15 +466,16 @@ size_t compute_transitive_closures(
         auto* dsets_ptr = new std::vector<std::pair<uint64_t, uint64_t>>(q_curr_bv_count);
         auto& dsets = *dsets_ptr;
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
-#pragma omp parallel for
-        for (uint64_t j = 0; j < q_curr_bv_count; ++j) {
-            auto& p = q_curr_bv_vec[j];
-            if (!q_seen_bv[p]) {
-                dsets[j] = std::make_pair(disjoint_sets.find(q_curr_rank(p)), p);
-            } else {
-                dsets[j] = max_pair;
-            }
-        }
+        paryfor::parallel_for<uint64_t>(
+            0, q_curr_bv_count, num_threads,
+            [&](uint64_t j) {
+                auto& p = q_curr_bv_vec[j];
+                if (!q_seen_bv[p]) {
+                    dsets[j] = std::make_pair(disjoint_sets.find(q_curr_rank(p)), p);
+                } else {
+                    dsets[j] = max_pair;
+                }
+            });
         //q_curr_bv_vec.clear();
         // remove excluded elements
         dsets.erase(std::remove_if(dsets.begin(), dsets.end(),
