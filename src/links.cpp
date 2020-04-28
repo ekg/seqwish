@@ -16,7 +16,7 @@ void derive_links(seqindex_t& seqidx,
     link_mmset.open_writer();
     size_t n_nodes = seq_id_cbv_rank(seq_id_cbv.size()-1);
     paryfor::parallel_for<size_t>(
-        1, n_nodes+1, num_threads,
+        1, n_nodes+1, num_threads, 10000,
         [&](size_t id) {
         uint64_t node_start_in_s = seq_id_cbv_select(id); // select is 1-based
         uint64_t node_end_in_s = seq_id_cbv_select(id+1);
