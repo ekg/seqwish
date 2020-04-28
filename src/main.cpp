@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
     // 4) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
     if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " compacting nodes" << std::endl;
     sdsl::bit_vector seq_id_bv(graph_length+1);
-    compact_nodes(seqidx, graph_length, node_iitree, path_iitree, seq_id_bv);
+    compact_nodes(seqidx, graph_length, node_iitree, path_iitree, seq_id_bv, num_threads);
     if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done compacting" << std::endl;
     if (args::get(verbose_debug)) std::cerr << seq_id_bv << std::endl;
     sdsl::sd_vector<> seq_id_cbv;
