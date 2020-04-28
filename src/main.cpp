@@ -59,12 +59,14 @@ int main(int argc, char** argv) {
 
     std::chrono::time_point<std::chrono::steady_clock> start_time = std::chrono::steady_clock::now();
     
-    size_t num_threads = args::get(thread_count);
+    size_t num_threads = args::get(thread_count) ? args::get(thread_count) : 1;
+    /*
     if (num_threads) {
         omp_set_num_threads(args::get(thread_count));
     } else {
         omp_set_num_threads(1);
     }
+    */
 
     if (!args::get(seqs).empty() && !file_exists(args::get(seqs))) {
         std::cerr << "[seqwish] ERROR: input sequence file " << args::get(seqs) << " does not exist" << std::endl;
@@ -108,7 +110,7 @@ int main(int argc, char** argv) {
             if (!min_length && args::get(min_match_len)) {
                 min_length = args::get(min_match_len);
             }
-            unpack_paf_alignments(file, aln_iitree, seqidx, min_length);
+            unpack_paf_alignments(file, aln_iitree, seqidx, min_length, num_threads);
         }
     }
     if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing" << std::endl;

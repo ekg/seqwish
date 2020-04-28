@@ -2,22 +2,20 @@
 
 namespace seqwish {
 
-void unpack_paf_alignments(const std::string& paf_file,
-                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
-                           seqindex_t& seqidx,
-                           uint64_t min_match_len) {
-    // go through the PAF file
-    igzstream paf_in(paf_file.c_str());
-    if (!paf_in.good()) assert("PAF is not good!");
-    uint64_t lines = std::count(std::istreambuf_iterator<char>(paf_in), 
-                                std::istreambuf_iterator<char>(), '\n');
-    paf_in.close();
-    paf_in.open(paf_file.c_str());
-#pragma omp parallel for
-    for (size_t i = 0; i < lines; ++i) {
+void paf_worker(
+    igzstream& paf_in,
+    std::atomic<bool>& paf_more,
+    std::mutex& paf_in_mutex,
+    mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+    const seqindex_t& seqidx,
+    const uint64_t& min_match_len) {
+    while (paf_more.load()) {
+        paf_in_mutex.lock();
         std::string line;
-#pragma omp critical (paf_in)
         std::getline(paf_in, line);
+        paf_more.store(paf_in.good());
+        paf_in_mutex.unlock();
+        if (line.empty()) break;
         paf_row_t paf(line);
         size_t query_idx = seqidx.rank_of_seq_named(paf.query_sequence_name);
         size_t query_len = seqidx.nth_seq_length(query_idx);
@@ -86,26 +84,27 @@ void unpack_paf_alignments(const std::string& paf_file,
     }
 }
 
-/*
-void filter_alignments(mmmulti::map<pos_t, aln_pos_t>& aln_mm,
-                       mmmulti::map<pos_t, pos_t>& aln_filt_mm,
-                       uint64_t aln_min_length,
-                       uint64_t aln_keep_n_longest,
-                       seqindex_t& seqidx) {
-    for (size_t i = 1; i <= seqidx.seq_length(); ++i) {
-        std::vector<aln_pos_t> at_pos = aln_mm.unique_values(i);
-        std::sort(at_pos.begin(), at_pos.end(), [&](const aln_pos_t& a, const aln_pos_t& b){ return a.aln_length > b.aln_length; });
-        uint64_t to_keep = (aln_keep_n_longest ? std::min(aln_keep_n_longest, (uint64_t)at_pos.size()) : at_pos.size());
-        //std::cerr << "keep at " << i << ": ";
-        //for (auto& k : at_pos) std::cerr << " " << k.aln_length;  std::cerr << std::endl;
-        for (size_t j = 0; j < to_keep; ++j) {
-            auto& a = at_pos[j];
-            if (a.aln_length < aln_min_length) break;
-            aln_filt_mm.append(i, at_pos[j].pos);
-        }
+
+void unpack_paf_alignments(const std::string& paf_file,
+                           mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
+                           const seqindex_t& seqidx,
+                           const uint64_t& min_match_len,
+                           const uint64_t& num_threads) {
+    // go through the PAF file
+    igzstream paf_in(paf_file.c_str());
+    if (!paf_in.good()) {
+        std::cerr << "[seqwish::alignments] error: PAF file " << paf_file << " is not good!" << std::endl;
+        exit(1);
     }
-    aln_filt_mm.index(seqidx.seq_length());
+    std::mutex paf_in_mutex;
+    std::atomic<bool> paf_more; paf_more.store(true);
+    std::vector<std::thread> workers; workers.reserve(num_threads);
+    for (uint64_t t = 0; t < num_threads; ++t) {
+        workers.emplace_back(paf_worker, std::ref(paf_in), std::ref(paf_more), std::ref(paf_in_mutex), std::ref(aln_iitree), std::ref(seqidx), std::ref(min_match_len));
+    }
+    for (uint64_t t = 0; t < num_threads; ++t) {
+        workers[t].join();
+    }
 }
-*/
 
 }

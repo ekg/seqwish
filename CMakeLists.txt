@@ -11,35 +11,8 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # Use all standard-compliant optimizations
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3 -mcx16 -g")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -mcx16 -g")
-
-if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  # assumes clang build
-  # we can't reliably detect when we're using clang, so for the time being we assume
-  # TODO: can't we though?
-  # adapted from https://stackoverflow.com/questions/46414660/macos-cmake-and-openmp
-  # find_package(OpenMP) does not work reliably on macOS, so we do its work ourselves
-  set (OpenMP_C "${CMAKE_C_COMPILER}")
-  set (OpenMP_C_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
-  set (OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5")
-  set (OpenMP_CXX "${CMAKE_CXX_COMPILER}")
-  set (OpenMP_CXX_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
-  set (OpenMP_CXX_LIB_NAMES "libomp" "libgomp" "libiomp5")
-  set (OpenMP_libomp_LIBRARY "omp")
-  set (OpenMP_libgomp_LIBRARY "gomp")
-  set (OpenMP_libiomp5_LIBRARY "iomp5")
-  # and now add the OpenMP parameters to the compile flags
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS} -lomp")
-elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  find_package(OpenMP REQUIRED)
-  # add the flags it detects to the compile flags
-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fopenmp")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fopenmp")
-  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif()
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -mcx16 -g")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -mcx16 -g")
 
 # Set the output folder where your program will be created
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
@@ -157,6 +130,18 @@ ExternalProject_Add(ska
 ExternalProject_Get_property(ska SOURCE_DIR)
 set(ska_INCLUDE "${SOURCE_DIR}")
 
+# paryfor parallel_for
+ExternalProject_Add(paryfor
+  #GIT_REPOSITORY "https://github.com/ekg/paryfor"
+  #GIT_TAG "509b28a092f732a068e2908bb9e359a8562cd32f"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/paryfor"
+  UPDATE_COMMAND ""
+  INSTALL_COMMAND ""
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND "")
+ExternalProject_Get_property(paryfor SOURCE_DIR)
+set(paryfor_INCLUDE "${SOURCE_DIR}")
+
 #set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
 
@@ -180,7 +165,6 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/exists.cpp
   ${CMAKE_SOURCE_DIR}/src/time.cpp
   ${CMAKE_SOURCE_DIR}/src/mmap.cpp
-  ${CMAKE_SOURCE_DIR}/src/iitii_types.cpp
   )
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
@@ -193,6 +177,7 @@ add_dependencies(seqwish bbhash)
 add_dependencies(seqwish atomicbitvector)
 add_dependencies(seqwish atomicqueue)
 add_dependencies(seqwish ska)
+add_dependencies(seqwish paryfor)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -205,7 +190,8 @@ target_include_directories(seqwish PUBLIC
   "${bbhash_INCLUDE}"
   "${atomicbitvector_INCLUDE}"
   "${atomicqueue_INCLUDE}"
-  "${ska_INCLUDE}")
+  "${ska_INCLUDE}"
+  "${paryfor_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
