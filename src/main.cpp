@@ -17,10 +17,8 @@
 #include "vgp.hpp"
 #include "pos.hpp"
 #include "match.hpp"
-#include "threads.hpp"
 #include "exists.hpp"
 #include "time.hpp"
-//#include "iitii_types.hpp"
 
 using namespace seqwish;
 
@@ -181,12 +179,12 @@ int main(int argc, char** argv) {
     // 6) emit the graph in GFA or VGP format
     if (!args::get(gfa_out).empty()) {
         std::ofstream out(args::get(gfa_out).c_str());
-        emit_gfa(out, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);
+        emit_gfa(out, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset, num_threads);
     } else if (!args::get(vgp_base).empty()) {
         assert(false);
         //emit_vgp(args::get(vgp_base), graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     } else {
-        emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);
+        emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset, num_threads);
     }
     if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done" << std::endl;
 

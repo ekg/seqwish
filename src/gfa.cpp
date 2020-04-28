@@ -13,9 +13,8 @@ void emit_gfa(std::ostream& out,
               const sdsl::sd_vector<>::rank_1_type& seq_id_cbv_rank,
               const sdsl::sd_vector<>::select_1_type& seq_id_cbv_select,
               seqindex_t& seqidx,
-              mmmulti::set<std::pair<pos_t, pos_t>>& link_mmset) {
-
-    uint nthreads = get_thread_count();
+              mmmulti::set<std::pair<pos_t, pos_t>>& link_mmset,
+              const uint64_t& num_threads) {
 
     out << "H" << "\t" << "VN:Z:1.0" << std::endl;
     int seq_v_fd = -1;
@@ -37,10 +36,6 @@ void emit_gfa(std::ostream& out,
     std::atomic<bool> work_todo;
     std::map<uint64_t, std::string*> node_records;
 
-    //#pragma omp parallel for
-        //for (size_t id = 1; id <= n_nodes; ++id) {
-        //std::cerr << "id " << id << " n_nodes " << n_nodes << std::endl;
-
     auto worker_lambda =
         [&](void) {
             uint64_t id = 0;
@@ -61,9 +56,9 @@ void emit_gfa(std::ostream& out,
             }
         };
 
-    std::vector<std::thread> workers; workers.reserve(nthreads);
+    std::vector<std::thread> workers; workers.reserve(num_threads);
     work_todo.store(true);
-    for (uint64_t t = 0; t < nthreads; ++t) {
+    for (uint64_t t = 0; t < num_threads; ++t) {
         workers.emplace_back(worker_lambda);
     }
     uint64_t todo_id = 1;
@@ -90,7 +85,7 @@ void emit_gfa(std::ostream& out,
         }
     }
     work_todo.store(false);
-    for (uint64_t t = 0; t < nthreads; ++t) {
+    for (uint64_t t = 0; t < num_threads; ++t) {
         workers[t].join();
     }
 
@@ -107,9 +102,8 @@ void emit_gfa(std::ostream& out,
     link_mmset.for_each_unique_value(print_link);
 
     // write the paths
-    // iterate over the sequence positions, emitting a node at every edge crossing
     size_t num_seqs = seqidx.n_seqs();
-//#pragma omp parallel for
+    // should be made to run in parallel
     for (size_t i = 1; i <= num_seqs; ++i) {
         size_t j = seqidx.nth_seq_offset(i);
         size_t seq_len = seqidx.nth_seq_length(i);

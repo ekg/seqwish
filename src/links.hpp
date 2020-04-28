@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <iostream>
+#include "paryfor.hpp"
 #include "seqindex.hpp"
 #include "mmmultiset.hpp"
 #include "mmiitree.hpp"

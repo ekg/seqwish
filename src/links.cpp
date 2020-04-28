@@ -15,8 +15,9 @@ void derive_links(seqindex_t& seqidx,
     // and write it into the mmset
     link_mmset.open_writer();
     size_t n_nodes = seq_id_cbv_rank(seq_id_cbv.size()-1);
-//#pragma omp parallel for
-    for (size_t id = 1; id <= n_nodes; ++id) {
+    paryfor::parallel_for<size_t>(
+        1, n_nodes+1, num_threads,
+        [&](size_t id) {
         uint64_t node_start_in_s = seq_id_cbv_select(id); // select is 1-based
         uint64_t node_end_in_s = seq_id_cbv_select(id+1);
         //std::cerr << "links for node " << id << " start " << node_start_in_s << " end " << node_end_in_s << std::endl;
@@ -63,7 +64,7 @@ void derive_links(seqindex_t& seqidx,
                         });
                 }
             });
-    }
+        });
     link_mmset.index(num_threads);
 }
 

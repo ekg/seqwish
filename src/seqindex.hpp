@@ -14,7 +14,6 @@
 #include "gzstream.h"
 #include "pos.hpp"
 #include "dna.hpp"
-#include "threads.hpp"
 
 namespace seqwish {
 
