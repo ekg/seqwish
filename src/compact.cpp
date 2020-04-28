@@ -8,14 +8,17 @@ void compact_nodes(
     size_t graph_size,
     mmmulti::iitree<uint64_t, pos_t>& node_iitree,
     mmmulti::iitree<uint64_t, pos_t>& path_iitree,
-    sdsl::bit_vector& seq_id_bv) {
+    sdsl::bit_vector& seq_id_bv,
+    uint64_t num_threads) {
     // for each pair of positions in the graph base seq
     // do we have any links from the first that don't go to the second?
     // do we have any links to the second that don't come from the first?
-    seq_id_bv[0] = 1; // set first node start
+    //seq_id_bv[0] = 1; // set first node start
+    atomicbitvector::atomic_bv_t seq_id_abv(seq_id_bv.size());
+    seq_id_abv.set(0);
     size_t num_seqs = seqidx.n_seqs();
-#pragma omp parallel for
-    for (size_t i = 1; i <= num_seqs; ++i) {
+    auto handle_seq =
+        [&](size_t i) {
         size_t j = seqidx.nth_seq_offset(i);
         size_t seq_len = seqidx.nth_seq_length(i);
         size_t k = j + seq_len;
@@ -56,34 +59,27 @@ void compact_nodes(
             pos_t pos_end_in_s = pos_start_in_s;
             if (!match_is_rev) {
                 incr_pos(pos_end_in_s, ovlp_end_in_q - ovlp_start_in_q);
-#pragma omp critical (seq_id_bv)
-                {
-                    //std::cerr << "marking node+ start " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_start_in_s)] = 1;
-                }
-#pragma omp critical (seq_id_bv)
-                {
-                    //std::cerr << "marking node+ end " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_end_in_s)] = 1;
-                }
+                //std::cerr << "marking node+ start " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
+                seq_id_abv.set(offset(pos_start_in_s));
+                //std::cerr << "marking node+ end " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
+                seq_id_abv.set(offset(pos_end_in_s));
             } else {
                 incr_pos(pos_end_in_s, ovlp_end_in_q - ovlp_start_in_q - 1);
-#pragma omp critical (seq_id_bv)
-                {
-                    //std::cerr << "marking node- start " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_end_in_s)] = 1;
-                }
-#pragma omp critical (seq_id_bv)
-                {
-                    //std::cerr << "marking node- end " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
-                    seq_id_bv[offset(pos_start_in_s)+1] = 1;
-                }
+                //std::cerr << "marking node- start " << offset(pos_end_in_s) << " of " << seq_id_bv.size() << std::endl;
+                seq_id_abv.set(offset(pos_end_in_s));
+                //std::cerr << "marking node- end " << offset(pos_start_in_s) << " of " << seq_id_bv.size() << std::endl;
+                seq_id_abv.set(offset(pos_start_in_s)+1);
             }
             j = ovlp_end_in_q;
         }
-    }
+    };
+    paryfor::parallel_for<size_t>(1, num_seqs+1, num_threads, handle_seq);
     //std::cerr << graph_size << " " << seq_id_bv.size() << std::endl;
-    seq_id_bv[graph_size] = 1;
+    seq_id_abv.set(graph_size);
+    // save our bitvector
+    for (auto p : seq_id_abv) {
+        seq_id_bv[p] = 1;
+    }
 }
 
 }
