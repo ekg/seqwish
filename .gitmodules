@@ -25,9 +25,9 @@
 [submodule "deps/atomic_queue"]
 	path = deps/atomic_queue
 	url = https://github.com/max0x7ba/atomic_queue.git
-[submodule "deps/mmmultimap"]
-	path = deps/mmmultimap
-	url = https://github.com/ekg/mmmultimap.git
 [submodule "deps/flat_hash_map"]
 	path = deps/flat_hash_map
 	url = https://github.com/skarupke/flat_hash_map
+[submodule "deps/mmmulti"]
+	path = deps/mmmulti
+	url = https://github.com/ekg/mmmulti.git

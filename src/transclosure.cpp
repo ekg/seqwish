@@ -138,29 +138,30 @@ void explore_overlaps(const match_t& b,
                       mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                       overlap_atomic_queue_t& ovlp_q,
                       range_atomic_queue_t& todo_in) {
-    std::vector<size_t> o;
-    aln_iitree.overlap(b.start, b.end, o);
-    for (auto& idx : o) {
-        auto r = get_match(aln_iitree, idx);
-//#pragma omp critical (cerr)
-        //std::cerr << "seen_range\t" << s.start << "\t" << s.end << "\t" << pos_to_string(s.pos) << std::endl;
-        if (b.start > r.start) {
-            uint64_t trim_from_start = b.start - r.start;
-            r.start += trim_from_start;
-            incr_pos(r.pos, trim_from_start);
-        }
-        if (r.end > b.end) {
-            uint64_t trim_from_end = r.end - b.end;
-            r.end -= trim_from_end;
-        }
-        assert(r.start < r.end);
-        for_each_fresh_range(
-            r,
-            seen_bv,
-            [&](match_t s) {
-                handle_range(s, curr_bv, ovlp_q, todo_in);
-            });
-    }
+    //std::vector<size_t> o;
+    aln_iitree.overlap(
+        b.start, b.end,
+        [&](const uint64_t& start,
+            const uint64_t& end,
+            const pos_t& pos) {
+            match_t r = { start, end, pos };
+            if (b.start > r.start) {
+                uint64_t trim_from_start = b.start - r.start;
+                r.start += trim_from_start;
+                incr_pos(r.pos, trim_from_start);
+            }
+            if (r.end > b.end) {
+                uint64_t trim_from_end = r.end - b.end;
+                r.end -= trim_from_end;
+            }
+            assert(r.start < r.end);
+            for_each_fresh_range(
+                r,
+                seen_bv,
+                [&](match_t s) {
+                    handle_range(s, curr_bv, ovlp_q, todo_in);
+                });
+        });
 }
 
 void write_graph_chunk(const seqindex_t& seqidx,
@@ -265,9 +266,11 @@ size_t compute_transitive_closures(
     uint64_t min_repeat_dist,
     uint64_t transclose_batch_size, // size of a batch to collect for lock-free transitive closure
     bool show_progress,
+    uint64_t num_threads,
     const std::chrono::time_point<std::chrono::steady_clock>& start_time) {
-    // get our thread count as set for openmp (nb: we'll only partly use openmp here)
-    uint nthreads = get_thread_count();
+    // open the writers in the iitrees
+    node_iitree.open_writer();
+    path_iitree.open_writer();
     // open seq_v_file
     std::ofstream seq_v_out(seq_v_file.c_str());
     // remember the elements of Q we've seen
@@ -302,7 +305,6 @@ size_t compute_transitive_closures(
         // and where it ends (not past the end of the sequence)
         //chunk_end = std::min(input_seq_length, chunk_end); // chunk_start + transclose_batch_size);
         // collect ranges overlapping, per thread to avoid contention
-        //std::vector<std::vector<std::pair<match_t, bool>>> ovlps(nthreads);
         // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
         // shared work queues for our threads
@@ -333,7 +335,7 @@ size_t compute_transitive_closures(
                 }
             });
         std::atomic<bool> work_todo;
-        std::vector<std::atomic<bool>> explorings(nthreads);
+        std::vector<std::atomic<bool>> explorings(num_threads);
         work_todo.store(false);
         auto worker_lambda =
             [&](uint64_t tid) {
@@ -366,8 +368,8 @@ size_t compute_transitive_closures(
                 exploring.store(false);
             };
         // launch our threads to expand the overlap set in parallel
-        std::vector<std::thread> workers; workers.reserve(nthreads);
-        for (uint64_t t = 0; t < nthreads; ++t) {
+        std::vector<std::thread> workers; workers.reserve(num_threads);
+        for (uint64_t t = 0; t < num_threads; ++t) {
             workers.emplace_back(worker_lambda, t);
         }
         // manage the threads
@@ -408,7 +410,7 @@ size_t compute_transitive_closures(
         work_todo.store(false);
         assert(todo.empty() && todo_in.was_empty() && todo_out.was_empty() && ovlp_q.was_empty() && !still_exploring());
         //std::cerr << "gonna join" << std::endl;
-        for (uint64_t t = 0; t < nthreads; ++t) {
+        for (uint64_t t = 0; t < num_threads; ++t) {
             workers[t].join();
         }
         delete todo_in_ptr;
@@ -578,8 +580,8 @@ size_t compute_transitive_closures(
     if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << "building node_iitree and path_iitree indexes" << std::endl;
 #endif
     // build node_mm and path_mm indexes
-    node_iitree.index();
-    path_iitree.index();
+    node_iitree.index(num_threads);
+    path_iitree.index(num_threads);
 #ifdef DEBUG_TRANSCLOSURE
     if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << "done" << std::endl;
 #endif

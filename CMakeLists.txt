@@ -7,6 +7,9 @@ project(seqwish)
 # We build using c++14
 set(CMAKE_CXX_STANDARD 14)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # Use all standard-compliant optimizations
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3 -mcx16 -g")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -mcx16 -g")
@@ -77,17 +80,17 @@ ExternalProject_Add(gzipreader
 ExternalProject_Get_property(gzipreader SOURCE_DIR)
 set(gzipreader_INCLUDE "${SOURCE_DIR}")
 
-# mmmultimap (memory mapped multimap)
-ExternalProject_Add(mmmultimap
-  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmmultimap"
+# mmmulti (memory mapped multimap, multiset, and interval tree)
+ExternalProject_Add(mmmulti
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmmulti"
   BUILD_COMMAND ""
   UPDATE_COMMAND ""
   INSTALL_COMMAND ""
   CONFIGURE_COMMAND "")
-ExternalProject_Get_property(mmmultimap SOURCE_DIR)
-set(mmmultimap_INCLUDE "${SOURCE_DIR}/src")
+ExternalProject_Get_property(mmmulti SOURCE_DIR)
+set(mmmulti_INCLUDE "${SOURCE_DIR}/src")
 
-# iitii, like cgranges in mmmultimap
+# iitii, like cgranges but with interpolation and memory mapping
 ExternalProject_Add(iitii
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/iitii"
   BUILD_COMMAND ""
@@ -182,7 +185,7 @@ add_executable(seqwish
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
 add_dependencies(seqwish gzipreader)
-add_dependencies(seqwish mmmultimap)
+add_dependencies(seqwish mmmulti)
 add_dependencies(seqwish iitii)
 add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
@@ -196,7 +199,7 @@ target_include_directories(seqwish PUBLIC
   "${tayweeargs_INCLUDE}"
   "${gzipreader_INCLUDE}"
   "${ips4o_INCLUDE}"
-  "${mmmultimap_INCLUDE}"
+  "${mmmulti_INCLUDE}"
   "${iitii_INCLUDE}"
   "${mmap_allocator_INCLUDE}"
   "${bbhash_INCLUDE}"
@@ -209,9 +212,11 @@ target_link_libraries(seqwish
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
   "${mmap_allocator_LIB}/libmmap_allocator.a"
   "-latomic"
+  Threads::Threads
   z)
 if (BUILD_STATIC)
-  set(CMAKE_EXE_LINKER_FLAGS "-static")
+  #set(CMAKE_EXE_LINKER_FLAGS "-static")
+  set(CMAKE_EXE_LINKER_FLAGS "-static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
 endif()
 
 install(TARGETS seqwish DESTINATION bin)
