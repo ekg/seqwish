@@ -198,6 +198,16 @@ void write_graph_chunk(const seqindex_t& seqidx,
     // run the closure for each dset, avoiding looping as configured
     std::map<uint64_t, std::vector<pos_t>> todos;
     std::string seq_out;
+    auto flush_todos =
+        [&](void) {
+            for (auto& t : todos) {
+                seq_out.push_back(current_base);
+                ++seq_v_length;
+                for (auto& pos : t.second) {
+                    extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
+                }
+            }
+        };
     for (auto& d : dsets) {
         const auto& curr_dset_id = d.first;
         const auto& curr_offset = d.second;
@@ -206,16 +216,10 @@ void write_graph_chunk(const seqindex_t& seqidx,
         if (curr_dset_id != last_dset_id) {
             if (repeat_max || min_repeat_dist) {
                 // finish out todos stashed from repeat_max limitations
-                for (auto& t : todos) {
-                    seq_out.push_back(current_base);
-                    ++seq_v_length;
-                    for (auto& pos : t.second) {
-                        extend_range(seq_v_length-1, pos, range_buffer, seqidx, node_iitree, path_iitree);
-                    }
-                }
-                // empty out our seq counts and todos
-                seq_counts.clear();
+                flush_todos();
                 todos.clear();
+                // empty out our seq counts and last seq positions
+                seq_counts.clear();
                 last_seq_pos.clear();
             }
             // emit our new position
@@ -245,6 +249,7 @@ void write_graph_chunk(const seqindex_t& seqidx,
         }
         last_seq_pos[curr_seq_id] = curr_q_pos;
     }
+    flush_todos(); // catch any todos we had hanging around
     seq_v_out << seq_out;
     delete dsets_ptr;
 }
