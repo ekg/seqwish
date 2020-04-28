@@ -19,6 +19,7 @@
 #include "atomic_queue.h"
 #include "time.hpp"
 #include "wang.hpp"
+#include "paryfor.hpp"
 
 namespace seqwish {
 
@@ -83,6 +84,7 @@ size_t compute_transitive_closures(
     uint64_t min_repeat_dist,
     uint64_t transclose_batch_size,
     bool show_progress,
+    uint64_t num_threads,
     const std::chrono::time_point<std::chrono::steady_clock>& start_time);
 
 }

@@ -17,10 +17,8 @@
 #include "vgp.hpp"
 #include "pos.hpp"
 #include "match.hpp"
-#include "threads.hpp"
 #include "exists.hpp"
 #include "time.hpp"
-//#include "iitii_types.hpp"
 
 using namespace seqwish;
 
@@ -33,7 +31,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});
     args::ValueFlag<std::string> sml_in(parser, "FILE", "Use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "Write the graph in VGP format with basename FILE", {'o', "vgp-out"});
-    args::ValueFlag<uint64_t> num_threads(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
+    args::ValueFlag<uint64_t> thread_count(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "Limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_repeat_dist(parser, "N", "Prevent transitive closure for bases at least this far apart in input sequences", {'l', "min-repeat-distance"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length. This can smooth the graph locally and prevent the formation of complex local graph topologies from forming due to differential alignments.", {'k', "min-match-len"});
@@ -59,12 +57,14 @@ int main(int argc, char** argv) {
 
     std::chrono::time_point<std::chrono::steady_clock> start_time = std::chrono::steady_clock::now();
     
-    size_t n_threads = args::get(num_threads);
-    if (n_threads) {
-        omp_set_num_threads(args::get(num_threads));
+    size_t num_threads = args::get(thread_count) ? args::get(thread_count) : 1;
+    /*
+    if (num_threads) {
+        omp_set_num_threads(args::get(thread_count));
     } else {
         omp_set_num_threads(1);
     }
+    */
 
     if (!args::get(seqs).empty() && !file_exists(args::get(seqs))) {
         std::cerr << "[seqwish] ERROR: input sequence file " << args::get(seqs) << " does not exist" << std::endl;
@@ -100,6 +100,7 @@ int main(int argc, char** argv) {
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
     mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
+    aln_iitree.open_writer();
     if (!pafs_and_min_lengths.empty()) {
         for (auto& p : pafs_and_min_lengths) {
             auto& file = p.first;
@@ -107,11 +108,11 @@ int main(int argc, char** argv) {
             if (!min_length && args::get(min_match_len)) {
                 min_length = args::get(min_match_len);
             }
-            unpack_paf_alignments(file, aln_iitree, seqidx, min_length);
+            unpack_paf_alignments(file, aln_iitree, seqidx, min_length, num_threads);
         }
     }
     if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing" << std::endl;
-    aln_iitree.index();
+    aln_iitree.index(num_threads);
     if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " index built" << std::endl;
     //if (args::get(debug)) dump_paf_alignments(args::get(paf_alns));
     //uint64_t n_domains = std::max((uint64_t)1, (uint64_t)args::get(num_domains));
@@ -138,6 +139,7 @@ int main(int argc, char** argv) {
                                                       args::get(min_repeat_dist),
                                                       !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch),
                                                       args::get(show_progress),
+                                                      num_threads,
                                                       start_time);
     if (args::get(show_progress)) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done with transitive closures" << std::endl;
 
@@ -153,7 +155,7 @@ int main(int argc, char** argv) {
     // 4) generate the node id index (I) by compressing non-bifurcating regions of the graph into nodes
     if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " compacting nodes" << std::endl;
     sdsl::bit_vector seq_id_bv(graph_length+1);
-    compact_nodes(seqidx, graph_length, node_iitree, path_iitree, seq_id_bv);
+    compact_nodes(seqidx, graph_length, node_iitree, path_iitree, seq_id_bv, num_threads);
     if (args::get(show_progress)) std::cerr << "[seqwish::compact] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done compacting" << std::endl;
     if (args::get(verbose_debug)) std::cerr << seq_id_bv << std::endl;
     sdsl::sd_vector<> seq_id_cbv;
@@ -170,19 +172,19 @@ int main(int argc, char** argv) {
     std::string link_mm_idx = work_base + ".sql";
     std::remove(link_mm_idx.c_str());
     mmmulti::set<std::pair<pos_t, pos_t>> link_mmset(link_mm_idx);
-    derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset);
+    derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset, num_threads);
     if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " links derived" << std::endl;
 
     if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " writing graph" << std::endl;
     // 6) emit the graph in GFA or VGP format
     if (!args::get(gfa_out).empty()) {
         std::ofstream out(args::get(gfa_out).c_str());
-        emit_gfa(out, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);
+        emit_gfa(out, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset, num_threads);
     } else if (!args::get(vgp_base).empty()) {
         assert(false);
         //emit_vgp(args::get(vgp_base), graph_length, seq_v_file, path_mm, link_fwd_mm, link_rev_mm, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx);
     } else {
-        emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset);
+        emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset, num_threads);
     }
     if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done" << std::endl;
 
