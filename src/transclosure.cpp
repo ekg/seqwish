@@ -447,7 +447,7 @@ size_t compute_transitive_closures(
         if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << chunk_start << "-" << chunk_end << " parallel_union_find" << std::endl;
 #endif
         paryfor::parallel_for<uint64_t>(
-            0, ovlp.size(), num_threads,
+            0, ovlp.size(), num_threads, 10000,
             [&](uint64_t k) {
                 auto& s = ovlp.at(k);
                 auto& r = s.first;
@@ -467,7 +467,7 @@ size_t compute_transitive_closures(
         auto& dsets = *dsets_ptr;
         std::pair<uint64_t, uint64_t> max_pair = std::make_pair(std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::max());
         paryfor::parallel_for<uint64_t>(
-            0, q_curr_bv_count, num_threads,
+            0, q_curr_bv_count, num_threads, 10000,
             [&](uint64_t j) {
                 auto& p = q_curr_bv_vec[j];
                 if (!q_seen_bv[p]) {
