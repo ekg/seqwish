@@ -2,8 +2,6 @@
 
 namespace seqwish {
 
-using namespace std::chrono_literals;
-
 void extend_range(const uint64_t& s_pos,
                   const pos_t& q_pos,
                   std::map<pos_t, range_t>& range_buffer,
@@ -342,7 +340,7 @@ size_t compute_transitive_closures(
                 //auto& ovlp = ovlps[tid];
                 auto& exploring = explorings[tid];
                 while (!work_todo.load()) {
-                    std::this_thread::sleep_for(1ns);
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(1));
                 }
                 exploring.store(true);
                 std::pair<pos_t, uint64_t> item;
@@ -362,7 +360,7 @@ size_t compute_transitive_closures(
                                          todo_in);
                     } else {
                         exploring.store(false);
-                        std::this_thread::sleep_for(0.00001ns);
+                        std::this_thread::sleep_for(std::chrono::nanoseconds(1));
                     }
                 }
                 exploring.store(false);
@@ -384,7 +382,7 @@ size_t compute_transitive_closures(
               };
         work_todo.store(true);
         while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || !ovlp_q.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
-            std::this_thread::sleep_for(0.00001ns);
+            std::this_thread::sleep_for(std::chrono::nanoseconds(1));
             // read from todo_in, into todo
             std::pair<pos_t, uint64_t> item;
             while (todo_in.try_pop(item)) {

@@ -2,8 +2,6 @@
 
 namespace seqwish {
 
-using namespace std::chrono_literals;
-
 void emit_gfa(std::ostream& out,
               size_t graph_length,
               const std::string& seq_v_file,
@@ -51,7 +49,7 @@ void emit_gfa(std::ostream& out,
                     memcpy((void*)seq->c_str(), &seq_v_buf[node_start], node_length);
                     seq_done_q.push(std::make_pair(id, seq));
                 } else {
-                    std::this_thread::sleep_for(0.00001ns);
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(1));
                 }
             }
         };
