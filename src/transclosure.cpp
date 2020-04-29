@@ -583,8 +583,15 @@ size_t compute_transitive_closures(
     node_iitree.close_writer();
     path_iitree.close_writer();
     // build node_mm and path_mm indexes
-    node_iitree.index(num_threads);
-    path_iitree.index(num_threads);
+    if (num_threads > 1) {
+        auto node_indexer = std::thread([&](void) { node_iitree.index(num_threads); });
+        auto path_indexer = std::thread([&](void) { path_iitree.index(num_threads); });
+        node_indexer.join();
+        path_indexer.join();
+    } else {
+        node_iitree.index(num_threads);
+        path_iitree.index(num_threads);
+    }
 #ifdef DEBUG_TRANSCLOSURE
     if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << "done" << std::endl;
 #endif
