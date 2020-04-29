@@ -8,6 +8,7 @@
 #include "seqindex.hpp"
 #include "pos.hpp"
 #include "mmap.hpp"
+#include "ordered.hpp"
 
 namespace seqwish {
 
