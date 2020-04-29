@@ -581,6 +581,9 @@ size_t compute_transitive_closures(
 #ifdef DEBUG_TRANSCLOSURE
     if (show_progress) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " " << std::setprecision(2) << (double)bases_seen / (double)seqidx.seq_length() * 100 << "% " << "building node_iitree and path_iitree indexes" << std::endl;
 #endif
+    // close writers
+    node_iitree.close_writer();
+    path_iitree.close_writer();
     // build node_mm and path_mm indexes
     node_iitree.index(num_threads);
     path_iitree.index(num_threads);
