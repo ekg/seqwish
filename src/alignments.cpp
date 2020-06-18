@@ -31,6 +31,7 @@ void paf_worker(
             switch (c.op) {
             case 'M':
             case '=':
+            case 'X':
             {
                 pos_t q_pos_match_start = q_pos;
                 pos_t t_pos_match_start = t_pos;
