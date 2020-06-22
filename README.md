@@ -66,7 +66,9 @@ sudo apt install build-essential cmake zlib1g-dev
 seqwish uses cmake to build itself and its dependencies.
 
 ```
-cmake -H. -Bbuild && cmake --build build -- -j3
+git clone --recursive https://github.com/ekg/seqwish.git
+cd seqwish
+cmake -H. -Bbuild && cmake --build build -- -j 3
 ```
 
 To clean up simply remove `build/` and `bin/`:
