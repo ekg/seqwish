@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "seqindex.hpp"
 
 namespace seqwish {
@@ -33,11 +34,19 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     }
     size_t seq_bytes_written = 0;
     size_t seq_names_bytes_written = 0;
+    std::unordered_set<std::string> seq_ids;
     while (in.good()) {
         seqname_offset.push_back(seq_names_bytes_written);
         seq_offset.push_back(seq_bytes_written);
         line[0] = '>';
         line = line.substr(0, line.find(" "));
+
+        if (seq_ids.find(line) != seq_ids.end()) {
+            std::cerr << "[seqwish] ERROR: the input sequences have duplicated IDs." << std::endl;
+            exit(1);
+        }
+        seq_ids.insert(line);
+
         seqnames << line << " ";
         seq_names_bytes_written += line.size() + 1;
         std::string seq;
