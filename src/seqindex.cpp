@@ -1,4 +1,3 @@
-#include <unordered_set>
 #include "seqindex.hpp"
 
 namespace seqwish {
@@ -34,19 +33,11 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     }
     size_t seq_bytes_written = 0;
     size_t seq_names_bytes_written = 0;
-    std::unordered_set<std::string> seq_ids;
     while (in.good()) {
         seqname_offset.push_back(seq_names_bytes_written);
         seq_offset.push_back(seq_bytes_written);
         line[0] = '>';
         line = line.substr(0, line.find(" "));
-
-        if (seq_ids.find(line) != seq_ids.end()) {
-            std::cerr << "[seqwish] ERROR: the input sequences have duplicated IDs." << std::endl;
-            exit(1);
-        }
-        seq_ids.insert(line);
-
         seqnames << line << " ";
         seq_names_bytes_written += line.size() + 1;
         std::string seq;
@@ -85,8 +76,28 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     }
     // build the name index
     construct(seq_name_csa, seqnamefile, 1);
+
+    // check if there are duplicated sequence names
+    std::ifstream seqnames_in(seqnamefile.c_str());
+    bool duplicated_ids = false;
+    while (std::getline(seqnames_in, line, ' ')) {
+        //std::cout << line << " (" << locate(seq_name_csa, line).size() << ")" << std::endl;
+        std::string query = line + " ";
+        if(locate(seq_name_csa, query).size() > 1){
+            duplicated_ids = true;
+            break;
+        }
+    }
+    seqnames_in.close();
+
     // destroy the file
     std::remove(seqnamefile.c_str());
+
+    if (duplicated_ids){
+        std::cerr << "[seqwish] ERROR: the input sequences have duplicated IDs." << std::endl;
+        exit(1);
+    }
+
     // build the rest of the index
     sdsl::util::assign(seq_name_cbv, sdsl::sd_vector<>(seq_name_starts));
     sdsl::util::assign(seq_name_cbv_rank, sdsl::sd_vector<>::rank_1_type(&seq_name_cbv));
