@@ -5,11 +5,12 @@ BASH_TAP_ROOT=bash-tap
 
 PATH=../bin:$PATH # for seqwish
 
-plan tests 29
+plan tests 30
 
 is $(seqwish -h 2>&1 | grep "seqwish: a variation graph inducer" | wc -l) 1 "seqwish prints its help"
 
 is $( seqwish -s HLA/A-3105.fa.gz -p HLA/A-3105.paf.gz -b HLA/A-3105.fa.gz.work -g HLA/A-3105.fa.gz.gfa && md5sum HLA/A-3105.fa.gz.gfa | cut -f 1 -d\ ) $( cat HLA/A-3105.fa.gz.gfa.md5 ) "seqwish correctly builds the graph for A-3105"
+is $( seqwish -s HLA/A-3105.masked.fa.gz -p HLA/A-3105.paf.gz -b HLA/A-3105.fa.gz.work -g HLA/A-3105.masked.fa.gz.gfa && md5sum HLA/A-3105.masked.fa.gz.gfa | cut -f 1 -d\ ) $( cat HLA/A-3105.fa.gz.gfa.md5 ) "seqwish correctly builds the graph for A-3105 when the sequence is lowercase"
 is $( seqwish -s HLA/B-3106.fa.gz -p HLA/B-3106.paf.gz -b HLA/B-3106.fa.gz.work -g HLA/B-3106.fa.gz.gfa && md5sum HLA/B-3106.fa.gz.gfa | cut -f 1 -d\ ) $( cat HLA/B-3106.fa.gz.gfa.md5 ) "seqwish correctly builds the graph for B-3106"
 is $( seqwish -s HLA/C-3107.fa.gz -p HLA/C-3107.paf.gz -b HLA/C-3107.fa.gz.work -g HLA/C-3107.fa.gz.gfa && md5sum HLA/C-3107.fa.gz.gfa | cut -f 1 -d\ ) $( cat HLA/C-3107.fa.gz.gfa.md5 ) "seqwish correctly builds the graph for C-3107"
 is $( seqwish -s HLA/DMA-3108.fa.gz -p HLA/DMA-3108.paf.gz -b HLA/DMA-3108.fa.gz.work -g HLA/DMA-3108.fa.gz.gfa && md5sum HLA/DMA-3108.fa.gz.gfa | cut -f 1 -d\ ) $( cat HLA/DMA-3108.fa.gz.gfa.md5 ) "seqwish correctly builds the graph for DMA-3108"
