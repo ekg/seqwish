@@ -79,6 +79,17 @@ int main(int argc, char** argv) {
             if (!file_exists(p.first)) {
                 std::cerr << "[seqwish] ERROR: input alignment file " << args::get(paf_alns) << " does not exist" << std::endl;
                 return 4;
+            }else {
+                igzstream paf_in(p.first.c_str());
+
+                std::string line;
+                std::getline(paf_in, line);
+
+                paf_row_t paf(line);
+                if (paf.cigar.empty()){
+                    std::cerr << "[seqwish] WARNING: input alignment file " << p.first << " does not have CIGAR strings. "
+                    << "The resulting graph will only represent the input sequences." << std::endl;
+                }
             }
         }
     }
