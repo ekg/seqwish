@@ -190,11 +190,6 @@ void emit_gfa(std::ostream& out,
         }
         pathss.seekp(-1, pathss.cur); // trim the last ","
         cigarss << "*";
-        if (path_v.size() > 2) {
-            for (uint64_t q = 0; q < path_v.size()-2; ++q) {
-                cigarss << ",*";
-            }
-        }
         pathss << '\t';
         //cigarss.seekp(-1, cigarss.cur);
         cigarss << "\n";
