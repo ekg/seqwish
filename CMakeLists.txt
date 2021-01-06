@@ -11,8 +11,10 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # Use all standard-compliant optimizations
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -mcx16 -g")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -mcx16 -g")
+#set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -mcx16 -g")
+#set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -mcx16 -g")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O -mcx16 -g -fsanitize=address")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O -mcx16 -g -fsanitize=address")
 
 # Set the output folder where your program will be created
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
@@ -144,6 +146,16 @@ ExternalProject_Add(paryfor
 ExternalProject_Get_property(paryfor SOURCE_DIR)
 set(paryfor_INCLUDE "${SOURCE_DIR}")
 
+#add_subdirectory(deps/mmmulti/deps/mio)
+ExternalProject_Add(mio
+        SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmmulti/deps/mio"
+        UPDATE_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_COMMAND ""
+        CONFIGURE_COMMAND "")
+ExternalProject_Get_property(mio SOURCE_DIR)
+set(mio_INCLUDE "${SOURCE_DIR}/include")
+
 #set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
 
@@ -179,6 +191,7 @@ add_dependencies(seqwish atomicbitvector)
 add_dependencies(seqwish atomicqueue)
 add_dependencies(seqwish ska)
 add_dependencies(seqwish paryfor)
+add_dependencies(seqwish mio)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -192,7 +205,8 @@ target_include_directories(seqwish PUBLIC
   "${atomicbitvector_INCLUDE}"
   "${atomicqueue_INCLUDE}"
   "${ska_INCLUDE}"
-  "${paryfor_INCLUDE}")
+  "${paryfor_INCLUDE}"
+  "${mio_INCLUDE}")
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
