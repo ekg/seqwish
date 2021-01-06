@@ -101,7 +101,8 @@ int main(int argc, char** argv) {
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing sequences" << std::endl;
-    seqindex_t seqidx;
+    auto seqidx_ptr = std::make_unique<seqindex_t>();
+    auto& seqidx = *seqidx_ptr;
     seqidx.build_index(args::get(seqs), work_base);
     seqidx.save();
     if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " index built" << std::endl;
@@ -110,7 +111,8 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
-    mmmulti::iitree<uint64_t, pos_t> aln_iitree(aln_idx);
+    auto aln_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(aln_idx);
+    auto& aln_iitree = *aln_iitree_ptr;
     aln_iitree.open_writer();
     if (!pafs_and_min_lengths.empty()) {
         for (auto& p : pafs_and_min_lengths) {
@@ -142,8 +144,10 @@ int main(int argc, char** argv) {
     std::remove(seq_v_file.c_str());
     std::remove(node_iitree_idx.c_str());
     std::remove(path_iitree_idx.c_str());
-    mmmulti::iitree<uint64_t, pos_t> node_iitree(node_iitree_idx); // maps graph seq to input seq
-    mmmulti::iitree<uint64_t, pos_t> path_iitree(path_iitree_idx); // maps input seq to graph seq
+    auto node_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(node_iitree_idx); // maps graph seq to input seq
+    auto& node_iitree = *node_iitree_ptr;
+    auto path_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(path_iitree_idx); // maps input seq to graph seq
+    auto& path_iitree = *path_iitree_ptr;
     if (args::get(show_progress)) std::cerr << "[seqwish::transclosure] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " computing transitive closures" << std::endl;
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max),
@@ -182,7 +186,8 @@ int main(int argc, char** argv) {
     if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " finding graph links" << std::endl;
     std::string link_mm_idx = work_base + ".sql";
     std::remove(link_mm_idx.c_str());
-    mmmulti::set<std::pair<pos_t, pos_t>> link_mmset(link_mm_idx);
+    auto link_mmset_ptr = std::make_unique<mmmulti::set<std::pair<pos_t, pos_t>>>(link_mm_idx);
+    auto& link_mmset = *link_mmset_ptr;
     derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset, num_threads);
     if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " links derived" << std::endl;
 
