@@ -77,14 +77,6 @@ ExternalProject_Add(iitii
 ExternalProject_Get_property(iitii SOURCE_DIR)
 set(iitii_INCLUDE "${SOURCE_DIR}/src")
 
-ExternalProject_Add(mmap_allocator
-  SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/mmap_allocator"
-  CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
-  UPDATE_COMMAND "")
-ExternalProject_Get_property(mmap_allocator INSTALL_DIR)
-set(mmap_allocator_INCLUDE "${INSTALL_DIR}/include/mmap_allocator")
-set(mmap_allocator_LIB "${INSTALL_DIR}/lib")
-
 # In-place Parallel Super Scalar Samplesort (IPS⁴o), header only
 ExternalProject_Add(ips4o
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/ips4o"
@@ -184,7 +176,6 @@ add_dependencies(seqwish sdsl-lite)
 add_dependencies(seqwish gzipreader)
 add_dependencies(seqwish mmmulti)
 add_dependencies(seqwish iitii)
-add_dependencies(seqwish mmap_allocator)
 add_dependencies(seqwish ips4o)
 add_dependencies(seqwish bbhash)
 add_dependencies(seqwish atomicbitvector)
@@ -200,7 +191,6 @@ target_include_directories(seqwish PUBLIC
   "${ips4o_INCLUDE}"
   "${mmmulti_INCLUDE}"
   "${iitii_INCLUDE}"
-  "${mmap_allocator_INCLUDE}"
   "${bbhash_INCLUDE}"
   "${atomicbitvector_INCLUDE}"
   "${atomicqueue_INCLUDE}"
@@ -211,7 +201,6 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
-  "${mmap_allocator_LIB}/libmmap_allocator.a"
   "-latomic"
   Threads::Threads
   z)
