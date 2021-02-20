@@ -57,11 +57,15 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
             std::getline(in, line); // quality
             std::getline(in, line);
         }
-        // force the sequence to be upper-case
-        std::transform(seq.begin(), seq.end(), seq.begin(), [](char c) { return std::toupper(c); });
-        seqout << seq;
-        // record where the sequence starts
-        seq_bytes_written += seq.size();
+        if (seq.empty()){
+            std::cerr << "[seqwish] WARNING: input FASTA file contains empty sequences." << std::endl;
+        } else {
+            // force the sequence to be upper-case
+            std::transform(seq.begin(), seq.end(), seq.begin(), [](char c) { return std::toupper(c); });
+            seqout << seq;
+            // record where the sequence starts
+            seq_bytes_written += seq.size();
+        }
     }
     in.close();
     // add the last value so we can get sequence length for the last sequence and name
