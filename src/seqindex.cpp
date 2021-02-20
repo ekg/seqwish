@@ -37,6 +37,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     while (in.good()) {
         seqname_offset.push_back(seq_names_bytes_written);
         seq_offset.push_back(seq_bytes_written);
+
         line[0] = '>';
         std::string seq_name = line.substr(0, line.find(" "));
 
@@ -60,7 +61,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
         if (seq.empty()){
             if (!notified_empty_seqs){
                 notified_empty_seqs = true;
-                std::cerr << "[seqwish] WARNING: the input FASTA file contains empty sequences, which will be ignored." << std::endl;
+                std::cerr << "[seqwish] WARNING: input FASTA file contains empty sequences, which will be ignored." << std::endl;
             }
         } else {
             seqnames << seq_name << " ";
@@ -106,7 +107,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     std::remove(seqnamefile.c_str());
 
     if (duplicated_ids){
-        std::cerr << "[seqwish] ERROR: the input sequences have duplicated IDs." << std::endl;
+        std::cerr << "[seqwish] ERROR: input sequences have duplicated IDs." << std::endl;
         exit(1);
     }
 
