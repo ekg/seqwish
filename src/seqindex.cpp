@@ -33,13 +33,11 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     }
     size_t seq_bytes_written = 0;
     size_t seq_names_bytes_written = 0;
+    bool notified_empty_seqs = false;
     while (in.good()) {
-        seqname_offset.push_back(seq_names_bytes_written);
-        seq_offset.push_back(seq_bytes_written);
         line[0] = '>';
-        line = line.substr(0, line.find(" "));
-        seqnames << line << " ";
-        seq_names_bytes_written += line.size() + 1;
+        std::string seq_name = line.substr(0, line.find(" "));
+
         std::string seq;
         // get the sequence
         if (input_is_fasta) {
@@ -52,16 +50,29 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
                 }
             }
         } else if (input_is_fastq) {
-            std::getline(in, seq); // sequence
+            std::getline(in, seq);  // sequence
             std::getline(in, line); // delimiter
             std::getline(in, line); // quality
             std::getline(in, line);
         }
-        // force the sequence to be upper-case
-        std::transform(seq.begin(), seq.end(), seq.begin(), [](char c) { return std::toupper(c); });
-        seqout << seq;
-        // record where the sequence starts
-        seq_bytes_written += seq.size();
+        if (seq.empty()){
+            if (!notified_empty_seqs){
+                notified_empty_seqs = true;
+                std::cerr << "[seqwish] WARNING: input FASTA file contains empty sequences, which will be ignored." << std::endl;
+            }
+        } else {
+            seqname_offset.push_back(seq_names_bytes_written);
+            seq_offset.push_back(seq_bytes_written);
+
+            seqnames << seq_name << " ";
+            seq_names_bytes_written += seq_name.size() + 1;
+
+            // force the sequence to be upper-case
+            std::transform(seq.begin(), seq.end(), seq.begin(), [](char c) { return std::toupper(c); });
+            seqout << seq;
+            // record where the sequence starts
+            seq_bytes_written += seq.size();
+        }
     }
     in.close();
     // add the last value so we can get sequence length for the last sequence and name
@@ -96,7 +107,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     std::remove(seqnamefile.c_str());
 
     if (duplicated_ids){
-        std::cerr << "[seqwish] ERROR: the input sequences have duplicated IDs." << std::endl;
+        std::cerr << "[seqwish] ERROR: input sequences have duplicated IDs." << std::endl;
         exit(1);
     }
 
