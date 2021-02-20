@@ -35,9 +35,6 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     size_t seq_names_bytes_written = 0;
     bool notified_empty_seqs = false;
     while (in.good()) {
-        seqname_offset.push_back(seq_names_bytes_written);
-        seq_offset.push_back(seq_bytes_written);
-
         line[0] = '>';
         std::string seq_name = line.substr(0, line.find(" "));
 
@@ -64,6 +61,9 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
                 std::cerr << "[seqwish] WARNING: input FASTA file contains empty sequences, which will be ignored." << std::endl;
             }
         } else {
+            seqname_offset.push_back(seq_names_bytes_written);
+            seq_offset.push_back(seq_bytes_written);
+
             seqnames << seq_name << " ";
             seq_names_bytes_written += seq_name.size() + 1;
 
