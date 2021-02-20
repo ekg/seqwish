@@ -65,7 +65,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
             }
         } else {
             seqnames << seq_name << " ";
-            seq_names_bytes_written += line.size() + 1;
+            seq_names_bytes_written += seq_name.size() + 1;
 
             // force the sequence to be upper-case
             std::transform(seq.begin(), seq.end(), seq.begin(), [](char c) { return std::toupper(c); });
