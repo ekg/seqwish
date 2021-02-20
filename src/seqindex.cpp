@@ -37,9 +37,8 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
         seqname_offset.push_back(seq_names_bytes_written);
         seq_offset.push_back(seq_bytes_written);
         line[0] = '>';
-        line = line.substr(0, line.find(" "));
-        seqnames << line << " ";
-        seq_names_bytes_written += line.size() + 1;
+        std::string seq_name = line.substr(0, line.find(" "));
+
         std::string seq;
         // get the sequence
         if (input_is_fasta) {
@@ -60,6 +59,9 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
         if (seq.empty()){
             std::cerr << "[seqwish] WARNING: input FASTA file contains empty sequences." << std::endl;
         } else {
+            seqnames << seq_name << " ";
+            seq_names_bytes_written += line.size() + 1;
+
             // force the sequence to be upper-case
             std::transform(seq.begin(), seq.end(), seq.begin(), [](char c) { return std::toupper(c); });
             seqout << seq;
