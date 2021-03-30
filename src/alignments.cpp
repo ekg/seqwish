@@ -31,6 +31,7 @@ void paf_worker(
             switch (c.op) {
             case 'M':
             case '=':
+            case 'X':
             {
                 pos_t q_pos_match_start = q_pos;
                 pos_t t_pos_match_start = t_pos;
@@ -70,10 +71,6 @@ void paf_worker(
                 // handle any last match
                 add_match();
             }
-                break;
-            case 'X':
-                incr_pos(q_pos, c.len);
-                incr_pos(t_pos, c.len);
                 break;
             case 'I':
                 //std::cerr << "ins " << c.len << std::endl;
