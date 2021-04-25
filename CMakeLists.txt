@@ -203,6 +203,7 @@ target_link_libraries(seqwish
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
   "-latomic"
   Threads::Threads
+  jemalloc
   z)
 if (BUILD_STATIC)
   #set(CMAKE_EXE_LINKER_FLAGS "-static")
