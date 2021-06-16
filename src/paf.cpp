@@ -7,16 +7,16 @@ paf_row_t::paf_row_t(const std::string& line) {
     std::vector<std::string> fields;
     tokenize(line, fields, " \t");
     query_sequence_name = fields[0];
-    query_sequence_length = std::stol(fields[1]);
-    query_start = std::stol(fields[2]);
-    query_end = std::stol(fields[3]);
+    query_sequence_length = std::stoull(fields[1]);
+    query_start = std::stoull(fields[2]);
+    query_end = std::stoull(fields[3]);
     query_target_same_strand = (fields[4] == "+");
     target_sequence_name = fields[5];
-    target_sequence_length = std::stol(fields[6]);
-    target_start = std::stol(fields[7]);
-    target_end = std::stol(fields[8]);
-    num_matches = std::stol(fields[9]);
-    alignment_block_length = std::stol(fields[10]);
+    target_sequence_length = std::stoull(fields[6]);
+    target_start = std::stoull(fields[7]);
+    target_end = std::stoull(fields[8]);
+    num_matches = std::stoull(fields[9]);
+    alignment_block_length = std::stoull(fields[10]);
     mapping_quality = std::stoi(fields[11]);
     // find the cigar in the last fields
     for (size_t i = 12; i < fields.size(); ++i) {
@@ -66,7 +66,7 @@ std::vector<std::pair<std::string, uint64_t>> parse_paf_spec(const std::string& 
         std::vector<std::string> fields;
         tokenize(file, fields, ":");
         if (fields.size() == 2) {
-            parsed.push_back(std::make_pair(fields.front(), std::stol(fields.back())));
+            parsed.push_back(std::make_pair(fields.front(), std::stoull(fields.back())));
         } else if (fields.size() == 1) {
             parsed.push_back(std::make_pair(fields.front(), 0));
         }
