@@ -21,9 +21,9 @@ void paf_worker(
         // Check if the coordinates are reasonable
         if (paf.query_sequence_length == 0 || paf.target_sequence_length == 0 ||
             // Query/Target start (0-based; BED-like; closed)
-            paf.query_start >= paf.query_sequence_length || paf.query_end > paf.query_sequence_length ||
+            paf.query_start >= paf.query_sequence_length || paf.query_end > paf.query_sequence_length || paf.query_start >= paf.query_end ||
             // Query/Target end (0-based; BED-like; open)
-            paf.target_start >= paf.target_sequence_length || paf.target_end > paf.target_sequence_length) break;
+            paf.target_start >= paf.target_sequence_length || paf.target_end > paf.target_sequence_length || paf.target_start >= paf.target_end) break;
         size_t query_idx = seqidx.rank_of_seq_named(paf.query_sequence_name);
         size_t query_len = seqidx.nth_seq_length(query_idx);
         size_t target_idx = seqidx.rank_of_seq_named(paf.target_sequence_name);
