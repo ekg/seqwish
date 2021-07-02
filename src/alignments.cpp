@@ -51,7 +51,10 @@ void paf_worker(
                         }
                     };
                 for (size_t i = 0; i < c.len; ++i) {
-                    if (seqidx.at_pos(q_pos) == seqidx.at_pos(t_pos)
+                    char query_base = seqidx.at_pos(q_pos);
+                    char target_base = seqidx.at_pos(t_pos);
+                    if (query_base == target_base
+                        && query_base != 'N'
                         && offset(q_pos) != offset(t_pos)) { // guard against self mappings
                         if (match_len == 0) {
                             q_pos_match_start = q_pos;
