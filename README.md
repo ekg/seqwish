@@ -4,7 +4,7 @@
 
 ## a variation graph inducer
 
-*seqwish* implements a lossless conversion from pairwise alignments between sequences to a variation graph encoding the sequences and their alignments.
+`seqwish` implements a lossless conversion from pairwise alignments between sequences to a variation graph encoding the sequences and their alignments.
 As input we typically take all-versus-all alignments, but the exact structure of the alignment set may be defined in an application specific way.
 This algorithm uses a series of disk-backed sorts and passes over the alignment and sequence inputs to allow the graph to be constructed from very large inputs that are commonly encountered when working with large numbers of noisy input sequences. 
 Memory usage during construction and traversal is limited by the use of sorted disk-backed arrays and succinct rank/select dictionaries to record a queryable version of the graph.
@@ -63,7 +63,7 @@ sudo apt install build-essential cmake zlib1g-dev
 
 ### build process
 
-seqwish uses cmake to build itself and its dependencies.
+`seqwish` uses cmake to build itself and its dependencies.
 
 ```
 git clone --recursive https://github.com/ekg/seqwish.git
@@ -77,10 +77,6 @@ To clean up simply remove `build/` and `bin/`:
 rm -rf build bin
 ```
 
-Alternatively, you may build a Docker image that contains seqwish.
-```
-docker build -t seqwish .
-```
 
 A static build can be obtained by setting a flag in the cmake build setup.
 
@@ -90,6 +86,70 @@ cmake -DBUILD_STATIC=1 -H. -Bbuild && cmake --build build -- -j 3
 
 You'll need to set this flag to 0 or remove and rebuild your build directory if you want to unset this behavior.
 Static builds are unlikely to be supported on OSX, and require appropriate static libraries on linux.
+
+
+### Docker
+
+Alternatively, you may build a Docker image that contains `seqwish`.
+```
+docker build -t seqwish .
+```
+
+### Bioconda
+
+`seqwish` recipes for Bioconda are available at https://bioconda.github.io/recipes/seqwish/README.html.
+To install the latest version using `Conda` execute:
+
+``` bash
+conda install -c bioconda seqwish
+```
+
+### Guix
+
+#### installing via the guix-genomics git repository
+
+First, clone the guix-genomics repository:
+
+``` bash
+git clone https://github.com/ekg/guix-genomics
+```
+
+And install the `seqwish` package to your default GUIX environment:
+
+``` bash
+GUIX_PACKAGE_PATH=. guix package -i seqwish
+```
+
+Now `seqwish` is available as a global binary installation.
+
+#### installing via the guix-genomics channel
+
+Add the following to your ~/.config/guix/channels.scm:
+
+``` scm
+  (cons*
+(channel
+  (name 'guix-genomics)
+  (url "https://github.com/ekg/guix-genomics.git")
+  (branch "master"))
+%default-channels)
+```
+
+First, pull all the packages, then install `seqwish` to your default GUIX environment:
+
+``` bash
+guix pull
+guix package -i seqwish
+```
+
+If you want to build an environment only consisting of the `seqwish` binary, you can do:
+
+``` bash
+guix environment --ad-hoc seqwish
+```
+
+For more details about how to handle Guix channels, go to https://git.genenetwork.org/guix-bioinformatics/guix-bioinformatics.git.
+
 
 ## usage
 
@@ -109,5 +169,5 @@ seqwish -s x.fa.gz -p x.paf -g x.gfa
 - [x] describe algorithm
 - [x] implement rank/select dictionary class based on disk-backed radix sort of a binary array
 - [x] implement squish graph induction algorithm
-- [ ] explore extensions via graph rewriting and the handle graph concept
+- [ ] explore extensions via graph rewriting, and the handle graph concept
 - [ ] explore assembly problems via graph filtering and cleaning operations
