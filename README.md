@@ -153,14 +153,23 @@ For more details about how to handle Guix channels, go to https://git.genenetwor
 
 ## usage
 
-`seqwish` supports minimap2's PAF format output. It requires the CIGAR string of the alignment to be provided in the `cg:z:` optional field.
-It uses large temporary files during the construction.
-By default, these are prefixed with the output GFA file name, but this can be changed with the `-b[base], --base=[base]` command line argument.
-The input sequences can be in FASTA or FASTQ format, either in plain text or gzipped.
+`seqwish` supports PAF format output of several sequence aligners, like [wfmash](https://github.com/ekg/wfmash) and [minimap2](https://github.com/lh3/minimap2).
+It requires the CIGAR string of the alignment to be provided in the `cg:z:` optional field. It uses large temporary files during the construction. 
+By default, these are prefixed with the output GFA file name, but this can be changed with the `-b[base], --base=[base]` command line argument. The input sequences can be in FASTA or FASTQ format, either in plain text or gzipped.
 It writes [GFA1](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md#the-gfa-format-specification) on its standard output.
 
+#### wfmash
+
 ```
-minimap2 x.fa.gz x.fa.gz -c -X >x.paf
+wfmash x.fa.gz x.fa.gz -X > x.paf
+seqwish -s x.fa.gz -p x.paf -g x.gfa
+```
+
+#### minimap2
+
+[minimap2](https://github.com/lh3/minimap2) does not emit the CIGAR string in PAF output by default. To do this, specify the `-c` flag:
+```
+minimap2 x.fa.gz x.fa.gz -c -X > x.paf
 seqwish -s x.fa.gz -p x.paf -g x.gfa
 ```
 
