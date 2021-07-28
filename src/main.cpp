@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});
     args::ValueFlag<std::string> sml_in(parser, "FILE", "Use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "Write the graph in VGP format with basename FILE", {'o', "vgp-out"});
-    args::ValueFlag<uint64_t> thread_count(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
+    args::ValueFlag<int> thread_count(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "Limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_repeat_dist(parser, "N", "Prevent transitive closure for bases at least this far apart in input sequences", {'l', "min-repeat-distance"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length. This can smooth the graph locally and prevent the formation of complex local graph topologies from forming due to differential alignments.", {'k', "min-match-len"});
