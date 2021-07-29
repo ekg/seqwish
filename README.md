@@ -54,16 +54,22 @@ Users familiar with concepts in assembly graphs will notice many similarities be
 
 ### dependencies
 
-You'll need basic C++ build tools, cmake, and zlib.
-On ubuntu (and probably debian) systems, these can be installed with:
+You'll need basic C++ build tools, `cmake`, and `zlib`.
+On `Ubuntu` (and probably `Debian`) systems, these can be installed with:
 
 ```
-sudo apt install build-essential cmake zlib1g-dev
+sudo apt install build-essential cmake zlib1g-dev libjemalloc-dev
+```
+
+On `Arch Linux`, the `jemalloc` dependency can be installed with:
+
+```
+sudo pacman -S jemalloc     # arch linux
 ```
 
 ### build process
 
-`seqwish` uses cmake to build itself and its dependencies.
+`seqwish` uses `cmake` to build itself and its dependencies.
 
 ```
 git clone --recursive https://github.com/ekg/seqwish.git
