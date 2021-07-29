@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <string>
 #include <chrono>
+#include <iomanip>
 #include "args.hxx"
 #include "mmmultimap.hpp"
 #include "mmiitree.hpp"
@@ -19,6 +20,7 @@
 #include "match.hpp"
 #include "exists.hpp"
 #include "time.hpp"
+#include "utils.hpp"
 
 using namespace seqwish;
 
@@ -31,11 +33,11 @@ int main(int argc, char** argv) {
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});
     args::ValueFlag<std::string> sml_in(parser, "FILE", "Use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
     args::ValueFlag<std::string> vgp_base(parser, "BASE", "Write the graph in VGP format with basename FILE", {'o', "vgp-out"});
-    args::ValueFlag<uint64_t> thread_count(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
+    args::ValueFlag<int> thread_count(parser, "N", "Use this many threads during parallel steps", {'t', "threads"});
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "Limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_repeat_dist(parser, "N", "Prevent transitive closure for bases at least this far apart in input sequences", {'l', "min-repeat-distance"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length. This can smooth the graph locally and prevent the formation of complex local graph topologies from forming due to differential alignments.", {'k', "min-match-len"});
-    args::ValueFlag<uint64_t> transclose_batch(parser, "N", "Number of bp to use for transitive closure batch (default 1M)", {'B', "transclose-batch"});
+    args::ValueFlag<std::string> transclose_batch(parser, "N", "Number of bp to use for transitive closure batch (1k = 1K = 1000, 1m = 1M = 10^6, 1g = 1G = 10^9) [default 1M]", {'B', "transclose-batch"});
     //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag show_progress(parser, "show-progress", "log algorithm progress", {'P', "show-progress"});
@@ -160,7 +162,7 @@ int main(int argc, char** argv) {
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max),
                                                       args::get(min_repeat_dist),
-                                                      !args::get(transclose_batch) ? 1000000 : args::get(transclose_batch),
+                                                      transclose_batch ? seqwish::handy_parameter(args::get(transclose_batch), 1000000) : 1000000,
                                                       args::get(show_progress),
                                                       num_threads,
                                                       start_time);
