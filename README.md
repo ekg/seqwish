@@ -1,6 +1,6 @@
 # seqwish
 
-[![build and test on push](https://github.com/ekg/seqwish/actions/workflows/build_and_test_on_push.yml/badge.svg)](https://github.com/ekg/seqwish/actions/workflows/build_and_test_on_push.yml)
+[![build and test](https://github.com/ekg/seqwish/actions/workflows/build_and_test_on_push.yml/badge.svg)](https://github.com/ekg/seqwish/actions/workflows/build_and_test_on_push.yml)
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/seqwish/README.html)
 
 *These <b>seq</b>uences <b>wish</b> they were squished into a graph.*
