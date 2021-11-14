@@ -117,8 +117,8 @@ int main(int argc, char** argv) {
     seqidx.save();
     if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " index built" << std::endl;
 
-    if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " processing alignments" << std::endl;
     // 2) parse the alignments into position pairs and index (A)
+    if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " processing alignments" << std::endl;
     std::string aln_idx = work_base + ".sqa";
     std::remove(aln_idx.c_str());
     auto aln_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(aln_idx);
@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
     size_t graph_length = compute_transitive_closures(seqidx, aln_iitree, seq_v_file, node_iitree, path_iitree,
                                                       args::get(repeat_max),
                                                       args::get(min_repeat_dist),
-                                                      transclose_batch ? seqwish::handy_parameter(args::get(transclose_batch), 1000000) : 1000000,
+                                                      transclose_batch ? (uint64_t)seqwish::handy_parameter(args::get(transclose_batch), 1000000) : 1000000,
                                                       args::get(show_progress),
                                                       num_threads,
                                                       start_time);
@@ -201,8 +201,8 @@ int main(int argc, char** argv) {
     derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset, num_threads);
     if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " links derived" << std::endl;
 
-    if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " writing graph" << std::endl;
     // 6) emit the graph in GFA or VGP format
+    if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " writing graph" << std::endl;
     if (!args::get(gfa_out).empty()) {
         std::ofstream out(args::get(gfa_out).c_str());
         emit_gfa(out, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset, num_threads);
