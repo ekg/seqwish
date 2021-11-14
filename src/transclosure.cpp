@@ -293,7 +293,7 @@ size_t compute_transitive_closures(
         //std::cerr << "closing\t" << i << std::endl;
         while (i < input_seq_length && q_seen_bv[i]) ++i;
         //std::cerr << "scanned_to\t" << i << std::endl;
-        if (i >= input_seq_length) break; // we're done!]
+        if (i >= input_seq_length) break; // we're done!
 
         // where our chunk begins
         uint64_t chunk_start = i;
@@ -421,20 +421,48 @@ size_t compute_transitive_closures(
 #endif
         // run the transclosure for this region using lock-free union find
         // convert the ranges into positions in the input sequence space
-        std::atomic<uint64_t> q_curr_bv_count; q_curr_bv_count.store(0);
+        uint64_t q_curr_bv_counts[num_threads];
+        for(uint64_t tid = 0; tid < num_threads; ++tid) { q_curr_bv_counts[tid] = 0; }
         //std::cerr << "q_subset_bv ";
         paryfor::parallel_for<uint64_t>(
                 0, q_curr_bv.size(), num_threads, q_curr_bv.size()/num_threads,
                 [&](uint64_t i, int tid) {
                     if (q_curr_bv[i]) {
-                        ++q_curr_bv_count;
+                        ++q_curr_bv_counts[tid];
                     }
                 });
+
         // use a rank support to make a dense mapping from the current bases to an integer range
-        std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
-        for (auto p : q_curr_bv) {
-            q_curr_bv_vec.push_back(p);
+        // ... pre-allocate default values
+        uint64_t q_curr_bv_count = 0;
+        for(uint64_t tid = 0; tid < num_threads; ++tid) { q_curr_bv_count += q_curr_bv_counts[tid]; }
+        std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.resize(q_curr_bv_count);
+        {
+            // ... prepare offset in the vector to fill
+            // ...... we already know the number of items that will be inserted by each thread.
+            // ...... thread 0 starts to insert from the position 0
+            // ...... thread 1 starts to insert from the position num_element_insert_from_thread_0
+            // ...... thread 2 starts to insert from the position num_element_insert_from_thread_0 + num_element_insert_from_thread_1
+            // ...... thread num_threads-1 (last thread) starts to insert from the position num_element_insert_from_thread_0+1+...+num_threads-2
+            uint64_t current_starting_pos_for_thread = q_curr_bv_count;
+            for(int64_t tid = (int64_t)num_threads - 1; tid >= 0; --tid) {
+                current_starting_pos_for_thread -= q_curr_bv_counts[tid];
+                q_curr_bv_counts[tid] = current_starting_pos_for_thread;
+            }
+
+            // ... fill the vector in parallel
+            uint64_t num_elements_inserted[num_threads];
+            for(uint64_t tid = 0; tid < num_threads; ++tid) { num_elements_inserted[tid] = 0; }
+            paryfor::parallel_for<uint64_t>(
+                    0, q_curr_bv.size(), num_threads, q_curr_bv.size()/num_threads,
+                    [&](uint64_t i, int tid) {
+                        if (q_curr_bv[i]) {
+                            q_curr_bv_vec[q_curr_bv_counts[tid] + num_elements_inserted[tid]] = i;
+                            ++num_elements_inserted[tid];
+                        }
+                    });
         }
+
         sdsl::bit_vector q_curr_bv_sdsl(seqidx.seq_length());
         for (auto p : q_curr_bv_vec) {
             q_curr_bv_sdsl[p] = 1;
