@@ -421,44 +421,59 @@ size_t compute_transitive_closures(
 #endif
         // run the transclosure for this region using lock-free union find
         // convert the ranges into positions in the input sequence space
-        uint64_t q_curr_bv_counts[num_threads];
-        for(uint64_t tid = 0; tid < num_threads; ++tid) { q_curr_bv_counts[tid] = 0; }
-        //std::cerr << "q_subset_bv ";
+        // ... compute ranges
+        std::vector<std::pair<uint64_t, uint64_t>> ranges;
+        {
+            uint64_t begin = 0;
+            uint64_t end = q_curr_bv.size();
+            uint64_t chunk_size = end/num_threads;
+
+            std::pair<uint64_t, uint64_t> todo_range = std::make_pair(begin, std::min(begin + chunk_size, end));
+            uint64_t& todo_i = todo_range.first;
+            uint64_t& todo_j = todo_range.second;
+            while (todo_i != end) {
+                ranges.push_back(todo_range);
+                todo_i = std::min(todo_i + chunk_size, end);
+                todo_j = std::min(todo_j + chunk_size, end);
+            }
+        }
+
+        // ... compute how many set elements in each range and in total
+        std::vector<uint64_t> q_curr_bv_counts; q_curr_bv_counts.resize(ranges.size());
+        for (auto& x : q_curr_bv_counts) { x = 0; }
         paryfor::parallel_for<uint64_t>(
-                0, q_curr_bv.size(), num_threads, q_curr_bv.size()/num_threads,
-                [&](uint64_t i, int tid) {
-                    if (q_curr_bv[i]) {
-                        ++q_curr_bv_counts[tid];
+                0, ranges.size(), num_threads,
+                [&](uint64_t num_range, int tid) {
+                    for (uint64_t ii = ranges[num_range].first; ii < ranges[num_range].second; ++ii) {
+                        if (q_curr_bv[ii]) {
+                            ++q_curr_bv_counts[num_range];
+                        }
                     }
                 });
+        uint64_t q_curr_bv_count = 0;
+        for(auto& value : q_curr_bv_counts) { q_curr_bv_count += value; }
 
         // use a rank support to make a dense mapping from the current bases to an integer range
         // ... pre-allocate default values
-        uint64_t q_curr_bv_count = 0;
-        for(uint64_t tid = 0; tid < num_threads; ++tid) { q_curr_bv_count += q_curr_bv_counts[tid]; }
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.resize(q_curr_bv_count);
-        {
-            // ... prepare offset in the vector to fill
-            // ...... we already know the number of items that will be inserted by each thread.
-            // ...... thread 0 starts to insert from the position 0
-            // ...... thread 1 starts to insert from the position num_element_insert_from_thread_0
-            // ...... thread 2 starts to insert from the position num_element_insert_from_thread_0 + num_element_insert_from_thread_1
-            // ...... thread num_threads-1 (last thread) starts to insert from the position num_element_insert_from_thread_0+1+...+num_threads-2
-            uint64_t current_starting_pos_for_thread = q_curr_bv_count;
-            for(int64_t tid = (int64_t)num_threads - 1; tid >= 0; --tid) {
-                current_starting_pos_for_thread -= q_curr_bv_counts[tid];
-                q_curr_bv_counts[tid] = current_starting_pos_for_thread;
-            }
-
-            // ... fill the vector in parallel
-            paryfor::parallel_for<uint64_t>(
-                    0, q_curr_bv.size(), num_threads, q_curr_bv.size()/num_threads,
-                    [&](uint64_t i, int tid) {
-                        if (q_curr_bv[i]) {
-                            q_curr_bv_vec[q_curr_bv_counts[tid]++] = i;
-                        }
-                    });
+        // ... prepare offset in the vector to fill: we already know the number of items that will come from each range.
+        // ...... range 0 elements will be inserted from the position 0
+        // ...... range 1 elements will be inserted from the position num_element_range_0
+        // ...... range N elements will be inserted from the position num_element_range_0+1+...+N-1
+        uint64_t current_starting_pos_for_range = q_curr_bv_count;
+        for(int64_t num_range = (int64_t)ranges.size() - 1; num_range >= 0; --num_range) {
+            current_starting_pos_for_range -= q_curr_bv_counts[num_range];
+            q_curr_bv_counts[num_range] = current_starting_pos_for_range;
         }
+        paryfor::parallel_for<uint64_t>(
+                0, ranges.size(), num_threads,
+                [&](uint64_t num_range, int tid) {
+                    for (uint64_t ii = ranges[num_range].first; ii < ranges[num_range].second; ++ii) {
+                        if (q_curr_bv[ii]) {
+                            q_curr_bv_vec[q_curr_bv_counts[num_range]++] = ii;
+                        }
+                    }
+                });
 
         sdsl::bit_vector q_curr_bv_sdsl(seqidx.seq_length());
         for (auto p : q_curr_bv_vec) {
