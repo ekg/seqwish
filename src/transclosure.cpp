@@ -456,15 +456,19 @@ size_t compute_transitive_closures(
         // use a rank support to make a dense mapping from the current bases to an integer range
         // ... pre-allocate default values
         std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.resize(q_curr_bv_count);
-        // ... prepare offset in the vector to fill: we already know the number of items that will come from each range.
-        // ...... range 0 elements will be inserted from the position 0
-        // ...... range 1 elements will be inserted from the position num_element_range_0
-        // ...... range N elements will be inserted from the position num_element_range_0+1+...+N-1
-        uint64_t current_starting_pos_for_range = q_curr_bv_count;
-        for(int64_t num_range = (int64_t)ranges.size() - 1; num_range >= 0; --num_range) {
-            current_starting_pos_for_range -= q_curr_bv_counts[num_range];
-            q_curr_bv_counts[num_range] = current_starting_pos_for_range;
+        // ... prepare offsets in the vector to fill: we already know the number of items that will come from each range.
+        {
+            // ...... range 0 elements will be inserted from the position 0
+            // ...... range 1 elements will be inserted from the position num_element_range_0
+            // ...... range N elements will be inserted from the position num_element_range_0+1+...+N-1
+            uint64_t current_starting_pos_for_range = q_curr_bv_count;
+            for(int64_t num_range = (int64_t)ranges.size() - 1; num_range >= 0; --num_range) {
+                current_starting_pos_for_range -= q_curr_bv_counts[num_range];
+                q_curr_bv_counts[num_range] = current_starting_pos_for_range;
+            }
         }
+
+        // ... fill in parallel
         paryfor::parallel_for<uint64_t>(
                 0, ranges.size(), num_threads,
                 [&](uint64_t num_range, int tid) {
