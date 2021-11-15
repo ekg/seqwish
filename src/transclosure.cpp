@@ -451,14 +451,11 @@ size_t compute_transitive_closures(
             }
 
             // ... fill the vector in parallel
-            uint64_t num_elements_inserted[num_threads];
-            for(uint64_t tid = 0; tid < num_threads; ++tid) { num_elements_inserted[tid] = 0; }
             paryfor::parallel_for<uint64_t>(
                     0, q_curr_bv.size(), num_threads, q_curr_bv.size()/num_threads,
                     [&](uint64_t i, int tid) {
                         if (q_curr_bv[i]) {
-                            q_curr_bv_vec[q_curr_bv_counts[tid] + num_elements_inserted[tid]] = i;
-                            ++num_elements_inserted[tid];
+                            q_curr_bv_vec[q_curr_bv_counts[tid]++] = i;
                         }
                     });
         }
