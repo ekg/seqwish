@@ -21,11 +21,12 @@
 #include "exists.hpp"
 #include "time.hpp"
 #include "utils.hpp"
+#include "version.hpp"
 
 using namespace seqwish;
 
 int main(int argc, char** argv) {
-    args::ArgumentParser parser("seqwish: a variation graph inducer");
+    args::ArgumentParser parser("seqwish: a variation graph inducer\n" + seqwish::Version::get_version() + ": " + seqwish::Version::get_codename());
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
     args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths: [file_1]:[min_match_length_1],... This allows the differential filtering of short matches from some but not all inputs, in effect allowing `-k` to be specified differently for each input.", {'p', "paf-alns"});
     args::ValueFlag<std::string> seqs(parser, "FILE", "The sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
@@ -42,6 +43,7 @@ int main(int argc, char** argv) {
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
     args::Flag show_progress(parser, "show-progress", "log algorithm progress", {'P', "show-progress"});
     args::Flag verbose_debug(parser, "verbose-debug", "enable verbose debugging", {'V', "verbose-debug"});
+	args::Flag version(parser, "version", "show the current version including github commit hash", {'v', "version"});
     try {
         parser.ParseCLI(argc, argv);
     } catch (args::Help) {
@@ -56,6 +58,11 @@ int main(int argc, char** argv) {
         std::cout << parser;
         return 1;
     }
+
+	if (version) {
+		std::cerr << seqwish::Version::get_version() << std::endl;
+		exit(0);
+	}
 
     std::chrono::time_point<std::chrono::steady_clock> start_time = std::chrono::steady_clock::now();
     
