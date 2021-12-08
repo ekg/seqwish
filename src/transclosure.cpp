@@ -91,7 +91,7 @@ void flush_range(std::map<pos_t, range_t>::iterator it,
 void for_each_fresh_range(const match_t& range,
                           const std::vector<bool>& seen_bv,
                           const std::function<void(match_t)>& lambda) {
-    // walk range, breaking where we've seen it, emiting new ranges
+    // walk range, breaking where we've seen it, emitting new ranges
     uint64_t p = range.start;
     pos_t t = range.pos;
     //std::cerr << "for_each_fresh_range " << range.start << "-" << range.end << " " << pos_to_string(range.pos) << std::endl;
@@ -257,17 +257,17 @@ void write_graph_chunk(const seqindex_t& seqidx,
 
 
 size_t compute_transitive_closures(
-    const seqindex_t& seqidx,
-    mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
-    const std::string& seq_v_file,
-    mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
-    mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
-    uint64_t repeat_max,
-    uint64_t min_repeat_dist,
-    uint64_t transclose_batch_size, // size of a batch to collect for lock-free transitive closure
-    bool show_progress,
-    uint64_t num_threads,
-    const std::chrono::time_point<std::chrono::steady_clock>& start_time) {
+        const seqindex_t& seqidx,
+        mmmulti::iitree<uint64_t, pos_t>& aln_iitree, // input alignment matches between query seqs
+        const std::string& seq_v_file,
+        mmmulti::iitree<uint64_t, pos_t>& node_iitree, // maps graph seq ranges to input seq ranges
+        mmmulti::iitree<uint64_t, pos_t>& path_iitree, // maps input seq ranges to graph seq ranges
+        uint64_t repeat_max,
+        uint64_t min_repeat_dist,
+        uint64_t transclose_batch_size, // size of a batch to collect for lock-free transitive closure
+        bool show_progress,
+        uint64_t num_threads,
+        const std::chrono::time_point<std::chrono::steady_clock>& start_time) {
     // open the writers in the iitrees
     node_iitree.open_writer();
     path_iitree.open_writer();
@@ -294,16 +294,16 @@ size_t compute_transitive_closures(
         while (i < input_seq_length && q_seen_bv[i]) ++i;
         //std::cerr << "scanned_to\t" << i << std::endl;
         if (i >= input_seq_length) break; // we're done!
+
         // where our chunk begins
         uint64_t chunk_start = i;
-        // extend until we've got chunk_size unseen bases
+        // extend until we've got chunk_size unseen bases (and where it ends (not past the end of the sequence))
         uint64_t bases_to_consider = 0;
         uint64_t chunk_end = chunk_start;
         while (bases_to_consider < transclose_batch_size && chunk_end < input_seq_length) {
             bases_to_consider += !q_seen_bv[chunk_end++];
         }
-        // and where it ends (not past the end of the sequence)
-        //chunk_end = std::min(input_seq_length, chunk_end); // chunk_start + transclose_batch_size);
+
         // collect ranges overlapping, per thread to avoid contention
         // bits of sequence we've seen during this union-find chunk
         atomicbitvector::atomic_bv_t q_curr_bv(seqidx.seq_length());
@@ -374,14 +374,13 @@ size_t compute_transitive_closures(
         }
         // manage the threads
         uint64_t empty_iter_count = 0;
-        auto still_exploring
-            = [&explorings](void) {
-                  bool ongoing = false;
-                  for (auto& e : explorings) {
-                      ongoing = ongoing || e.load();
-                  }
-                  return ongoing;
-              };
+        auto still_exploring = [&explorings]() {
+            bool ongoing = false;
+            for (auto& e : explorings) {
+                ongoing = ongoing || e.load();
+            }
+            return ongoing;
+        };
         work_todo.store(true);
         while (!todo_in.was_empty() || !todo.empty() || !todo_out.was_empty() || !ovlp_q.was_empty() || still_exploring() || ++empty_iter_count < 1000) {
             std::this_thread::sleep_for(0.00001ns);
@@ -422,16 +421,64 @@ size_t compute_transitive_closures(
 #endif
         // run the transclosure for this region using lock-free union find
         // convert the ranges into positions in the input sequence space
+        // ... compute ranges
+        std::vector<std::pair<uint64_t, uint64_t>> ranges;
+        {
+            uint64_t begin = 0;
+            uint64_t end = q_curr_bv.size();
+            uint64_t chunk_size = end/num_threads;
+
+            std::pair<uint64_t, uint64_t> todo_range = std::make_pair(begin, std::min(begin + chunk_size, end));
+            uint64_t& todo_i = todo_range.first;
+            uint64_t& todo_j = todo_range.second;
+            while (todo_i != end) {
+                ranges.push_back(todo_range);
+                todo_i = std::min(todo_i + chunk_size, end);
+                todo_j = std::min(todo_j + chunk_size, end);
+            }
+        }
+
+        // ... compute how many set elements in each range and in total
+        std::vector<uint64_t> q_curr_bv_counts; q_curr_bv_counts.resize(ranges.size());
+        for (auto& x : q_curr_bv_counts) { x = 0; }
+        paryfor::parallel_for<uint64_t>(
+                0, ranges.size(), num_threads,
+                [&](uint64_t num_range, int tid) {
+                    for (uint64_t ii = ranges[num_range].first; ii < ranges[num_range].second; ++ii) {
+                        if (q_curr_bv[ii]) {
+                            ++q_curr_bv_counts[num_range];
+                        }
+                    }
+                });
         uint64_t q_curr_bv_count = 0;
-        //std::cerr << "q_subset_bv ";
-        for (auto x : q_curr_bv) {
-            ++q_curr_bv_count;
-        }
+        for(auto& value : q_curr_bv_counts) { q_curr_bv_count += value; }
+
         // use a rank support to make a dense mapping from the current bases to an integer range
-        std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.reserve(q_curr_bv_count);
-        for (auto p : q_curr_bv) {
-            q_curr_bv_vec.push_back(p);
+        // ... pre-allocate default values
+        std::vector<uint64_t> q_curr_bv_vec; q_curr_bv_vec.resize(q_curr_bv_count);
+        // ... prepare offsets in the vector to fill: we already know the number of items that will come from each range.
+        {
+            // ...... range 0 elements will be inserted from the position 0
+            // ...... range 1 elements will be inserted from the position num_element_range_0
+            // ...... range N elements will be inserted from the position num_element_range_0+1+...+N-1
+            uint64_t current_starting_pos_for_range = q_curr_bv_count;
+            for(int64_t num_range = (int64_t)ranges.size() - 1; num_range >= 0; --num_range) {
+                current_starting_pos_for_range -= q_curr_bv_counts[num_range];
+                q_curr_bv_counts[num_range] = current_starting_pos_for_range;
+            }
         }
+
+        // ... fill in parallel
+        paryfor::parallel_for<uint64_t>(
+                0, ranges.size(), num_threads,
+                [&](uint64_t num_range, int tid) {
+                    for (uint64_t ii = ranges[num_range].first; ii < ranges[num_range].second; ++ii) {
+                        if (q_curr_bv[ii]) {
+                            q_curr_bv_vec[q_curr_bv_counts[num_range]++] = ii;
+                        }
+                    }
+                });
+
         sdsl::bit_vector q_curr_bv_sdsl(seqidx.seq_length());
         for (auto p : q_curr_bv_vec) {
             q_curr_bv_sdsl[p] = 1;
