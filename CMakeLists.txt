@@ -171,6 +171,7 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/exists.cpp
   ${CMAKE_SOURCE_DIR}/src/time.cpp
   ${CMAKE_SOURCE_DIR}/src/mmap.cpp
+  ${CMAKE_SOURCE_DIR}/src/version.cpp
   )
 add_dependencies(seqwish tayweeargs)
 add_dependencies(seqwish sdsl-lite)
@@ -210,5 +211,9 @@ if (BUILD_STATIC)
   #set(CMAKE_EXE_LINKER_FLAGS "-static")
   set(CMAKE_EXE_LINKER_FLAGS "-static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
 endif()
+
+# version stuff
+file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/include)
+execute_process(COMMAND bash scripts/generate_git_version.sh ${CMAKE_SOURCE_DIR}/include)
 
 install(TARGETS seqwish DESTINATION bin)
