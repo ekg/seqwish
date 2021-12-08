@@ -36,7 +36,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     bool notified_empty_seqs = false;
     while (in.good()) {
         line[0] = '>';
-        std::string seq_name = line.substr(0, line.find(" "));
+        std::string seq_name = line.substr(0, line.find(' '));
 
         std::string seq;
         // get the sequence

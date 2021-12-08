@@ -25,9 +25,9 @@ void paf_worker(
             // Query/Target end (0-based; BED-like; open)
             paf.target_start >= paf.target_sequence_length || paf.target_end > paf.target_sequence_length || paf.target_start >= paf.target_end) break;
         size_t query_idx = seqidx.rank_of_seq_named(paf.query_sequence_name);
-        size_t query_len = seqidx.nth_seq_length(query_idx);
+        //size_t query_len = seqidx.nth_seq_length(query_idx);
         size_t target_idx = seqidx.rank_of_seq_named(paf.target_sequence_name);
-        size_t target_len = seqidx.nth_seq_length(target_idx);
+        //size_t target_len = seqidx.nth_seq_length(target_idx);
         bool q_rev = !paf.query_target_same_strand;
         size_t q_all_pos = (q_rev ? seqidx.pos_in_all_seqs(query_idx, paf.query_end, false) - 1
                             : seqidx.pos_in_all_seqs(query_idx, paf.query_start, false));
