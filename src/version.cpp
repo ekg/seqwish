@@ -40,7 +40,8 @@ namespace seqwish {
 			{"v0.6.1", "simplify paths in GFA"},
 			{"v0.7", "memory safety and minor improvements"},
 			{"v0.7.1", "seqwish 0.7.1 - Sicurezza"},
-			{"v0.7.2", "seqwish 0.7.2 - Diffidenza"}
+			{"v0.7.2", "seqwish 0.7.2 - Diffidenza"},
+			{"v0.7.3", "seqwish 0.7.3 - Veloce"}
 			// Add more codenames here
 	};
 
