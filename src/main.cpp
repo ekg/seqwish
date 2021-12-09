@@ -28,7 +28,7 @@ using namespace seqwish;
 int main(int argc, char** argv) {
     args::ArgumentParser parser("seqwish: a variation graph inducer\n" + seqwish::Version::get_version() + ": " + seqwish::Version::get_codename());
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
-    args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths: [file_1]:[min_match_length_1],... This allows the differential filtering of short matches from some but not all inputs, in effect allowing `-k` to be specified differently for each input.", {'p', "paf-alns"});
+    args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths: [file_1][:min_match_length_1],... This allows the differential filtering of short matches from some but not all inputs, in effect allowing `-k` to be specified differently for each input.", {'p', "paf-alns"});
     args::ValueFlag<std::string> seqs(parser, "FILE", "The sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
     args::ValueFlag<std::string> base(parser, "BASE", "Build graph using this basename", {'b', "base"});
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});

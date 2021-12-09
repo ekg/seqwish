@@ -169,17 +169,29 @@ It writes [GFA1](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md#the-gf
 
 #### wfmash
 
+#### single PAF file
+
 ```
-wfmash x.fa.gz x.fa.gz -X > x.paf
-seqwish -s x.fa.gz -p x.paf -g x.gfa
+wfmash x.fa x.fa -X > x.paf
+seqwish -s x.fa -p x.paf -g x.gfa
+```
+
+#### multiple PAF file
+
+```
+wfmash c.fa a.fa > a.paf
+wfmash c.fa b.fa > b.paf
+cat a.fa b.fa c.fa > abc.fa
+seqwish -s abc.fa -p a.paf,b.paf -g abc.gfa
 ```
 
 #### minimap2
 
 [minimap2](https://github.com/lh3/minimap2) does not emit the CIGAR string in PAF output by default. To do this, specify the `-c` flag:
+
 ```
-minimap2 x.fa.gz x.fa.gz -c -X > x.paf
-seqwish -s x.fa.gz -p x.paf -g x.gfa
+minimap2 x.fa x.fa -c -X > x.paf
+seqwish -s x.fa -p x.paf -g x.gfa
 ```
 
 ## TODO
