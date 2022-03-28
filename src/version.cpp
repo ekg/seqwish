@@ -41,7 +41,8 @@ namespace seqwish {
 			{"v0.7", "memory safety and minor improvements"},
 			{"v0.7.1", "seqwish 0.7.1 - Sicurezza"},
 			{"v0.7.2", "seqwish 0.7.2 - Diffidenza"},
-			{"v0.7.3", "seqwish 0.7.3 - Veloce"}
+			{"v0.7.3", "seqwish 0.7.3 - Veloce"},
+			{"v0.7.4", "seqwish 0.7.4 - Rifinitura"}
 			// Add more codenames here
 	};
 
