@@ -114,7 +114,7 @@ ExternalProject_Add(atomicqueue
   BUILD_COMMAND ""
   CONFIGURE_COMMAND "")
 ExternalProject_Get_property(atomicqueue SOURCE_DIR)
-set(atomicqueue_INCLUDE "${SOURCE_DIR}")
+set(atomicqueue_INCLUDE "${SOURCE_DIR}/include/atomic_queue")
 
 # ska
 ExternalProject_Add(ska
