@@ -57,11 +57,6 @@
  *
  */
 
-// Sanity check that we are compiling on x86_64.
-#if !__x86_64__
-#error "seqwish can only be built on an x86_64 machine (64-bit Intel/AMD)"
-#endif
-
 namespace seqwish {
 
 class DisjointSets {
