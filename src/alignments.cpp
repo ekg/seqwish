@@ -2,13 +2,28 @@
 
 namespace seqwish {
 
+
+uint64_t match_hash(const pos_t& q, const pos_t& t, const uint64_t& l) {
+    uint64_t seed = q | t | l;
+    seed ^= q + 0x9e3779b97f4a7c15 + (seed << 17) + (seed >> 9);
+    seed ^= t + 0x9e3779b97f4a7c15 + (seed << 7) + (seed >> 23);
+    seed ^= l + 0x9e3779b97f4a7c15 + (seed << 9) + (seed >> 2);
+    return seed;
+}
+
+bool keep_sparse(const pos_t& q, const pos_t& t, const uint64_t& l, const float f) {
+    // hash the match and check if it's accepted given our sparsification factor
+    return match_hash(q, t, l) < std::numeric_limits<uint64_t>::max() * f;
+}
+
 void paf_worker(
     igzstream& paf_in,
     std::atomic<bool>& paf_more,
     std::mutex& paf_in_mutex,
     mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
     const seqindex_t& seqidx,
-    const uint64_t& min_match_len) {
+    const uint64_t& min_match_len,
+    const float& sparsification_factor) {
     while (paf_more.load()) {
         paf_in_mutex.lock();
         std::string line;
@@ -45,7 +60,11 @@ void paf_worker(
                 uint64_t match_len = 0;
                 auto add_match =
                     [&](void) {
-                        if (match_len && match_len >= min_match_len) {
+                        if (match_len
+                            && match_len >= min_match_len
+                            && (sparsification_factor == 0 ||
+                                keep_sparse(q_pos_match_start, t_pos_match_start, match_len,
+                                            sparsification_factor))) {
                             if (is_rev(q_pos)) {
                                 pos_t x_pos = q_pos;
                                 decr_pos(x_pos); // to guard against underflow when our start is 0-, we need to decr in pos_t space
@@ -101,6 +120,7 @@ void unpack_paf_alignments(const std::string& paf_file,
                            mmmulti::iitree<uint64_t, pos_t>& aln_iitree,
                            const seqindex_t& seqidx,
                            const uint64_t& min_match_len,
+                           const float& sparsification_factor,
                            const uint64_t& num_threads) {
     // go through the PAF file
     igzstream paf_in(paf_file.c_str());
@@ -112,7 +132,7 @@ void unpack_paf_alignments(const std::string& paf_file,
     std::atomic<bool> paf_more; paf_more.store(true);
     std::vector<std::thread> workers; workers.reserve(num_threads);
     for (uint64_t t = 0; t < num_threads; ++t) {
-        workers.emplace_back(paf_worker, std::ref(paf_in), std::ref(paf_more), std::ref(paf_in_mutex), std::ref(aln_iitree), std::ref(seqidx), std::ref(min_match_len));
+        workers.emplace_back(paf_worker, std::ref(paf_in), std::ref(paf_more), std::ref(paf_in_mutex), std::ref(aln_iitree), std::ref(seqidx), std::ref(min_match_len), std::ref(sparsification_factor));
     }
     for (uint64_t t = 0; t < num_threads; ++t) {
         workers[t].join();
