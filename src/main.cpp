@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
     args::ValueFlag<uint64_t> repeat_max(parser, "N", "Limit transitive closure to include no more than N copies of a given input base", {'r', "repeat-max"});
     args::ValueFlag<uint64_t> min_repeat_dist(parser, "N", "Prevent transitive closure for bases at least this far apart in input sequences", {'l', "min-repeat-distance"});
     args::ValueFlag<uint64_t> min_match_len(parser, "N", "Filter exact matches below this length. This can smooth the graph locally and prevent the formation of complex local graph topologies from forming due to differential alignments.", {'k', "min-match-len"});
+    args::ValueFlag<float> match_sparsification(parser, "N", "Sparsify input matches, keeping the fraction that minimize a hash function.", {'f', "sparse-factor"});
     args::ValueFlag<std::string> transclose_batch(parser, "N", "Number of bp to use for transitive closure batch (1k = 1K = 1000, 1m = 1M = 10^6, 1g = 1G = 10^9) [default 1M]", {'B', "transclose-batch"});
     //args::ValueFlag<uint64_t> num_domains(parser, "N", "number of domains for iitii interpolation", {'D', "domains"});
     args::Flag keep_temp_files(parser, "", "keep intermediate files generated during graph induction", {'T', "keep-temp"});
@@ -131,6 +132,7 @@ int main(int argc, char** argv) {
     auto aln_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(aln_idx);
     auto& aln_iitree = *aln_iitree_ptr;
     aln_iitree.open_writer();
+    float sparse_match = match_sparsification ? args::get(match_sparsification) : 0;
     if (!pafs_and_min_lengths.empty()) {
         for (auto& p : pafs_and_min_lengths) {
             auto& file = p.first;
@@ -138,7 +140,7 @@ int main(int argc, char** argv) {
             if (!min_length && args::get(min_match_len)) {
                 min_length = args::get(min_match_len);
             }
-            unpack_paf_alignments(file, aln_iitree, seqidx, min_length, num_threads);
+            unpack_paf_alignments(file, aln_iitree, seqidx, min_length, sparse_match, num_threads);
         }
     }
     if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing" << std::endl;
