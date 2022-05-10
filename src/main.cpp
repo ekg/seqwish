@@ -22,6 +22,7 @@
 #include "time.hpp"
 #include "utils.hpp"
 #include "version.hpp"
+#include "tempfile.hpp"
 
 using namespace seqwish;
 
@@ -30,7 +31,7 @@ int main(int argc, char** argv) {
     args::HelpFlag help(parser, "help", "display this help menu", {'h', "help"});
     args::ValueFlag<std::string> paf_alns(parser, "FILE", "Induce the graph from these PAF formatted alignments. Optionally, a list of filenames and minimum match lengths: [file_1][:min_match_length_1],... This allows the differential filtering of short matches from some but not all inputs, in effect allowing `-k` to be specified differently for each input.", {'p', "paf-alns"});
     args::ValueFlag<std::string> seqs(parser, "FILE", "The sequences used to generate the alignments (FASTA, FASTQ, .seq)", {'s', "seqs"});
-    args::ValueFlag<std::string> base(parser, "BASE", "Build graph using this basename", {'b', "base"});
+    args::ValueFlag<std::string> tmp_base(parser, "PATH", "base name for temporary files [default: `pwd`]", {'b', "tmp-base"});
     args::ValueFlag<std::string> gfa_out(parser, "FILE", "Write the graph in GFA to FILE", {'g', "gfa"});
     args::ValueFlag<std::string> sml_in(parser, "FILE", "Use the sequence match list in FILE to subset the input alignments", {'m', "match-list"});
     //args::ValueFlag<std::string> vgp_base(parser, "BASE", "Write the graph in VGP format with basename FILE", {'o', "vgp-out"});
@@ -112,23 +113,28 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::string work_base = args::get(base);
-    if (work_base.empty()) {
-        work_base = args::get(gfa_out);
+    if (tmp_base) {
+        temp_file::set_dir(args::get(tmp_base));
+    } else {
+        char* cwd = get_current_dir_name();
+        temp_file::set_dir(std::string(cwd));
+        free(cwd);
     }
+
+    temp_file::set_keep_temp(args::get(keep_temp_files));
 
     // 1) index the queries (Q) to provide sequence name to position and position to sequence name mapping, generating a CSA and a sequence file
     if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " indexing sequences" << std::endl;
     auto seqidx_ptr = std::make_unique<seqindex_t>();
     auto& seqidx = *seqidx_ptr;
-    seqidx.build_index(args::get(seqs), work_base);
+    seqidx.build_index(args::get(seqs));
     seqidx.save();
     if (args::get(show_progress)) std::cerr << "[seqwish::seqidx] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " index built" << std::endl;
 
     // 2) parse the alignments into position pairs and index (A)
     if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " processing alignments" << std::endl;
-    std::string aln_idx = work_base + ".sqa";
-    std::remove(aln_idx.c_str());
+    const std::string aln_idx = temp_file::create("seqwish-", ".sqa");
+//    std::remove(aln_idx.c_str());
     auto aln_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(aln_idx);
     auto& aln_iitree = *aln_iitree_ptr;
     aln_iitree.open_writer();
@@ -157,12 +163,9 @@ int main(int argc, char** argv) {
     }
 
     // 3) find the transitive closures via the alignments and construct the graph sequence S, and the N and P interval sets
-    std::string seq_v_file = work_base + ".sqs";
-    std::string node_iitree_idx = work_base + ".sqn";
-    std::string path_iitree_idx = work_base + ".sqp";
-    std::remove(seq_v_file.c_str());
-    std::remove(node_iitree_idx.c_str());
-    std::remove(path_iitree_idx.c_str());
+    const std::string seq_v_file = temp_file::create("seqwish-", ".sqs");
+    const std::string node_iitree_idx = temp_file::create("seqwish-", ".sqn");
+    const std::string path_iitree_idx = temp_file::create("seqwish-", ".sqp");
     auto node_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(node_iitree_idx); // maps graph seq to input seq
     auto& node_iitree = *node_iitree_ptr;
     auto path_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(path_iitree_idx); // maps input seq to graph seq
@@ -203,8 +206,7 @@ int main(int argc, char** argv) {
 
     // 5) determine links between nodes
     if (args::get(show_progress)) std::cerr << "[seqwish::links] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " finding graph links" << std::endl;
-    std::string link_mm_idx = work_base + ".sql";
-    std::remove(link_mm_idx.c_str());
+    const std::string link_mm_idx =  temp_file::create("seqwish-", ".sql");
     auto link_mmset_ptr = std::make_unique<mmmulti::set<std::pair<pos_t, pos_t>>>(link_mm_idx);
     auto& link_mmset = *link_mmset_ptr;
     derive_links(seqidx, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, link_mmset, num_threads);
@@ -222,16 +224,6 @@ int main(int argc, char** argv) {
         emit_gfa(std::cout, graph_length, seq_v_file, node_iitree, path_iitree, seq_id_cbv, seq_id_cbv_rank, seq_id_cbv_select, seqidx, link_mmset, num_threads);
     }
     if (args::get(show_progress)) std::cerr << "[seqwish::gfa] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " done" << std::endl;
-
-    if (!args::get(keep_temp_files)) {
-        seqidx.remove_index_files();
-        std::remove(aln_idx.c_str());
-        std::remove(seq_v_file.c_str());
-        std::remove(node_iitree_idx.c_str());
-        std::remove(path_iitree_idx.c_str());
-        link_mmset.close_reader();
-        std::remove(link_mm_idx.c_str());
-    }
 
     return(0);
 }

@@ -50,9 +50,9 @@ public:
 
     seqindex_t(void) { }
     ~seqindex_t(void) { close_seq(); }
-    void set_base_filename(const std::string& filename);
-    void build_index(const std::string& filename, const std::string& idxbasename);
-    size_t save(sdsl::structure_tree_node* s = NULL, std::string name = "");
+    void set_base_filename();
+    void build_index(const std::string& filename);
+    size_t save(sdsl::structure_tree_node* s = NULL, const std::string& name = "");
     void load(const std::string& filename);
     void remove_index_files(void);
     void to_fasta(std::ostream& out, size_t linewidth = 60) const;
