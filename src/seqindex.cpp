@@ -1,18 +1,18 @@
 #include "seqindex.hpp"
+#include "tempfile.hpp"
 
 namespace seqwish {
 
 // load a FASTA or FASTQ file into a file with a name index mapping name -> offset and indexed with a CSA
 // provide queries over this index that let us extract particular positions and subsequences
-void seqindex_t::set_base_filename(const std::string& filename) {
-    basefilename = filename;
-    seqfilename = basefilename + ".sqq";
-    seqidxfile = basefilename + ".sqi";
-    seqnamefile = basefilename + ".sqi.seqnames.tmp"; // used during construction
+void seqindex_t::set_base_filename() {
+    seqfilename = temp_file::create("seqwish-", ".sqq");
+    seqidxfile = temp_file::create("seqwish-", ".sqi");
+    seqnamefile = temp_file::create("seqwish-", ".sqi.seqnames.tmp"); // used during construction
 }
 
-void seqindex_t::build_index(const std::string& filename, const std::string& idxbasename) {
-    set_base_filename(idxbasename);
+void seqindex_t::build_index(const std::string& filename) {
+    set_base_filename();
     // read the file
     igzstream in(filename.c_str());
     std::ofstream seqnames(seqnamefile.c_str());
@@ -128,7 +128,7 @@ void seqindex_t::build_index(const std::string& filename, const std::string& idx
     // look up each sequence by name
 }
 
-size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
+size_t seqindex_t::save(sdsl::structure_tree_node* s, const std::string& name) {
     //assert(seq_name_csa.size() && seq_name_cbv.size() && seq_offset_civ.size());
     sdsl::structure_tree_node* child = sdsl::structure_tree::add_child(s, name, sdsl::util::class_name(*this));
     // open the sdsl index
@@ -150,7 +150,7 @@ size_t seqindex_t::save(sdsl::structure_tree_node* s, std::string name) {
     return written;
 }
 
-void seqindex_t::remove_index_files(void) {
+void seqindex_t::remove_index_files() {
     std::remove(seqfilename.c_str());
     std::remove(seqidxfile.c_str());
 }
@@ -192,7 +192,7 @@ void seqindex_t::close_seq(void) {
 }
 
 void seqindex_t::load(const std::string& filename) {
-    set_base_filename(filename);
+    set_base_filename();
     std::ifstream in(seqidxfile.c_str());
     std::string magic;
     in.read((char*)magic.c_str(), 6);
