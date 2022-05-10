@@ -134,7 +134,6 @@ int main(int argc, char** argv) {
     // 2) parse the alignments into position pairs and index (A)
     if (args::get(show_progress)) std::cerr << "[seqwish::alignments] " << std::fixed << std::showpoint << std::setprecision(3) << seconds_since(start_time) << " processing alignments" << std::endl;
     const std::string aln_idx = temp_file::create("seqwish-", ".sqa");
-//    std::remove(aln_idx.c_str());
     auto aln_iitree_ptr = std::make_unique<mmmulti::iitree<uint64_t, pos_t>>(aln_idx);
     auto& aln_iitree = *aln_iitree_ptr;
     aln_iitree.open_writer();
