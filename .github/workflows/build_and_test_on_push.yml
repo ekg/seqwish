@@ -19,8 +19,6 @@ jobs:
       - name: Install required packages
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: sudo apt-get update && sudo apt-get install -y
-          git
-          bash
           cmake
           make
           g++
@@ -48,17 +46,15 @@ jobs:
             --volume "${PWD}:/seqwish"
           install: |
             apt-get update -q -y
-            apt-get install -q -y
-              git
-              bash
-              cmake
-              make
-              g++
-              libatomic-ops-dev
-              autoconf
-              libgsl-dev
-              zlib1g-dev
-              libzstd-dev
+            apt-get install -q -y \
+              cmake \
+              make \
+              g++ \
+              libatomic-ops-dev \
+              autoconf \
+              libgsl-dev \
+              zlib1g-dev \
+              libzstd-dev \
               libjemalloc-dev
           run: |
             cd /seqwish
