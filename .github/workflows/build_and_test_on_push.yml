@@ -48,7 +48,7 @@ jobs:
             --volume "${PWD}:/seqwish"
           install: |
             apt-get update -q -y
-            apt-get install -q -y sudo apt-get install -y
+            apt-get install -q -y
               git
               bash
               cmake
