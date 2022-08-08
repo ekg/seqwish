@@ -49,6 +49,7 @@ jobs:
               cmake \
               make \
               g++ \
+              file \
               libatomic-ops-dev \
               autoconf \
               libgsl-dev \
