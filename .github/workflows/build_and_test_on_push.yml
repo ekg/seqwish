@@ -30,7 +30,7 @@ jobs:
           libjemalloc-dev
       - name: Build seqwish for Linux x86_64
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
-        run: cmake -H. -DCMAKE_BUILD_TYPE=Debug -Bbuild && cmake --build build -- -j 2
+        run: cmake -H. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-mcx16" -DCMAKE_CXX_FLAGS="-mcx16" -Bbuild && cmake --build build -- -j 2
       - name: Execute tests for Linux x86_64
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: cd test && ASAN_OPTIONS=detect_leaks=1:symbolize=1 LSAN_OPTIONS=verbosity=0:log_threads=1 make test
