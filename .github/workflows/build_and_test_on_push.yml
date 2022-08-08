@@ -5,9 +5,19 @@ name: build and test
 jobs:
   build_and_test:
     runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-latest
+            arch: aarch64
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+        with: 
+          submodules: 'recursive'
       - name: Install required packages
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: sudo apt-get update && sudo apt-get install -y
           git
           bash
@@ -20,10 +30,37 @@ jobs:
           zlib1g-dev
           libzstd-dev
           libjemalloc-dev
-      - name: Init and update submodules
-        run: git submodule update --init --recursive
-      - name: Build seqwish
+      - name: Build seqwish for Linux x86_64
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: cmake -H. -DCMAKE_BUILD_TYPE=Debug -Bbuild && cmake --build build -- -j 2
-      - name: Execute tests
+      - name: Execute tests for Linux x86_64
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: cd test && ASAN_OPTIONS=detect_leaks=1:symbolize=1 LSAN_OPTIONS=verbosity=0:log_threads=1 make test
 
+      - name: Build and test seqwish for Linux ${{ matrix.arch }}
+        if: matrix.os == 'ubuntu-latest' && matrix.arch != 'x86_64'
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ubuntu20.04
+          githubToken: ${{ github.token }}
+          dockerRunArgs: |
+            --volume "${PWD}:/seqwish"
+          install: |
+            apt-get update -q -y
+            apt-get install -q -y sudo apt-get install -y
+              git
+              bash
+              cmake
+              make
+              g++
+              libatomic-ops-dev
+              autoconf
+              libgsl-dev
+              zlib1g-dev
+              libzstd-dev
+              libjemalloc-dev
+          run: |
+            cd /seqwish
+            cmake -H. -DCMAKE_BUILD_TYPE=Debug -Bbuild && cmake --build build -- -j 2
+            cd test && ASAN_OPTIONS=detect_leaks=1:symbolize=1 LSAN_OPTIONS=verbosity=0:log_threads=1 make test
