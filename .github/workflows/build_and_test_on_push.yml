@@ -42,14 +42,16 @@ jobs:
           arch: ${{ matrix.arch }}
           distro: ubuntu20.04
           githubToken: ${{ github.token }}
-          dockerRunArgs: --volume "${PWD}:/seqwish" --cap-add=ALL
+          dockerRunArgs: |
+            --volume "${PWD}:/seqwish" 
+            --cap-add=ALL
           install: |
             apt-get update -q -y
             apt-get install -q -y \
               cmake \
               make \
               g++ \
-              file \
+              git \
               libatomic-ops-dev \
               autoconf \
               libgsl-dev \
