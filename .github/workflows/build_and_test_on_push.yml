@@ -44,7 +44,6 @@ jobs:
           githubToken: ${{ github.token }}
           dockerRunArgs: |
             --volume "${PWD}:/seqwish" 
-            --cap-add=ALL
           install: |
             apt-get update -q -y
             apt-get install -q -y \
@@ -63,4 +62,4 @@ jobs:
             cd /seqwish
             cmake -H. -DCMAKE_BUILD_TYPE=Debug -Bbuild && cmake --build build -- -j 2
             file bin/seqwish 
-            cd test && ASAN_OPTIONS=detect_leaks=1:symbolize=1 LSAN_OPTIONS=verbosity=0:log_threads=1 make test
+            cd test && make test
