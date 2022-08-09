@@ -52,6 +52,7 @@ jobs:
               make \
               g++ \
               git \
+              file \
               libatomic-ops-dev \
               autoconf \
               libgsl-dev \
