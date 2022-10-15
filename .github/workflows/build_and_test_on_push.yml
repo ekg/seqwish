@@ -62,6 +62,6 @@ jobs:
               libjemalloc-dev
           run: |
             cd /seqwish
-            cmake -H. -DCMAKE_BUILD_TYPE=Debug -Bbuild && cmake --build build -- -j 2
+            cmake -H. -DCMAKE_BUILD_TYPE=Release -Bbuild && cmake --build build -- -j 2
             file bin/seqwish 
             cd test && make test
