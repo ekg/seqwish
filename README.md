@@ -99,7 +99,7 @@ Static builds are unlikely to be supported on OSX, and require appropriate stati
 #### clang
 
 If you want to use `clang`, be sure to install the correct version of `OpenMP`.
-For example, if you have `¢lang version 14`, you have to install `libomp-14-dev`:
+For example, if you have `clang version 14`, you have to install `libomp-14-dev`:
 
 ```
 sudo apt -y install libomp-14-dev
