@@ -96,6 +96,21 @@ cmake -DBUILD_STATIC=1 -H. -Bbuild && cmake --build build -- -j 3
 You'll need to set this flag to 0 or remove and rebuild your build directory if you want to unset this behavior.
 Static builds are unlikely to be supported on OSX, and require appropriate static libraries on linux.
 
+#### clang
+
+If you want to use `clang`, be sure to install the correct version of `OpenMP`.
+For example, if you have `clang version 14`, you have to install `libomp-14-dev`:
+
+```
+sudo apt -y install libomp-14-dev
+```
+
+To build `seqwish` with `clang`, execute:
+
+```
+cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ && cmake --build build -- -j 3
+```
+
 #### Notes for distribution
 
 If you need to avoid machine-specific optimizations, use the `CMAKE_BUILD_TYPE=Generic` build type:
