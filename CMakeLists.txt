@@ -24,6 +24,8 @@ message(STATUS "CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
 if (${CMAKE_BUILD_TYPE} MATCHES Release)
   set(EXTRA_FLAGS "-Ofast -march=native")
   set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG") # reset CXX_FLAGS to replace -O3 with -Ofast
+else()
+  set(EXTRA_FLAGS "-march=haswell")
 endif ()
 
 if (${CMAKE_BUILD_TYPE} MATCHES Debug)
