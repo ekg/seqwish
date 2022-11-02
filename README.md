@@ -111,13 +111,22 @@ To build `seqwish` with `clang`, execute:
 cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ && cmake --build build -- -j 3
 ```
 
-#### Notes for distribution
+#### Notes for distribution and ARM64 systems
 
-If you need to avoid machine-specific optimizations, use the `CMAKE_BUILD_TYPE=Generic` build type:
+If you need machine-specific optimizations, use `-DEXTRA_FLAGS` to specify your architecture.
+
+For example, on Linux ARM64 systems, do:
 
 ```shell
-cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Generic && cmake --build build -- -j 3
+cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Generic -DEXTRA_FLAGS='-march=armv8-a' && cmake --build build -- -j 3
 ```
+
+For Docker image distribution, `-march=haswell` works decently:
+
+```shell
+cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Generic -DEXTRA_FLAGS='-march=haswell' && cmake --build build -- -j 3
+```
+
 
 ### Docker
 
