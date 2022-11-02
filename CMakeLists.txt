@@ -22,7 +22,7 @@ message(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 message(STATUS "CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
 
 if(NOT DEFINED EXTRA_FLAGS)
-  set(EXTRA_FLAGS "-march=haswell" CACHE STRING
+  set(EXTRA_FLAGS "-march=native" CACHE STRING
           "Extra compilation flags for C and CXX." FORCE)
 endif()
 
