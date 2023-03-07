@@ -12,6 +12,9 @@ As input we typically take all-versus-all alignments, but the exact structure of
 This algorithm uses a series of disk-backed sorts and passes over the alignment and sequence inputs to allow the graph to be constructed from very large inputs that are commonly encountered when working with large numbers of noisy input sequences. 
 Memory usage during construction and traversal is limited by the use of sorted disk-backed arrays and succinct rank/select dictionaries to record a queryable version of the graph.
 
+## Citation:
+Erik Garrison, Andrea Guarracino, **Unbiased pangenome graphs**, Bioinformatics, Volume 39, Issue 1, January 2023, btac743, https://doi.org/10.1093/bioinformatics/btac743
+
 ## squish graph induction algorithm
 
 As input we have *Q*, which is a concatenation of the sequences from which we will build the graph.
