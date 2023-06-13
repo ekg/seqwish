@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include "cigar.hpp"
 
 namespace seqwish {
