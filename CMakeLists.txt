@@ -7,6 +7,8 @@ project(seqwish)
 # We build using c++14
 set(CMAKE_CXX_STANDARD 14)
 
+include(GNUInstallDirs)
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
@@ -25,6 +27,8 @@ if(NOT DEFINED EXTRA_FLAGS)
   set(EXTRA_FLAGS "-march=native" CACHE STRING
           "Extra compilation flags for C and CXX." FORCE)
 endif()
+
+set(SEQWISH_LINK_SHARED_LIBRARY OFF CACHE BOOL "Do not link against the libseqwish shared library")
 
 if (${CMAKE_BUILD_TYPE} MATCHES Release)
   set(EXTRA_FLAGS "-Ofast ${EXTRA_FLAGS}")
@@ -82,7 +86,7 @@ include(${CMAKE_ROOT}/Modules/ExternalProject.cmake)
 # sdsl-lite (full build using its cmake config)
 ExternalProject_Add(sdsl-lite
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps/sdsl-lite"
-  CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
+  CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_CXX_FLAGS=-fPIC;-DCMAKE_C_FLAGS=-fPIC;-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
   UPDATE_COMMAND ""
   INSTALL_COMMAND "")
 ExternalProject_Get_property(sdsl-lite INSTALL_DIR)
@@ -203,8 +207,8 @@ set(mio_INCLUDE "${SOURCE_DIR}/include")
 #set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
 
-# set up our target executable and specify its dependencies and includes
-add_executable(seqwish
+# set up our target libraries and specify their dependencies and includes
+add_library( libseqwish_static
   ${CMAKE_SOURCE_DIR}/src/utils.cpp
   ${CMAKE_SOURCE_DIR}/src/tempfile.cpp
   ${CMAKE_SOURCE_DIR}/src/main.cpp
@@ -224,6 +228,104 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/exists.cpp
   ${CMAKE_SOURCE_DIR}/src/time.cpp
   ${CMAKE_SOURCE_DIR}/src/mmap.cpp
+  )
+add_dependencies(libseqwish_static tayweeargs)
+add_dependencies(libseqwish_static sdsl-lite)
+add_dependencies(libseqwish_static gzipreader)
+add_dependencies(libseqwish_static mmmulti)
+add_dependencies(libseqwish_static iitii)
+add_dependencies(libseqwish_static ips4o)
+add_dependencies(libseqwish_static bbhash)
+add_dependencies(libseqwish_static atomicbitvector)
+add_dependencies(libseqwish_static atomicqueue)
+add_dependencies(libseqwish_static ska)
+add_dependencies(libseqwish_static paryfor)
+add_dependencies(libseqwish_static mio)
+target_include_directories(libseqwish_static PUBLIC
+  "${sdsl-lite_INCLUDE}"
+  "${sdsl-lite-divsufsort_INCLUDE}"
+  "${tayweeargs_INCLUDE}"
+  "${gzipreader_INCLUDE}"
+  "${ips4o_INCLUDE}"
+  "${mmmulti_INCLUDE}"
+  "${iitii_INCLUDE}"
+  "${bbhash_INCLUDE}"
+  "${atomicbitvector_INCLUDE}"
+  "${atomicqueue_INCLUDE}"
+  "${ska_INCLUDE}"
+  "${paryfor_INCLUDE}"
+  "${mio_INCLUDE}")
+target_link_libraries(libseqwish_static
+  "${sdsl-lite_LIB}/libsdsl.a"
+  "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
+  "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
+  "-latomic"
+  Threads::Threads
+  jemalloc
+  z)
+set_target_properties(libseqwish_static PROPERTIES OUTPUT_NAME "seqwish")
+
+add_library( libseqwish SHARED
+  ${CMAKE_SOURCE_DIR}/src/utils.cpp
+  ${CMAKE_SOURCE_DIR}/src/tempfile.cpp
+  ${CMAKE_SOURCE_DIR}/src/main.cpp
+  ${CMAKE_SOURCE_DIR}/src/seqindex.cpp
+  ${CMAKE_SOURCE_DIR}/src/paf.cpp
+  ${CMAKE_SOURCE_DIR}/src/sxs.cpp
+  ${CMAKE_SOURCE_DIR}/src/cigar.cpp
+  ${CMAKE_SOURCE_DIR}/src/alignments.cpp
+  ${CMAKE_SOURCE_DIR}/src/pos.cpp
+  ${CMAKE_SOURCE_DIR}/src/match.cpp
+  ${CMAKE_SOURCE_DIR}/src/transclosure.cpp
+  ${CMAKE_SOURCE_DIR}/src/links.cpp
+  ${CMAKE_SOURCE_DIR}/src/compact.cpp
+  ${CMAKE_SOURCE_DIR}/src/dna.cpp
+  ${CMAKE_SOURCE_DIR}/src/gfa.cpp
+  ${CMAKE_SOURCE_DIR}/src/vgp.cpp
+  ${CMAKE_SOURCE_DIR}/src/exists.cpp
+  ${CMAKE_SOURCE_DIR}/src/time.cpp
+  ${CMAKE_SOURCE_DIR}/src/mmap.cpp
+  ${CMAKE_SOURCE_DIR}/src/version.cpp
+  )
+add_dependencies(libseqwish tayweeargs)
+add_dependencies(libseqwish sdsl-lite)
+add_dependencies(libseqwish gzipreader)
+add_dependencies(libseqwish mmmulti)
+add_dependencies(libseqwish iitii)
+add_dependencies(libseqwish ips4o)
+add_dependencies(libseqwish bbhash)
+add_dependencies(libseqwish atomicbitvector)
+add_dependencies(libseqwish atomicqueue)
+add_dependencies(libseqwish ska)
+add_dependencies(libseqwish paryfor)
+add_dependencies(libseqwish mio)
+target_include_directories(libseqwish PUBLIC
+  "${sdsl-lite_INCLUDE}"
+  "${sdsl-lite-divsufsort_INCLUDE}"
+  "${tayweeargs_INCLUDE}"
+  "${gzipreader_INCLUDE}"
+  "${ips4o_INCLUDE}"
+  "${mmmulti_INCLUDE}"
+  "${iitii_INCLUDE}"
+  "${bbhash_INCLUDE}"
+  "${atomicbitvector_INCLUDE}"
+  "${atomicqueue_INCLUDE}"
+  "${ska_INCLUDE}"
+  "${paryfor_INCLUDE}"
+  "${mio_INCLUDE}")
+target_link_libraries(libseqwish
+  "${sdsl-lite_LIB}/libsdsl.a"
+  "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
+  "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
+  "-latomic"
+  Threads::Threads
+  jemalloc
+  z)
+set_target_properties(libseqwish PROPERTIES OUTPUT_NAME "seqwish")
+
+# set up our target executable and specify its dependencies and includes
+add_executable(seqwish
+  ${CMAKE_SOURCE_DIR}/src/main.cpp
   ${CMAKE_SOURCE_DIR}/src/version.cpp
   )
 add_dependencies(seqwish tayweeargs)
@@ -252,6 +354,11 @@ target_include_directories(seqwish PUBLIC
   "${ska_INCLUDE}"
   "${paryfor_INCLUDE}"
   "${mio_INCLUDE}")
+if( SEQWISH_LINK_SHARED_LIBRARY )
+    target_link_libraries( seqwish libseqwish )
+else()
+    target_link_libraries( seqwish libseqwish_static )
+endif()
 target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
@@ -269,4 +376,6 @@ endif()
 file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/include)
 execute_process(COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/generate_git_version.sh ${CMAKE_SOURCE_DIR}/include)
 
-install(TARGETS seqwish DESTINATION bin)
+install(TARGETS seqwish DESTINATION "${CMAKE_INSTALL_BIDIR}")
+install(TARGETS libseqwish LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+install(TARGETS libseqwish_static ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
