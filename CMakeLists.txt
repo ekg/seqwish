@@ -256,7 +256,7 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
-  "-latomic"
+  $<$<NOT:$<STREQUAL:${CMAKE_SYSTEM_NAME},Darwin>>:-latomic>
   Threads::Threads
   jemalloc
   z)
