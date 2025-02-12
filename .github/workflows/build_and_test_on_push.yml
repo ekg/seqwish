@@ -59,7 +59,8 @@ jobs:
               libgsl-dev \
               zlib1g-dev \
               libzstd-dev \
-              libjemalloc-dev
+              libjemalloc-dev \
+              libpthread-stubs0-dev
           run: |
             cd /seqwish
             cmake -H. -DCMAKE_BUILD_TYPE=Release -DEXTRA_FLAGS="-march=armv8-a" -Bbuild && cmake --build build -- -j 2
