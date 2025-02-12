@@ -63,6 +63,6 @@ jobs:
               libpthread-stubs0-dev
           run: |
             cd /seqwish
-            cmake -H. -DCMAKE_BUILD_TYPE=Release -DEXTRA_FLAGS="-march=armv8-a" -Bbuild && cmake --build build -- -j 2
+            cmake -H. -DCMAKE_BUILD_TYPE=Release -DEXTRA_FLAGS="-march=armv8-a -pthread" -Bbuild && cmake --build build -- -j 2
             file bin/seqwish 
             cd test && make test
