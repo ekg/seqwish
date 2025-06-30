@@ -116,9 +116,9 @@ int main(int argc, char** argv) {
     if (tmp_base) {
         temp_file::set_dir(args::get(tmp_base));
     } else {
-        char* cwd = get_current_dir_name();
+        char cwd[512];
+        getcwd(cwd, sizeof(cwd));
         temp_file::set_dir(std::string(cwd));
-        free(cwd);
     }
 
     temp_file::set_keep_temp(args::get(keep_temp_files));
