@@ -61,6 +61,7 @@ jobs:
               libzstd-dev \
               libjemalloc-dev \
               libpthread-stubs0-dev
+              pkg-config
           run: |
             cd /seqwish
             cmake -H. -DCMAKE_BUILD_TYPE=Release -DEXTRA_FLAGS="-march=armv8-a -pthread" -Bbuild && cmake --build build -- -j 2
