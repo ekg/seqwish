@@ -96,9 +96,9 @@ namespace temp_file {
 
         // Get the default temp dir from environment variables.
         if (temp_dir.empty()) {
-            char* cwd = get_current_dir_name();
+            char cwd[512];
+            getcwd(cwd, sizeof(cwd));
             temp_dir = std::string(cwd);
-            free(cwd);
             /*const char *system_temp_dir = nullptr;
             for (const char *var_name : {"TMPDIR", "TMP", "TEMP", "TEMPDIR", "USERPROFILE"}) {
                 if (system_temp_dir == nullptr) {

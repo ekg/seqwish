@@ -30,6 +30,7 @@ jobs:
           zlib1g-dev
           libzstd-dev
           libjemalloc-dev
+          pkg-config
       - name: Build seqwish for Linux x86_64
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: cmake -H. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-mcx16" -DCMAKE_CXX_FLAGS="-mcx16" -Bbuild && cmake --build build -- -j 2
@@ -60,7 +61,8 @@ jobs:
               zlib1g-dev \
               libzstd-dev \
               libjemalloc-dev \
-              libpthread-stubs0-dev
+              libpthread-stubs0-dev \
+              pkg-config
           run: |
             cd /seqwish
             cmake -H. -DCMAKE_BUILD_TYPE=Release -DEXTRA_FLAGS="-march=armv8-a -pthread" -Bbuild && cmake --build build -- -j 2
