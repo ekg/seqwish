@@ -9,6 +9,24 @@ set(CMAKE_CXX_STANDARD 14)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+# --- Start: Logic for using JEMALLOC on Apple Silicon ---
+set(JEMALLOC_LINK_LIBRARIES "jemalloc")
+
+if (APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64"))
+  pkg_check_modules(HOMEBREW_JEMALLOC QUIET jemalloc)
+  if (HOMEBREW_JEMALLOC_FOUND)
+    set(JEMALLOC_LINK_LIBRARIES ${HOMEBREW_JEMALLOC_LINK_LIBRARIES})
+    message(STATUS "Apple Silicon: Found Homebrew Jemalloc. Will use it.")
+    message(STATUS "  Homebrew jemalloc Includes: ${HOMEBREW_JEMALLOC_INCLUDE_DIRS}")
+    message(STATUS "  Homebrew jemalloc Link Libraries: ${HOMEBREW_JEMALLOC_LINK_LIBRARIES}")
+  else()
+    message(WARNING "Apple Silicon: Homebrew jemalloc not found via pkg-config. Will try using default jemalloc.")
+  endif ()
+  message(STATUS "jemalloc Link Library: ${JEMALLOC_LINK_LIBRARIES}")
+endif ()
+# --- End: Logic for using Homebrew HTSlib, GSL, and LibDeflate on Apple Silicon ---
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING
@@ -78,6 +96,11 @@ include_directories("${PROJECT_SOURCE_DIR}")
 
 # Add external projects
 include(${CMAKE_ROOT}/Modules/ExternalProject.cmake)
+
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "4.0")
+  # Compatibility with CMake < 3.5 has been removed from CMake starting 4.0
+  set(CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_POLICY_VERSION_MINIMUM=3.5")
+endif()
 
 # sdsl-lite (full build using its cmake config)
 ExternalProject_Add(sdsl-lite
@@ -256,10 +279,15 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
-  "-latomic"
   Threads::Threads
-  jemalloc
+  "${JEMALLOC_LINK_LIBRARIES}"
   z)
+
+# macOS does not need `-latomic` to use atomics.
+if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  target_link_libraries(seqwish "-latomic")
+endif()
+
 if (BUILD_STATIC)
   #set(CMAKE_EXE_LINKER_FLAGS "-static")
   set(CMAKE_EXE_LINKER_FLAGS "-static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
