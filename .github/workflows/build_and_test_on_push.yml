@@ -61,7 +61,7 @@ jobs:
               zlib1g-dev \
               libzstd-dev \
               libjemalloc-dev \
-              libpthread-stubs0-dev
+              libpthread-stubs0-dev \
               pkg-config
           run: |
             cd /seqwish
