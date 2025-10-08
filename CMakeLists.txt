@@ -65,15 +65,55 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") # untested
   # TODO: can't we though?
   # adapted from https://stackoverflow.com/questions/46414660/macos-cmake-and-openmp
   # find_package(OpenMP) does not work reliably on macOS, so we do its work ourselves
+  set (HOMEBREW_PREFIX "$ENV{HOMEBREW_PREFIX}")
+  if ("${HOMEBREW_PREFIX}" STREQUAL "")
+    # We sometimes (like on Github Actions) have Homebrew but no HOMEBREW_PREFIX environment variable.
+    # Ask Homebrew if it exists and where it is.
+    # Returns an empty string if this command can't run.
+    execute_process(COMMAND brew --prefix OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE HOMEBREW_PREFIX)
+  endif()
+  if ("${HOMEBREW_PREFIX}" STREQUAL "")
+    # Default to somewhere.
+    set (HOMEBREW_PREFIX "/opt/homebrew")
+  else()
+    message("Homebrew appears to be installed in ${HOMEBREW_PREFIX}")
+  endif()
+
+  find_path(OMP_INCLUDE_PATH omp.h
+            PATHS "${HOMEBREW_PREFIX}/opt/libomp/include" "${HOMEBREW_PREFIX}/include" /opt/local/include/libomp /usr/local/include
+            REQUIRED)
+  if ("${OMP_INCLUDE_PATH}" STREQUAL "")
+    # REQUIRED is a new CMake feature
+    message(FATAL_ERROR "Could not find omp.h")
+  else()
+    message("Found libomp headers in ${OMP_INCLUDE_PATH}")
+  endif()
+            
+  find_path(OMP_LIB_PATH libomp.dylib
+            PATHS "${HOMEBREW_PREFIX}/opt/libomp/lib" "${HOMEBREW_PREFIX}/lib" /opt/local/lib /usr/local/lib
+            REQUIRED)
+  if ("${OMP_LIB_PATH}" STREQUAL "")
+    # REQUIRED is a new CMake feature
+    message(FATAL_ERROR "Could not find libomp.dylib")
+  else()
+    message("Found libomp libraries in ${OMP_LIB_PATH}")
+  endif()
+  
+  set (OMP_INCLUDE_FLAGS "-I${OMP_INCLUDE_PATH}")
+  set (OMP_LIB_FLAGS "-L${OMP_LIB_PATH}")
+
   set (OpenMP_C "${CMAKE_C_COMPILER}")
-  set (OpenMP_C_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
+  set (OpenMP_C_FLAGS " -Xpreprocessor -fopenmp ${OMP_INCLUDE_FLAGS}")
   set (OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5")
   set (OpenMP_CXX "${CMAKE_CXX_COMPILER}")
-  set (OpenMP_CXX_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
+  set (OpenMP_CXX_FLAGS " -Xpreprocessor -fopenmp ${OMP_INCLUDE_FLAGS}")
   set (OpenMP_CXX_LIB_NAMES "libomp" "libgomp" "libiomp5")
+  set (OpenMP_EXE_LINKER_FLAGS "${OMP_LIB_FLAGS}")
+  set (OpenMP_SHARED_LINKER_FLAGS "${OMP_LIB_FLAGS}")
   set (OpenMP_libomp_LIBRARY "omp")
   set (OpenMP_libgomp_LIBRARY "gomp")
   set (OpenMP_libiomp5_LIBRARY "iomp5")
+  
   # and now add the OpenMP parameters to the compile flags
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
