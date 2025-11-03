@@ -7,6 +7,7 @@ pub mod dna;
 pub mod cigar;
 pub mod mmap;
 pub mod utils;
+pub mod time;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -399,6 +400,14 @@ pub extern "C" fn handy_parameter(value: *const c_char, default_value: f64) -> f
     };
 
     utils::handy_parameter(value_str, default_value)
+}
+
+// FFI wrappers for time module
+
+/// Get milliseconds since Unix epoch
+#[no_mangle]
+pub extern "C" fn time_since_epoch_ms() -> u64 {
+    time::time_since_epoch_ms()
 }
 
 #[cfg(test)]
