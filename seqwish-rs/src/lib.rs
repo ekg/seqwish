@@ -8,6 +8,7 @@ pub mod cigar;
 pub mod mmap;
 pub mod utils;
 pub mod time;
+pub mod paf;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -408,6 +409,35 @@ pub extern "C" fn handy_parameter(value: *const c_char, default_value: f64) -> f
 #[no_mangle]
 pub extern "C" fn time_since_epoch_ms() -> u64 {
     time::time_since_epoch_ms()
+}
+
+// FFI wrappers for paf module
+
+/// Parse PAF spec string, calling callback for each (filename, weight) pair
+/// Callback signature: void callback(void* user_data, const char* filename, uint64_t weight)
+#[no_mangle]
+pub extern "C" fn parse_paf_spec(
+    spec: *const c_char,
+    user_data: *mut std::ffi::c_void,
+    callback: Option<extern "C" fn(*mut std::ffi::c_void, *const c_char, u64)>,
+) {
+    if spec.is_null() || callback.is_none() {
+        return;
+    }
+
+    let spec_str = unsafe {
+        match CStr::from_ptr(spec).to_str() {
+            Ok(s) => s,
+            Err(_) => return,
+        }
+    };
+
+    let callback_fn = callback.unwrap();
+    for (filename, weight) in paf::parse_paf_spec(spec_str) {
+        if let Ok(c_filename) = CString::new(filename) {
+            callback_fn(user_data, c_filename.as_ptr(), weight);
+        }
+    }
 }
 
 #[cfg(test)]

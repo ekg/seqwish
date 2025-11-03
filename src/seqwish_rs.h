@@ -171,6 +171,14 @@ double handy_parameter(const char *value, double default_value);
  */
 uint64_t time_since_epoch_ms(void);
 
+/**
+ * Parse PAF spec string, calling callback for each (filename, weight) pair
+ * Callback signature: void callback(void* user_data, const char* filename, uint64_t weight)
+ */
+void parse_paf_spec(const char *spec,
+                    void *user_data,
+                    void (*callback)(void*, const char*, uint64_t));
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
