@@ -4,6 +4,7 @@ use std::ptr;
 pub mod tempfile;
 pub mod pos;
 pub mod dna;
+pub mod cigar;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -223,6 +224,89 @@ pub extern "C" fn dna_reverse_complement_in_place(seq: *mut c_char, len: usize) 
     unsafe {
         let slice = std::slice::from_raw_parts_mut(seq as *mut u8, len);
         dna::reverse_complement_in_place(slice);
+    }
+}
+
+// FFI wrappers for cigar module
+
+/// Opaque handle to CIGAR vector
+pub struct CigarHandle {
+    cigar: Vec<cigar::CigarOp>,
+}
+
+/// Parse CIGAR string and return handle to CIGAR vector
+/// Returns NULL on error. Must be freed with cigar_free.
+#[no_mangle]
+pub extern "C" fn cigar_from_string(s: *const c_char) -> *mut CigarHandle {
+    if s.is_null() {
+        return ptr::null_mut();
+    }
+
+    let s_str = unsafe {
+        match CStr::from_ptr(s).to_str() {
+            Ok(s) => s,
+            Err(_) => return ptr::null_mut(),
+        }
+    };
+
+    let cigar = cigar::cigar_from_string(s_str);
+    Box::into_raw(Box::new(CigarHandle { cigar }))
+}
+
+/// Convert CIGAR vector to string
+/// Returns C string that must be freed with temp_file_free_string
+#[no_mangle]
+pub extern "C" fn cigar_to_string(handle: *const CigarHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+
+    let cigar_handle = unsafe { &*handle };
+    let s = cigar::cigar_to_string(&cigar_handle.cigar);
+
+    match CString::new(s) {
+        Ok(c_string) => c_string.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Get number of operations in CIGAR
+#[no_mangle]
+pub extern "C" fn cigar_length(handle: *const CigarHandle) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    let cigar_handle = unsafe { &*handle };
+    cigar_handle.cigar.len()
+}
+
+/// Get operation at index
+/// Returns false if index out of bounds
+#[no_mangle]
+pub extern "C" fn cigar_get_op(handle: *const CigarHandle, index: usize, len_out: *mut u64, op_out: *mut u8) -> bool {
+    if handle.is_null() || len_out.is_null() || op_out.is_null() {
+        return false;
+    }
+
+    let cigar_handle = unsafe { &*handle };
+    if index >= cigar_handle.cigar.len() {
+        return false;
+    }
+
+    unsafe {
+        *len_out = cigar_handle.cigar[index].len;
+        *op_out = cigar_handle.cigar[index].op;
+    }
+    true
+}
+
+/// Free CIGAR handle
+#[no_mangle]
+pub extern "C" fn cigar_free(handle: *mut CigarHandle) {
+    if !handle.is_null() {
+        unsafe {
+            let _ = Box::from_raw(handle);
+        }
     }
 }
 
