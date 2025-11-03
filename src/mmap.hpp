@@ -11,11 +11,30 @@
 #include <unistd.h>
 #include <string>
 #include <cassert>
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
-size_t mmap_open(const std::string& filename, char*& buf, int& fd);
-void mmap_close(char*& buf, int& fd, size_t fsize);
+inline size_t mmap_open(const std::string& filename, char*& buf, int& fd) {
+    char* buf_tmp = nullptr;
+    int fd_tmp = -1;
+    size_t size = ::mmap_open_rust(filename.c_str(), &buf_tmp, &fd_tmp);
+
+    if (size == 0) {
+        // Error occurred
+        assert(false);
+    }
+
+    buf = buf_tmp;
+    fd = fd_tmp;
+    return size;
+}
+
+inline void mmap_close(char*& buf, int& fd, size_t fsize) {
+    ::mmap_close_rust(buf, fd, fsize);
+    buf = nullptr;
+    fd = 0;
+}
 
 }
 
