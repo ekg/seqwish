@@ -14,8 +14,12 @@ struct match_t {
 
 match_t get_match(mmmulti::iitree<uint64_t, pos_t>& iitree, uint64_t idx);
 
-bool operator<(const match_t& a, const match_t& b);
+inline bool operator<(const match_t& a, const match_t& b) {
+    return a.start < b.start && a.end < b.end && a.pos < b.pos;
+}
 
-bool operator==(const match_t& a, const match_t& b);
+inline bool operator==(const match_t& a, const match_t& b) {
+    return a.start == b.start && a.end == b.end && a.pos == b.pos;
+}
 
 }
