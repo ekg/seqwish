@@ -23,6 +23,7 @@
 #include "utils.hpp"
 #include "version.hpp"
 #include "tempfile.hpp"
+#include "seqwish_rs.h"
 
 using namespace seqwish;
 
@@ -63,6 +64,8 @@ int main(int argc, char** argv) {
 
 	if (version) {
 		std::cerr << seqwish::Version::get_version() << std::endl;
+		std::cerr << "Rust component version: " << seqwish_rust_version() << std::endl;
+		std::cerr << "Rust FFI test (2 + 3 = " << seqwish_rust_add(2, 3) << ")" << std::endl;
 		exit(0);
 	}
 

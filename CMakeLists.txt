@@ -200,13 +200,23 @@ ExternalProject_Add(mio
 ExternalProject_Get_property(mio SOURCE_DIR)
 set(mio_INCLUDE "${SOURCE_DIR}/include")
 
+# Rust library (seqwish-rs)
+set(RUST_LIB "${CMAKE_SOURCE_DIR}/seqwish-rs/target/release/libseqwish_rs.a")
+set(RUST_HEADER "${CMAKE_SOURCE_DIR}/src/seqwish_rs.h")
+add_custom_target(seqwish_rs_target ALL
+    COMMAND cargo build --release
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/seqwish-rs/seqwish_rs.h ${RUST_HEADER}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/seqwish-rs
+    BYPRODUCTS ${RUST_LIB}
+    COMMENT "Building Rust library"
+)
+
 #set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
 
 # set up our target executable and specify its dependencies and includes
 add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/utils.cpp
-  ${CMAKE_SOURCE_DIR}/src/tempfile.cpp
   ${CMAKE_SOURCE_DIR}/src/main.cpp
   ${CMAKE_SOURCE_DIR}/src/seqindex.cpp
   ${CMAKE_SOURCE_DIR}/src/paf.cpp
@@ -238,6 +248,7 @@ add_dependencies(seqwish atomicqueue)
 add_dependencies(seqwish ska)
 add_dependencies(seqwish paryfor)
 add_dependencies(seqwish mio)
+add_dependencies(seqwish seqwish_rs_target)
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -256,10 +267,18 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
+  "-Wl,--whole-archive"
+  ${RUST_LIB}
+  "-Wl,--no-whole-archive"
   "-latomic"
   Threads::Threads
   jemalloc
-  z)
+  z
+  dl
+  gcc_s
+  pthread
+  c
+  m)
 if (BUILD_STATIC)
   #set(CMAKE_EXE_LINKER_FLAGS "-static")
   set(CMAKE_EXE_LINKER_FLAGS "-static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
