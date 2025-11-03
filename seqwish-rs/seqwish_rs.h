@@ -3,6 +3,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+/**
+ * Opaque handle to CIGAR vector
+ */
+typedef struct CigarHandle CigarHandle;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -92,6 +97,74 @@ uint64_t pos_rev_pos_t(uint64_t pos);
  * Convert position to string (returns C string that must be freed)
  */
 char *pos_to_string_c(uint64_t pos);
+
+/**
+ * Get complement of a single DNA base
+ */
+uint8_t dna_complement(uint8_t c);
+
+/**
+ * Reverse complement a DNA sequence (allocates new string that must be freed)
+ */
+void dna_reverse_complement(const char *seq, uintptr_t len, char *out);
+
+/**
+ * Reverse complement a DNA sequence in place
+ */
+void dna_reverse_complement_in_place(char *seq, uintptr_t len);
+
+/**
+ * Parse CIGAR string and return handle to CIGAR vector
+ * Returns NULL on error. Must be freed with cigar_free.
+ */
+struct CigarHandle *cigar_from_string(const char *s);
+
+/**
+ * Convert CIGAR vector to string
+ * Returns C string that must be freed with temp_file_free_string
+ */
+char *cigar_to_string(const struct CigarHandle *handle);
+
+/**
+ * Get number of operations in CIGAR
+ */
+uintptr_t cigar_length(const struct CigarHandle *handle);
+
+/**
+ * Get operation at index
+ * Returns false if index out of bounds
+ */
+bool cigar_get_op(const struct CigarHandle *handle,
+                  uintptr_t index,
+                  uint64_t *len_out,
+                  uint8_t *op_out);
+
+/**
+ * Free CIGAR handle
+ */
+void cigar_free(struct CigarHandle *handle);
+
+/**
+ * Open a file and memory-map it
+ * Returns the file size on success, 0 on error
+ * The buffer pointer and file descriptor are written to the provided pointers
+ */
+uintptr_t mmap_open_rust(const char *filename, char **buf_out, int32_t *fd_out);
+
+/**
+ * Close a memory-mapped file
+ */
+void mmap_close_rust(char *buf, int32_t fd, uintptr_t size);
+
+/**
+ * Check if a file exists
+ */
+bool file_exists(const char *filename);
+
+/**
+ * Parse a number with optional suffix (k, m, g)
+ */
+double handy_parameter(const char *value, double default_value);
 
 #ifdef __cplusplus
 }  // extern "C"

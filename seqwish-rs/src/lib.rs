@@ -6,6 +6,7 @@ pub mod pos;
 pub mod dna;
 pub mod cigar;
 pub mod mmap;
+pub mod utils;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -362,6 +363,42 @@ pub extern "C" fn mmap_close_rust(buf: *mut c_char, fd: i32, size: usize) {
     };
 
     mmap::mmap_close(&mut handle);
+}
+
+// FFI wrappers for utils module
+
+/// Check if a file exists
+#[no_mangle]
+pub extern "C" fn file_exists(filename: *const c_char) -> bool {
+    if filename.is_null() {
+        return false;
+    }
+
+    let filename_str = unsafe {
+        match CStr::from_ptr(filename).to_str() {
+            Ok(s) => s,
+            Err(_) => return false,
+        }
+    };
+
+    utils::file_exists(filename_str)
+}
+
+/// Parse a number with optional suffix (k, m, g)
+#[no_mangle]
+pub extern "C" fn handy_parameter(value: *const c_char, default_value: f64) -> f64 {
+    if value.is_null() {
+        return default_value;
+    }
+
+    let value_str = unsafe {
+        match CStr::from_ptr(value).to_str() {
+            Ok(s) => s,
+            Err(_) => return default_value,
+        }
+    };
+
+    utils::handy_parameter(value_str, default_value)
 }
 
 #[cfg(test)]
