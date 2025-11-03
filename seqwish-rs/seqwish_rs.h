@@ -166,6 +166,11 @@ bool file_exists(const char *filename);
  */
 double handy_parameter(const char *value, double default_value);
 
+/**
+ * Get milliseconds since Unix epoch
+ */
+uint64_t time_since_epoch_ms(void);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

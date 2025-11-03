@@ -227,7 +227,6 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/compact.cpp
   ${CMAKE_SOURCE_DIR}/src/gfa.cpp
   ${CMAKE_SOURCE_DIR}/src/vgp.cpp
-  ${CMAKE_SOURCE_DIR}/src/time.cpp
   ${CMAKE_SOURCE_DIR}/src/version.cpp
   )
 add_dependencies(seqwish tayweeargs)
