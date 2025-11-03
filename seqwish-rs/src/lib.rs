@@ -2,6 +2,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::ptr;
 
 pub mod tempfile;
+pub mod pos;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -110,6 +111,82 @@ pub extern "C" fn temp_file_free_string(s: *mut c_char) {
         unsafe {
             let _ = CString::from_raw(s);
         }
+    }
+}
+
+// FFI wrappers for pos module
+
+/// Create a position from offset and orientation
+#[no_mangle]
+pub extern "C" fn pos_make_pos_t(offset: u64, is_rev: bool) -> u64 {
+    pos::make_pos_t(offset, is_rev)
+}
+
+/// Extract offset from position
+#[no_mangle]
+pub extern "C" fn pos_offset(pos: u64) -> u64 {
+    pos::offset(pos)
+}
+
+/// Check if position is reverse
+#[no_mangle]
+pub extern "C" fn pos_is_rev(pos: u64) -> bool {
+    pos::is_rev(pos)
+}
+
+/// Increment position
+#[no_mangle]
+pub extern "C" fn pos_incr_pos(pos: *mut u64) {
+    if !pos.is_null() {
+        unsafe {
+            pos::incr_pos(&mut *pos);
+        }
+    }
+}
+
+/// Increment position by N
+#[no_mangle]
+pub extern "C" fn pos_incr_pos_by(pos: *mut u64, by: usize) {
+    if !pos.is_null() {
+        unsafe {
+            pos::incr_pos_by(&mut *pos, by);
+        }
+    }
+}
+
+/// Decrement position
+#[no_mangle]
+pub extern "C" fn pos_decr_pos(pos: *mut u64) {
+    if !pos.is_null() {
+        unsafe {
+            pos::decr_pos(&mut *pos);
+        }
+    }
+}
+
+/// Decrement position by N
+#[no_mangle]
+pub extern "C" fn pos_decr_pos_by(pos: *mut u64, by: usize) {
+    if !pos.is_null() {
+        unsafe {
+            pos::decr_pos_by(&mut *pos, by);
+        }
+    }
+}
+
+/// Reverse position orientation
+#[no_mangle]
+pub extern "C" fn pos_rev_pos_t(pos: u64) -> u64 {
+    pos::rev_pos_t(pos)
+}
+
+/// Convert position to string (returns C string that must be freed)
+#[no_mangle]
+pub extern "C" fn pos_to_string_c(pos: u64) -> *mut c_char {
+    let s = pos::pos_to_string(pos);
+    match CString::new(s) {
+        Ok(c_string) => c_string.into_raw(),
+        Err(_) => ptr::null_mut(),
     }
 }
 
