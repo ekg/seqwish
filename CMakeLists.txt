@@ -290,7 +290,6 @@ add_executable(seqwish
   ${CMAKE_SOURCE_DIR}/src/transclosure.cpp
   ${CMAKE_SOURCE_DIR}/src/links.cpp
   ${CMAKE_SOURCE_DIR}/src/compact.cpp
-  ${CMAKE_SOURCE_DIR}/src/dna.cpp
   ${CMAKE_SOURCE_DIR}/src/gfa.cpp
   ${CMAKE_SOURCE_DIR}/src/vgp.cpp
   ${CMAKE_SOURCE_DIR}/src/exists.cpp

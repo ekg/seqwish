@@ -3,6 +3,7 @@ use std::ptr;
 
 pub mod tempfile;
 pub mod pos;
+pub mod dna;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -187,6 +188,41 @@ pub extern "C" fn pos_to_string_c(pos: u64) -> *mut c_char {
     match CString::new(s) {
         Ok(c_string) => c_string.into_raw(),
         Err(_) => ptr::null_mut(),
+    }
+}
+
+// FFI wrappers for dna module
+
+/// Get complement of a single DNA base
+#[no_mangle]
+pub extern "C" fn dna_complement(c: u8) -> u8 {
+    dna::complement(c)
+}
+
+/// Reverse complement a DNA sequence (allocates new string that must be freed)
+#[no_mangle]
+pub extern "C" fn dna_reverse_complement(seq: *const c_char, len: usize, out: *mut c_char) {
+    if seq.is_null() || out.is_null() {
+        return;
+    }
+
+    unsafe {
+        let slice = std::slice::from_raw_parts(seq as *const u8, len);
+        let rc = dna::reverse_complement(slice);
+        std::ptr::copy_nonoverlapping(rc.as_ptr(), out as *mut u8, len);
+    }
+}
+
+/// Reverse complement a DNA sequence in place
+#[no_mangle]
+pub extern "C" fn dna_reverse_complement_in_place(seq: *mut c_char, len: usize) {
+    if seq.is_null() {
+        return;
+    }
+
+    unsafe {
+        let slice = std::slice::from_raw_parts_mut(seq as *mut u8, len);
+        dna::reverse_complement_in_place(slice);
     }
 }
 

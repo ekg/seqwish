@@ -48,6 +48,66 @@ void temp_file_set_keep_temp(bool setting);
  */
 void temp_file_free_string(char *s);
 
+/**
+ * Create a position from offset and orientation
+ */
+uint64_t pos_make_pos_t(uint64_t offset, bool is_rev);
+
+/**
+ * Extract offset from position
+ */
+uint64_t pos_offset(uint64_t pos);
+
+/**
+ * Check if position is reverse
+ */
+bool pos_is_rev(uint64_t pos);
+
+/**
+ * Increment position
+ */
+void pos_incr_pos(uint64_t *pos);
+
+/**
+ * Increment position by N
+ */
+void pos_incr_pos_by(uint64_t *pos, uintptr_t by);
+
+/**
+ * Decrement position
+ */
+void pos_decr_pos(uint64_t *pos);
+
+/**
+ * Decrement position by N
+ */
+void pos_decr_pos_by(uint64_t *pos, uintptr_t by);
+
+/**
+ * Reverse position orientation
+ */
+uint64_t pos_rev_pos_t(uint64_t pos);
+
+/**
+ * Convert position to string (returns C string that must be freed)
+ */
+char *pos_to_string_c(uint64_t pos);
+
+/**
+ * Get complement of a single DNA base
+ */
+uint8_t dna_complement(uint8_t c);
+
+/**
+ * Reverse complement a DNA sequence (allocates new string that must be freed)
+ */
+void dna_reverse_complement(const char *seq, uintptr_t len, char *out);
+
+/**
+ * Reverse complement a DNA sequence in place
+ */
+void dna_reverse_complement_in_place(char *seq, uintptr_t len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
