@@ -1,5 +1,6 @@
 #include "paf.hpp"
 #include "tokenize.hpp"
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
@@ -58,19 +59,15 @@ void dump_paf_alignments(const std::string& filename) {
 }
 
 
+// Callback helper for parse_paf_spec FFI
+extern "C" void paf_spec_callback(void* user_data, const char* filename, uint64_t weight) {
+    auto* parsed = static_cast<std::vector<std::pair<std::string, uint64_t>>*>(user_data);
+    parsed->push_back(std::make_pair(std::string(filename), weight));
+}
+
 std::vector<std::pair<std::string, uint64_t>> parse_paf_spec(const std::string& spec) {
     std::vector<std::pair<std::string, uint64_t>> parsed;
-    std::vector<std::string> files;
-    tokenize(spec, files, ",");
-    for (auto& file : files) {
-        std::vector<std::string> fields;
-        tokenize(file, fields, ":");
-        if (fields.size() == 2) {
-            parsed.push_back(std::make_pair(fields.front(), std::stoull(fields.back())));
-        } else if (fields.size() == 1) {
-            parsed.push_back(std::make_pair(fields.front(), 0));
-        }
-    }
+    ::parse_paf_spec(spec.c_str(), &parsed, paf_spec_callback);
     return parsed;
 }
 
