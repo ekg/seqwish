@@ -144,6 +144,18 @@ bool cigar_get_op(const struct CigarHandle *handle,
  */
 void cigar_free(struct CigarHandle *handle);
 
+/**
+ * Open a file and memory-map it
+ * Returns the file size on success, 0 on error
+ * The buffer pointer and file descriptor are written to the provided pointers
+ */
+uintptr_t mmap_open_rust(const char *filename, char **buf_out, int32_t *fd_out);
+
+/**
+ * Close a memory-mapped file
+ */
+void mmap_close_rust(char *buf, int32_t fd, uintptr_t size);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

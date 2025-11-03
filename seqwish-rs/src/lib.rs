@@ -5,6 +5,7 @@ pub mod tempfile;
 pub mod pos;
 pub mod dna;
 pub mod cigar;
+pub mod mmap;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -308,6 +309,59 @@ pub extern "C" fn cigar_free(handle: *mut CigarHandle) {
             let _ = Box::from_raw(handle);
         }
     }
+}
+
+// FFI wrappers for mmap module
+
+/// Open a file and memory-map it
+/// Returns the file size on success, 0 on error
+/// The buffer pointer and file descriptor are written to the provided pointers
+#[no_mangle]
+pub extern "C" fn mmap_open_rust(
+    filename: *const c_char,
+    buf_out: *mut *mut c_char,
+    fd_out: *mut i32,
+) -> usize {
+    if filename.is_null() || buf_out.is_null() || fd_out.is_null() {
+        return 0;
+    }
+
+    let filename_str = unsafe {
+        match CStr::from_ptr(filename).to_str() {
+            Ok(s) => s,
+            Err(_) => return 0,
+        }
+    };
+
+    match mmap::mmap_open(filename_str) {
+        Ok(handle) => {
+            unsafe {
+                *buf_out = handle.ptr;
+                *fd_out = handle.fd;
+            }
+            let size = handle.size;
+            // Prevent Drop from running - we're transferring ownership to C++
+            std::mem::forget(handle);
+            size
+        }
+        Err(_) => 0,
+    }
+}
+
+/// Close a memory-mapped file
+#[no_mangle]
+pub extern "C" fn mmap_close_rust(buf: *mut c_char, fd: i32, size: usize) {
+    if buf.is_null() {
+        return;
+    }
+
+    let mut handle = mmap::MmapHandle {
+        ptr: buf,
+        fd,
+        size,
+    };
+
+    mmap::mmap_close(&mut handle);
 }
 
 #[cfg(test)]
