@@ -156,6 +156,16 @@ uintptr_t mmap_open_rust(const char *filename, char **buf_out, int32_t *fd_out);
  */
 void mmap_close_rust(char *buf, int32_t fd, uintptr_t size);
 
+/**
+ * Check if a file exists
+ */
+bool file_exists(const char *filename);
+
+/**
+ * Parse a number with optional suffix (k, m, g)
+ */
+double handy_parameter(const char *value, double default_value);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

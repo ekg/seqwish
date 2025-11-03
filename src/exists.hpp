@@ -3,10 +3,13 @@
 
 #include <string>
 #include <sys/stat.h>
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
-bool file_exists(const std::string& name);
+inline bool file_exists(const std::string& name) {
+    return ::file_exists(name.c_str());
+}
 
 }
 
