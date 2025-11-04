@@ -84,19 +84,46 @@ Phase 2 of the seqwish Rust migration has completed Step 24 (seqindex with prope
 - Unblocks all remaining algorithm migrations
 - iitree is critical path for Phase 2B/2C
 
-## Next Steps
+## Progress Update (2025-11-04)
 
+### ✅ Core Implementation Complete
+
+**Location:** `~/iitree-rs/`
+
+**Completed:**
 1. ✅ Create `~/iitree-rs/` with cargo new
-2. ⏳ Define `Interval<S, T>` struct with #[repr(C)]
-3. ⏳ Port index_core algorithm (lines 92-118 from mmiitree.hpp)
-4. ⏳ Port overlap algorithm (lines 379-427 from mmiitree.hpp)
-5. ⏳ Port cgranges test (lines 224-255 from main.cpp)
-6. ⏳ Validate: identical results to C++ on test data
-7. ⏳ Add memory-mapped I/O
-8. ⏳ Add parallel sorting with rayon
-9. ⏳ Add thread-safe writer
-10. ⏳ Performance benchmarks vs C++
-11. ⏳ Integrate into seqwish-rs
+2. ✅ Define `Interval<S, T>` struct with #[repr(C)]
+3. ✅ Port index_core algorithm (lines 92-118 from mmiitree.hpp)
+4. ✅ Port overlap algorithm (lines 379-427 from mmiitree.hpp)
+5. ✅ Port cgranges test (lines 224-255 from main.cpp)
+6. ✅ Validate: identical results to C++ on test data
+7. ✅ Add parallel sorting with rayon
+8. ✅ Comprehensive README with usage examples
+
+**Tests:** 9/9 passing
+- 7 basic tests (intervals, overlap, edge cases)
+- 2 comprehensive cgranges tests (1K and 10K intervals)
+
+**Complexity validated:**
+- Space: O(n) - 32 bytes per interval (u64/u64)
+- Query: O(log n + k) - all queries return correct results
+- Build: O(n log n) - parallel sort with rayon
+
+### 📋 Remaining Work
+
+**Optional enhancements** (not required for seqwish integration):
+1. ⏳ Add memory-mapped I/O (for disk persistence)
+2. ⏳ Add thread-safe writer with lock-free queue
+3. ⏳ Performance benchmarks vs C++
+4. ⏳ Publish to crates.io
+
+**Ready for integration:**
+The core algorithm is complete and validated. We can now:
+- **Option A:** Use directly in seqwish-rs (Vec-based, in-memory)
+- **Option B:** Add memory-mapping layer (match C++ exactly)
+- **Option C:** Use temporarily via FFI while adding features
+
+**Recommendation:** Use directly in seqwish-rs with in-memory Vec storage for now. Add memory-mapping later if profiling shows it's needed.
 
 ## Success Criteria
 
