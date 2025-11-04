@@ -1,3 +1,14 @@
+use crate::paf::PafRow;
+use crate::pos::{decr_pos, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
+use crate::seqindex::SeqIndex;
+use flate2::read::GzDecoder;
+use iitree_rs::IITree;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+
 /// Hash function for match parameters
 /// Uses a Wang hash-like mixing algorithm
 pub fn match_hash(q: u64, t: u64, l: u64) -> u64 {
@@ -19,6 +30,248 @@ pub fn match_hash(q: u64, t: u64, l: u64) -> u64 {
 pub fn keep_sparse(q: u64, t: u64, l: u64, f: f32) -> bool {
     // Match C++ behavior: compare hash as f64 against max * f
     (match_hash(q, t, l) as f64) < (u64::MAX as f64 * f as f64)
+}
+
+/// Worker thread that processes PAF alignments
+fn paf_worker(
+    reader: Arc<Mutex<BufReader<GzDecoder<File>>>>,
+    more: Arc<AtomicBool>,
+    aln_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    seqidx: Arc<SeqIndex>,
+    min_match_len: u64,
+    sparsification_factor: f32,
+) -> io::Result<()> {
+    while more.load(Ordering::Relaxed) {
+        // Read one line with mutex protection
+        let line = {
+            let mut reader_guard = reader.lock().unwrap();
+            let mut line = String::new();
+            match reader_guard.read_line(&mut line) {
+                Ok(0) => {
+                    // EOF
+                    more.store(false, Ordering::Relaxed);
+                    return Ok(());
+                }
+                Ok(_) => {
+                    // Strip newline
+                    if line.ends_with('\n') {
+                        line.pop();
+                        if line.ends_with('\r') {
+                            line.pop();
+                        }
+                    }
+                    line
+                }
+                Err(e) => {
+                    more.store(false, Ordering::Relaxed);
+                    return Err(e);
+                }
+            }
+        };
+
+        if line.is_empty() {
+            continue;
+        }
+
+        // Parse PAF row
+        let paf = match PafRow::from_line(&line) {
+            Some(p) => p,
+            None => continue, // Skip malformed lines
+        };
+
+        // Check if coordinates are reasonable
+        if paf.query_sequence_length == 0
+            || paf.target_sequence_length == 0
+            || paf.query_start >= paf.query_sequence_length
+            || paf.query_end > paf.query_sequence_length
+            || paf.query_start >= paf.query_end
+            || paf.target_start >= paf.target_sequence_length
+            || paf.target_end > paf.target_sequence_length
+            || paf.target_start >= paf.target_end
+        {
+            continue;
+        }
+
+        // Look up sequence indices
+        let query_idx = match seqidx.rank_of_seq_named(&paf.query_sequence_name) {
+            Some(idx) => idx,
+            None => continue,
+        };
+
+        let target_idx = match seqidx.rank_of_seq_named(&paf.target_sequence_name) {
+            Some(idx) => idx,
+            None => continue,
+        };
+
+        // Determine orientations and starting positions
+        let q_rev = !paf.query_target_same_strand;
+        let q_all_pos = if q_rev {
+            seqidx
+                .pos_in_all_seqs_by_id(query_idx, paf.query_end, false)
+                .unwrap()
+                - 1
+        } else {
+            seqidx
+                .pos_in_all_seqs_by_id(query_idx, paf.query_start, false)
+                .unwrap()
+        };
+
+        let t_all_pos = seqidx
+            .pos_in_all_seqs_by_id(target_idx, paf.target_start, false)
+            .unwrap();
+
+        let mut q_pos = make_pos_t(q_all_pos, q_rev);
+        let mut t_pos = make_pos_t(t_all_pos, false);
+
+        // Process CIGAR operations
+        for c in &paf.cigar {
+            match c.op {
+                b'M' | b'=' | b'X' => {
+                    let mut q_pos_match_start = q_pos;
+                    let mut t_pos_match_start = t_pos;
+                    let mut match_len = 0u64;
+
+                    // Helper to add a match to the iitree
+                    let add_match = |q_start: PosT,
+                                          q_end: PosT,
+                                          t_start: PosT,
+                                          t_end: PosT,
+                                          len: u64| {
+                        if len >= min_match_len
+                            && (sparsification_factor == 0.0
+                                || keep_sparse(
+                                    offset(q_start),
+                                    offset(t_start),
+                                    len,
+                                    sparsification_factor,
+                                ))
+                        {
+                            let mut tree = aln_iitree.lock().unwrap();
+                            if is_rev(q_end) {
+                                // Reverse query
+                                let mut x_pos = q_end;
+                                decr_pos(&mut x_pos);
+                                tree.add(offset(x_pos), offset(q_start) + 1, make_pos_t(offset(t_end) - 1, true))
+                                    .ok();
+                                tree.add(offset(t_start), offset(t_end), make_pos_t(offset(q_start), true))
+                                    .ok();
+                            } else {
+                                // Forward query
+                                tree.add(offset(q_start), offset(q_end), t_start).ok();
+                                tree.add(offset(t_start), offset(t_end), q_start).ok();
+                            }
+                        }
+                    };
+
+                    // Process each base in the match
+                    for _ in 0..c.len {
+                        let query_base = seqidx.at_pos(q_pos)
+                            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid query position"))?;
+                        let target_base = seqidx.at_pos(t_pos)
+                            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid target position"))?;
+
+                        if query_base == target_base
+                            && query_base != 'N'
+                            && offset(q_pos) != offset(t_pos)
+                        {
+                            // Start or extend match
+                            if match_len == 0 {
+                                q_pos_match_start = q_pos;
+                                t_pos_match_start = t_pos;
+                            }
+                            match_len += 1;
+                            incr_pos(&mut q_pos);
+                            incr_pos(&mut t_pos);
+                        } else {
+                            // Mismatch or end of match
+                            if match_len > 0 {
+                                add_match(q_pos_match_start, q_pos, t_pos_match_start, t_pos, match_len);
+                                match_len = 0;
+                            }
+                            incr_pos(&mut q_pos);
+                            incr_pos(&mut t_pos);
+                        }
+                    }
+
+                    // Handle any final match
+                    if match_len > 0 {
+                        add_match(q_pos_match_start, q_pos, t_pos_match_start, t_pos, match_len);
+                    }
+                }
+                b'I' => {
+                    // Insertion in query (skip bases in query)
+                    incr_pos_by(&mut q_pos, c.len as usize);
+                }
+                b'D' => {
+                    // Deletion in query (skip bases in target)
+                    incr_pos_by(&mut t_pos, c.len as usize);
+                }
+                _ => {
+                    // Unknown operation, skip
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Unpack PAF alignments into an interval tree
+///
+/// Reads a gzipped PAF file, spawns worker threads to process alignments,
+/// and populates the interval tree with match intervals.
+pub fn unpack_paf_alignments(
+    paf_file: &str,
+    aln_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    seqidx: Arc<SeqIndex>,
+    min_match_len: u64,
+    sparsification_factor: f32,
+    num_threads: usize,
+) -> io::Result<()> {
+    // Open gzipped PAF file
+    let file = File::open(paf_file)?;
+    let gz = GzDecoder::new(file);
+    let reader = BufReader::new(gz);
+    let reader = Arc::new(Mutex::new(reader));
+
+    let more = Arc::new(AtomicBool::new(true));
+
+    // Spawn worker threads
+    let mut handles = Vec::new();
+    for _ in 0..num_threads {
+        let reader_clone = Arc::clone(&reader);
+        let more_clone = Arc::clone(&more);
+        let tree_clone = Arc::clone(&aln_iitree);
+        let seqidx_clone = Arc::clone(&seqidx);
+
+        let handle = thread::spawn(move || {
+            paf_worker(
+                reader_clone,
+                more_clone,
+                tree_clone,
+                seqidx_clone,
+                min_match_len,
+                sparsification_factor,
+            )
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all workers to finish
+    for handle in handles {
+        match handle.join() {
+            Ok(result) => result?,
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Worker thread panicked",
+                ))
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
