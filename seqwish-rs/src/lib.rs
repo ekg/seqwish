@@ -9,6 +9,7 @@ pub mod mmap;
 pub mod utils;
 pub mod time;
 pub mod paf;
+pub mod sxs;
 pub mod alignments;
 pub mod version;
 
@@ -463,6 +464,13 @@ pub struct PafRowHandle {
     row: paf::PafRow,
 }
 
+// FFI wrappers for sxs module
+
+/// Opaque handle to a parsed SXS alignment
+pub struct SxsHandle {
+    aln: sxs::SxsAlignment,
+}
+
 /// Parse a PAF row from a C string line
 /// Returns NULL if parsing fails
 #[no_mangle]
@@ -586,6 +594,134 @@ pub extern "C" fn paf_row_cigar(handle: *const PafRowHandle) -> *mut CigarHandle
     }
     let row = unsafe { &(*handle).row };
     Box::into_raw(Box::new(CigarHandle { cigar: row.cigar.clone() }))
+}
+
+/// Create a new empty SXS alignment
+#[no_mangle]
+pub extern "C" fn sxs_new() -> *mut SxsHandle {
+    Box::into_raw(Box::new(SxsHandle {
+        aln: sxs::SxsAlignment::new(),
+    }))
+}
+
+/// Parse SXS alignment from array of C strings (lines)
+/// Returns NULL if parsing fails
+#[no_mangle]
+pub extern "C" fn sxs_parse_lines(lines: *const *const c_char, num_lines: usize) -> *mut SxsHandle {
+    if lines.is_null() {
+        return ptr::null_mut();
+    }
+
+    let mut line_vec = Vec::new();
+    for i in 0..num_lines {
+        unsafe {
+            let line_ptr = *lines.add(i);
+            if line_ptr.is_null() {
+                continue;
+            }
+            match CStr::from_ptr(line_ptr).to_str() {
+                Ok(s) => line_vec.push(s),
+                Err(_) => return ptr::null_mut(),
+            }
+        }
+    }
+
+    match sxs::SxsAlignment::from_lines(&line_vec) {
+        Some(aln) => Box::into_raw(Box::new(SxsHandle { aln })),
+        None => ptr::null_mut(),
+    }
+}
+
+/// Free an SXS handle
+#[no_mangle]
+pub extern "C" fn sxs_free(handle: *mut SxsHandle) {
+    if !handle.is_null() {
+        unsafe {
+            let _ = Box::from_raw(handle);
+        }
+    }
+}
+
+// Field accessors for SXS
+#[no_mangle]
+pub extern "C" fn sxs_query_sequence_name(handle: *const SxsHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    let aln = unsafe { &(*handle).aln };
+    match CString::new(aln.query_sequence_name.clone()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_target_sequence_name(handle: *const SxsHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    let aln = unsafe { &(*handle).aln };
+    match CString::new(aln.target_sequence_name.clone()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_query_start(handle: *const SxsHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).aln.query_start }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_query_end(handle: *const SxsHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).aln.query_end }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_target_start(handle: *const SxsHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).aln.target_start }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_target_end(handle: *const SxsHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).aln.target_end }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_num_matches(handle: *const SxsHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).aln.num_matches }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_mapping_quality(handle: *const SxsHandle) -> u16 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).aln.mapping_quality }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_cigar(handle: *const SxsHandle) -> *mut CigarHandle {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    let aln = unsafe { &(*handle).aln };
+    Box::into_raw(Box::new(CigarHandle { cigar: aln.cigar.clone() }))
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_is_good(handle: *const SxsHandle) -> bool {
+    if handle.is_null() { return false; }
+    unsafe { (*handle).aln.is_good() }
+}
+
+#[no_mangle]
+pub extern "C" fn sxs_is_reverse(handle: *const SxsHandle) -> bool {
+    if handle.is_null() { return false; }
+    unsafe { (*handle).aln.is_reverse() }
 }
 
 #[cfg(test)]
