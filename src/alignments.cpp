@@ -1,19 +1,15 @@
 #include "alignments.hpp"
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
 
 uint64_t match_hash(const pos_t& q, const pos_t& t, const uint64_t& l) {
-    uint64_t seed = q | t | l;
-    seed ^= q + 0x9e3779b97f4a7c15 + (seed << 17) + (seed >> 9);
-    seed ^= t + 0x9e3779b97f4a7c15 + (seed << 7) + (seed >> 23);
-    seed ^= l + 0x9e3779b97f4a7c15 + (seed << 9) + (seed >> 2);
-    return seed;
+    return ::match_hash(q, t, l);
 }
 
 bool keep_sparse(const pos_t& q, const pos_t& t, const uint64_t& l, const float f) {
-    // hash the match and check if it's accepted given our sparsification factor
-    return match_hash(q, t, l) < std::numeric_limits<uint64_t>::max() * f;
+    return ::keep_sparse(q, t, l, f);
 }
 
 void paf_worker(

@@ -9,6 +9,7 @@ pub mod mmap;
 pub mod utils;
 pub mod time;
 pub mod paf;
+pub mod alignments;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -438,6 +439,20 @@ pub extern "C" fn parse_paf_spec(
             callback_fn(user_data, c_filename.as_ptr(), weight);
         }
     }
+}
+
+// FFI wrappers for alignments module
+
+/// Hash function for match parameters
+#[no_mangle]
+pub extern "C" fn match_hash(q: u64, t: u64, l: u64) -> u64 {
+    alignments::match_hash(q, t, l)
+}
+
+/// Determine if a match should be kept based on sparsification factor
+#[no_mangle]
+pub extern "C" fn keep_sparse(q: u64, t: u64, l: u64, f: f32) -> bool {
+    alignments::keep_sparse(q, t, l, f)
 }
 
 #[cfg(test)]
