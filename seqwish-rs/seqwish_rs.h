@@ -189,6 +189,16 @@ uint64_t match_hash(uint64_t q, uint64_t t, uint64_t l);
  */
 bool keep_sparse(uint64_t q, uint64_t t, uint64_t l, float f);
 
+char *version_get_version(void);
+
+char *version_get_release(void);
+
+char *version_get_codename(void);
+
+char *version_get_short(void);
+
+void version_free_string(char *s);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
