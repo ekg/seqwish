@@ -1,10 +1,10 @@
 #include "time.hpp"
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
 uint64_t time_since_epoch_ms(void) {
-  using namespace std::chrono;
-  return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+  return ::time_since_epoch_ms();
 }
 
 double seconds_since(const std::chrono::time_point<std::chrono::steady_clock>& then) {

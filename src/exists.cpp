@@ -1,10 +1,10 @@
 #include "exists.hpp"
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
 bool file_exists(const std::string& name) {
-    struct stat buffer;   
-    return (stat (name.c_str(), &buffer) == 0); 
+    return ::file_exists(name.c_str());
 }
 
 }
