@@ -13,6 +13,11 @@ typedef struct CigarHandle CigarHandle;
  */
 typedef struct PafRowHandle PafRowHandle;
 
+/**
+ * Opaque handle to a parsed SXS alignment
+ */
+typedef struct SxsHandle SxsHandle;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -230,6 +235,44 @@ uint64_t paf_row_alignment_block_length(const struct PafRowHandle *handle);
 uint16_t paf_row_mapping_quality(const struct PafRowHandle *handle);
 
 struct CigarHandle *paf_row_cigar(const struct PafRowHandle *handle);
+
+/**
+ * Create a new empty SXS alignment
+ */
+struct SxsHandle *sxs_new(void);
+
+/**
+ * Parse SXS alignment from array of C strings (lines)
+ * Returns NULL if parsing fails
+ */
+struct SxsHandle *sxs_parse_lines(const char *const *lines, uintptr_t num_lines);
+
+/**
+ * Free an SXS handle
+ */
+void sxs_free(struct SxsHandle *handle);
+
+char *sxs_query_sequence_name(const struct SxsHandle *handle);
+
+char *sxs_target_sequence_name(const struct SxsHandle *handle);
+
+uint64_t sxs_query_start(const struct SxsHandle *handle);
+
+uint64_t sxs_query_end(const struct SxsHandle *handle);
+
+uint64_t sxs_target_start(const struct SxsHandle *handle);
+
+uint64_t sxs_target_end(const struct SxsHandle *handle);
+
+uint64_t sxs_num_matches(const struct SxsHandle *handle);
+
+uint16_t sxs_mapping_quality(const struct SxsHandle *handle);
+
+struct CigarHandle *sxs_cigar(const struct SxsHandle *handle);
+
+bool sxs_is_good(const struct SxsHandle *handle);
+
+bool sxs_is_reverse(const struct SxsHandle *handle);
 
 char *version_get_version(void);
 
