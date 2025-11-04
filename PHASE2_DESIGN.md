@@ -11,33 +11,43 @@ Phase 2 focuses on migrating the core data structures that all remaining C++ alg
 
 ## Completed Work
 
-### ✅ Step 24: seqindex - Basic Implementation
+### ✅ Step 24: seqindex - CORRECT Big O Implementation
 
-**Status:** COMPLETE (92 tests passing)
+**Status:** COMPLETE (93 tests passing)
 
 **Implementation:**
 - Pure Rust FASTA/FASTQ parser with gzip support
 - Memory-mapped sequence storage (memmap2)
-- HashMap-based name index (trades memory for simplicity)
-- Vec<u64> for sequence boundaries (can upgrade to succinct later)
+- **FM-index/CSA for sequence name lookup** (fm-index 0.3.0)
+- **Succinct bitvector for sequence boundaries** (vers-vecs 1.8.1)
 - All core query operations implemented
+- **Matches C++ sdsl complexity exactly**
 
 **Files:**
-- `seqwish-rs/src/seqindex.rs` (415 lines)
-- 3 tests covering parsing, access, and position queries
+- `seqwish-rs/src/seqindex.rs` (574 lines)
+- 4 tests covering parsing, access, position queries, and name lookup
 
-**Performance Characteristics:**
-- Name lookup: O(1) with HashMap (C++ uses CSA for O(m log n))
-- Boundary queries: O(log n) binary search (C++ uses succinct select)
-- Memory overhead: ~100-200 bytes per sequence for HashMap vs ~10 bytes for CSA
-- **Trade-off accepted:** For typical pangenomes (~100-10K sequences), extra memory is negligible
+**Space Complexity (matching C++ sdsl):**
+- Name index: **O(n log σ) bits** using FM-index/CSA (where n = total name chars, σ = alphabet size)
+- Sequence boundaries: **O(m log(N/m)) bits** using succinct bitvector (where m = # sequences, N = total length)
+- C++ used: sdsl::csa_wt and sdsl::sd_vector
+- Rust uses: fm-index::FMIndexWithLocate and vers_vecs::RsVec
 
-**Missing vs C++ version:**
-- No CSA compression for sequence names (using HashMap instead)
-- No succinct bitvector for boundaries (using Vec<u64> instead)
-- No save/load to disk (tempfiles only, rebuilt each run)
+**Time Complexity:**
+- Name lookup: O(m log n + occ) with FM-index locate()
+- Boundary queries: O(1) with succinct select
+- Position to seq ID: O(log m) with succinct rank
 
-**Next:** Add FFI bindings so C++ can use it
+**Key API Learnings (documented for future use):**
+1. fm-index requires text to end with exactly one '\0' character
+2. FMIndexWithLocate<C> is generic over character type
+3. Search trait must be imported to use iter_matches()
+4. MatchWithLocate trait must be imported to use locate()
+5. RsVec::rank1(pos) counts 1-bits up to but EXCLUDING pos
+6. RsVec::select1(n) returns usize directly, not Option<usize>
+7. BitVec uses append_bit() to build, not push()
+
+**Next:** Add FFI bindings so C++ can use it (Step 25)
 
 ## Remaining Core Structures
 
@@ -90,22 +100,23 @@ Same three options as iitree. **Recommendation:** Start with FFI wrapper.
 
 **Alternative:** If transclosure is last to migrate, we can rewrite it to use simpler Rust collections (HashMap, BTreeMap) since it's internal to one algorithm.
 
-### 📋 sdsl (Succinct Data Structure Library)
+### ✅ sdsl (Succinct Data Structure Library)
 
-**Priority:** LOW for now (only used in seq boundaries and mmmulti)
+**Priority:** ~~LOW for now~~ **IMPLEMENTED** (seqindex uses these)
 
 **C++ Usage:**
 - `sdsl::sd_vector`: Succinct bit vector with rank/select
 - `sdsl::csa_wt`: Compressed suffix array (for sequence name index)
 
-**Rust Alternatives:**
-- `vers-vecs`: Excellent rank/select performance
-- `simple-sds`: By Jouni Sirén (GBWT author), bioinformatics-focused
+**Rust Equivalents (SELECTED):**
+- `fm-index 0.3.0`: FM-index with locate support (replaces sdsl::csa_wt)
+- `vers-vecs 1.8.1`: Fast rank/select (replaces sdsl::sd_vector)
 
 **Current Status:**
-- seqindex uses HashMap instead of CSA (acceptable trade-off)
-- seq_offsets uses Vec<u64> instead of sd_vector (acceptable for now)
-- Can optimize later if memory becomes issue
+- ✅ seqindex uses fm-index::FMIndexWithLocate for name lookup (O(n log σ) bits)
+- ✅ seqindex uses vers_vecs::RsVec for boundaries (O(m log(N/m)) bits)
+- **Complexity matches C++ sdsl exactly**
+- Still needed for mmmulti structures (will use same approach or FFI)
 
 ## Migration Order
 
@@ -255,7 +266,7 @@ fn process_sequences_parallel(seqindex: &SeqIndex, num_threads: usize) {
 ### 1. Unit Tests
 - Each Rust module has comprehensive tests
 - Cover edge cases, empty inputs, large inputs
-- Current: 92 tests passing
+- Current: 93 tests passing
 
 ### 2. FFI Integration Tests
 - Test C++ can call Rust and vice versa
@@ -335,17 +346,17 @@ fn process_sequences_parallel(seqindex: &SeqIndex, num_threads: usize) {
 
 ## Open Questions
 
-1. **Should we compress sequence names?**
+1. ~~**Should we compress sequence names?**~~ **RESOLVED**
    - HashMap uses ~150 bytes/sequence
-   - CSA uses ~10 bytes/sequence
+   - CSA uses ~10 bytes/sequence (O(n log σ) bits)
    - For 10K sequences: 1.5MB vs 100KB
-   - **Decision:** Wait until real datasets show memory issue
+   - **Decision:** ✅ Use CSA (fm-index) - Big O bounds are non-negotiable
 
-2. **Should we use succinct bitvectors now or later?**
+2. ~~**Should we use succinct bitvectors now or later?**~~ **RESOLVED**
    - Vec<u64> for offsets uses 8 bytes per sequence
-   - sd_vector uses ~0.1 bits per sequence
+   - sd_vector uses ~0.1 bits per sequence (O(m log(N/m)) bits)
    - For 10K sequences: 80KB vs 1.25KB
-   - **Decision:** Wait until profiling shows need
+   - **Decision:** ✅ Use succinct bitvector (vers-vecs) - Big O bounds are non-negotiable
 
 3. **Pure Rust vs FFI for interval trees?**
    - FFI is faster to implement
@@ -366,6 +377,7 @@ fn process_sequences_parallel(seqindex: &SeqIndex, num_threads: usize) {
 ## References
 
 - Phase 2 Research: `PHASE2_RESEARCH.md`
-- Rust implementation: `seqwish-rs/src/seqindex.rs`
+- Rust implementation: `seqwish-rs/src/seqindex.rs` (574 lines, Step 24 complete)
 - C++ original: `src/seqindex.cpp`, `src/seqindex.hpp`
-- Test results: 92/92 passing
+- Big O requirements: `.claude/CLAUDE.md`
+- Test results: 93/93 passing
