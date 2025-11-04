@@ -10,6 +10,7 @@ pub mod utils;
 pub mod time;
 pub mod paf;
 pub mod alignments;
+pub mod version;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
