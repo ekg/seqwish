@@ -456,6 +456,138 @@ pub extern "C" fn keep_sparse(q: u64, t: u64, l: u64, f: f32) -> bool {
     alignments::keep_sparse(q, t, l, f)
 }
 
+// FFI wrappers for paf module
+
+/// Opaque handle to a parsed PAF row
+pub struct PafRowHandle {
+    row: paf::PafRow,
+}
+
+/// Parse a PAF row from a C string line
+/// Returns NULL if parsing fails
+#[no_mangle]
+pub extern "C" fn paf_row_parse(line: *const c_char) -> *mut PafRowHandle {
+    if line.is_null() {
+        return ptr::null_mut();
+    }
+
+    let line_str = unsafe {
+        match CStr::from_ptr(line).to_str() {
+            Ok(s) => s,
+            Err(_) => return ptr::null_mut(),
+        }
+    };
+
+    match paf::PafRow::from_line(line_str) {
+        Some(row) => Box::into_raw(Box::new(PafRowHandle { row })),
+        None => ptr::null_mut(),
+    }
+}
+
+/// Free a PAF row handle
+#[no_mangle]
+pub extern "C" fn paf_row_free(handle: *mut PafRowHandle) {
+    if !handle.is_null() {
+        unsafe {
+            let _ = Box::from_raw(handle);
+        }
+    }
+}
+
+// Field accessors for PAF row
+#[no_mangle]
+pub extern "C" fn paf_row_query_sequence_name(handle: *const PafRowHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    let row = unsafe { &(*handle).row };
+    match CString::new(row.query_sequence_name.clone()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_target_sequence_name(handle: *const PafRowHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    let row = unsafe { &(*handle).row };
+    match CString::new(row.target_sequence_name.clone()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_query_sequence_length(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.query_sequence_length }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_query_start(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.query_start }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_query_end(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.query_end }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_query_target_same_strand(handle: *const PafRowHandle) -> bool {
+    if handle.is_null() { return false; }
+    unsafe { (*handle).row.query_target_same_strand }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_target_sequence_length(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.target_sequence_length }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_target_start(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.target_start }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_target_end(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.target_end }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_num_matches(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.num_matches }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_alignment_block_length(handle: *const PafRowHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.alignment_block_length }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_mapping_quality(handle: *const PafRowHandle) -> u16 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).row.mapping_quality }
+}
+
+#[no_mangle]
+pub extern "C" fn paf_row_cigar(handle: *const PafRowHandle) -> *mut CigarHandle {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    let row = unsafe { &(*handle).row };
+    Box::into_raw(Box::new(CigarHandle { cigar: row.cigar.clone() }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

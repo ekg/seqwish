@@ -8,6 +8,11 @@
  */
 typedef struct CigarHandle CigarHandle;
 
+/**
+ * Opaque handle to a parsed PAF row
+ */
+typedef struct PafRowHandle PafRowHandle;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -188,6 +193,43 @@ uint64_t match_hash(uint64_t q, uint64_t t, uint64_t l);
  * Determine if a match should be kept based on sparsification factor
  */
 bool keep_sparse(uint64_t q, uint64_t t, uint64_t l, float f);
+
+/**
+ * Parse a PAF row from a C string line
+ * Returns NULL if parsing fails
+ */
+struct PafRowHandle *paf_row_parse(const char *line);
+
+/**
+ * Free a PAF row handle
+ */
+void paf_row_free(struct PafRowHandle *handle);
+
+char *paf_row_query_sequence_name(const struct PafRowHandle *handle);
+
+char *paf_row_target_sequence_name(const struct PafRowHandle *handle);
+
+uint64_t paf_row_query_sequence_length(const struct PafRowHandle *handle);
+
+uint64_t paf_row_query_start(const struct PafRowHandle *handle);
+
+uint64_t paf_row_query_end(const struct PafRowHandle *handle);
+
+bool paf_row_query_target_same_strand(const struct PafRowHandle *handle);
+
+uint64_t paf_row_target_sequence_length(const struct PafRowHandle *handle);
+
+uint64_t paf_row_target_start(const struct PafRowHandle *handle);
+
+uint64_t paf_row_target_end(const struct PafRowHandle *handle);
+
+uint64_t paf_row_num_matches(const struct PafRowHandle *handle);
+
+uint64_t paf_row_alignment_block_length(const struct PafRowHandle *handle);
+
+uint16_t paf_row_mapping_quality(const struct PafRowHandle *handle);
+
+struct CigarHandle *paf_row_cigar(const struct PafRowHandle *handle);
 
 char *version_get_version(void);
 
