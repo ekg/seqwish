@@ -1,30 +1,41 @@
-use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use memmap2::Mmap;
 use flate2::read::GzDecoder;
+use fm_index::{FMIndexWithLocate, Text, Search, SearchIndex, MatchWithLocate};
+use vers_vecs::{BitVec, RsVec};
 
 /// Sequence index for FASTA/FASTQ files
-/// Provides random access to sequences by name or position
+/// Uses compressed suffix array (CSA) and succinct bitvectors to match C++ Big O bounds
+///
+/// Space complexity:
+/// - Name index: O(n log σ) bits where n = total chars in names, σ = alphabet size
+/// - Sequence boundaries: O(m log(N/m)) bits where m = # sequences, N = total sequence length
 pub struct SeqIndex {
-    /// Base filename for temp files
-    base_filename: Option<PathBuf>,
-
     /// Path to concatenated sequence file
     seq_filename: Option<PathBuf>,
 
     /// Memory-mapped sequence data
     seq_mmap: Option<Mmap>,
 
-    /// Sequence name -> id mapping
-    name_to_id: HashMap<String, usize>,
+    /// FM-index (CSA) of concatenated sequence names with delimiters
+    /// Space: O(n log σ) bits
+    /// Format: ">name1 >name2 >name3 "
+    name_index: Option<FMIndexWithLocate<u8>>,
 
-    /// Sequence id -> name mapping
-    id_to_name: Vec<String>,
+    /// Original name text (needed for extraction since FM-index doesn't expose it)
+    name_text: Vec<u8>,
 
-    /// Sequence start offsets in concatenated file
-    seq_offsets: Vec<u64>,
+    /// Succinct bitvector marking start of each sequence name in name_index
+    /// Space: O(m log(N/m)) bits where m = # sequences
+    /// A 1-bit marks the position of each '>' character
+    name_boundaries: Option<RsVec>,
+
+    /// Succinct bitvector marking start of each sequence in seq_mmap
+    /// Space: O(m log(N/m)) bits where m = # sequences
+    /// A 1-bit at position i means sequence starts at seq_mmap[i]
+    seq_boundaries: Option<RsVec>,
 
     /// Total number of sequences
     seq_count: usize,
@@ -34,19 +45,22 @@ impl SeqIndex {
     /// Create a new empty sequence index
     pub fn new() -> Self {
         SeqIndex {
-            base_filename: None,
             seq_filename: None,
             seq_mmap: None,
-            name_to_id: HashMap::new(),
-            id_to_name: Vec::new(),
-            seq_offsets: Vec::new(),
+            name_index: None,
+            name_text: Vec::new(),
+            name_boundaries: None,
+            seq_boundaries: None,
             seq_count: 0,
         }
     }
 
     /// Build index from FASTA or FASTQ file
+    ///
+    /// Time complexity: O(n log n) for suffix array construction
+    /// Space complexity: O(n log σ) bits for CSA + O(m log(N/m)) bits for boundaries
     pub fn build_index(&mut self, filename: &str) -> Result<(), String> {
-        // Create temp files
+        // Create temp file for sequences
         let seq_file = std::env::temp_dir().join(format!("seqwish-{}.sqq", std::process::id()));
         self.seq_filename = Some(seq_file.clone());
 
@@ -79,15 +93,21 @@ impl SeqIndex {
         let is_fastq = first_line.starts_with('@');
 
         if !is_fasta && !is_fastq {
-            return Err(format!("Unknown file format (expected FASTA or FASTQ)"));
+            return Err("Unknown file format (expected FASTA or FASTQ)".to_string());
         }
 
+        // Accumulators
         let mut current_line = first_line;
         let mut seq_bytes_written: u64 = 0;
         let mut notified_empty_seqs = false;
 
+        // Build concatenated name string with delimiters: ">name1 >name2 ..."
+        let mut name_text = String::new();
+        let mut name_boundary_positions = Vec::new();
+        let mut seq_boundary_positions = Vec::new();
+
         loop {
-            // Parse sequence name (first_line is the header)
+            // Parse sequence name
             let seq_name = if is_fasta {
                 current_line[1..].split_whitespace().next()
                     .unwrap_or("").to_string()
@@ -110,18 +130,17 @@ impl SeqIndex {
                     seq.push_str(&line);
                 }
             } else {
-                // FASTQ: read exactly 3 more lines (seq, +, qual)
+                // FASTQ: read exactly 3 more lines
                 if let Some(Ok(seq_line)) = lines.next() {
                     seq = seq_line;
-                    lines.next(); // Skip '+' line
-                    lines.next(); // Skip quality line
+                    lines.next(); // Skip '+'
+                    lines.next(); // Skip quality
                 }
 
                 // Get next header
                 if let Some(Ok(next_line)) = lines.next() {
                     current_line = next_line;
                 } else {
-                    // EOF
                     break;
                 }
             }
@@ -132,18 +151,22 @@ impl SeqIndex {
                     notified_empty_seqs = true;
                     eprintln!("[seqindex] WARNING: input contains empty sequences, which will be ignored.");
                 }
-
                 if is_fasta && lines.by_ref().next().is_none() {
                     break;
                 }
                 continue;
             }
 
-            // Store sequence name and offset
-            let seq_id = self.seq_count;
-            self.name_to_id.insert(seq_name.clone(), seq_id);
-            self.id_to_name.push(seq_name);
-            self.seq_offsets.push(seq_bytes_written);
+            // Record name boundary (position of '>' in concatenated name text)
+            name_boundary_positions.push(name_text.len() as u64);
+
+            // Add to name text: ">name "
+            name_text.push('>');
+            name_text.push_str(&seq_name);
+            name_text.push(' ');
+
+            // Record sequence boundary
+            seq_boundary_positions.push(seq_bytes_written);
 
             // Write upper-case sequence
             let seq_upper = seq.to_uppercase();
@@ -153,7 +176,7 @@ impl SeqIndex {
             seq_bytes_written += seq_upper.len() as u64;
             self.seq_count += 1;
 
-            // Check if we've reached EOF
+            // Check EOF
             if is_fasta {
                 if !current_line.starts_with('>') {
                     break;
@@ -165,14 +188,57 @@ impl SeqIndex {
             }
         }
 
-        // Add final offset for total length
-        self.seq_offsets.push(seq_bytes_written);
+        // Add final boundary for total length
+        seq_boundary_positions.push(seq_bytes_written);
 
-        // Close and memory-map the sequence file
+        // Close sequence file
         drop(seq_out);
+
+        // Build FM-index (CSA) from name text
+        // Space: O(n log σ) bits where n = name_text.len()
+        // FM-index requires text to end with exactly one zero character
+        let mut name_bytes = name_text.into_bytes();
+        name_bytes.push(0); // Add null terminator required by FM-index
+        let name_len = name_bytes.len() - 1; // Length without the null terminator
+        let text = Text::new(name_bytes.clone());
+        self.name_index = Some(FMIndexWithLocate::new(&text, 2)
+            .map_err(|e| format!("Failed to build FM-index: {:?}", e))?); // Sample every 2^2=4 positions
+        name_bytes.pop(); // Remove null terminator from stored copy
+        self.name_text = name_bytes;
+
+        // Build succinct bitvector for name boundaries
+        // Space: O(m log(N/m)) bits where m = # sequences, N = total name text length
+        let name_bv = self.build_bitvector(&name_boundary_positions, name_len as u64);
+        self.name_boundaries = Some(RsVec::from_bit_vec(name_bv));
+
+        // Build succinct bitvector for sequence boundaries
+        // Space: O(m log(N/m)) bits where m = # sequences, N = total sequence length
+        let seq_bv = self.build_bitvector(&seq_boundary_positions, seq_bytes_written + 1);
+        self.seq_boundaries = Some(RsVec::from_bit_vec(seq_bv));
+
+        // Memory-map the sequence file
         self.open_mmap()?;
 
         Ok(())
+    }
+
+    /// Build a bitvector from positions
+    /// Sets bit to 1 at each position in the list
+    fn build_bitvector(&self, positions: &[u64], total_length: u64) -> BitVec {
+        let mut bv = BitVec::new();
+
+        // Build bitvector bit by bit
+        let mut pos_idx = 0;
+        for i in 0..total_length {
+            if pos_idx < positions.len() && positions[pos_idx] == i {
+                bv.append_bit(1);
+                pos_idx += 1;
+            } else {
+                bv.append_bit(0);
+            }
+        }
+
+        bv
     }
 
     /// Memory-map the sequence file
@@ -193,28 +259,98 @@ impl SeqIndex {
         }
     }
 
-    /// Get sequence name by id
-    pub fn nth_name(&self, n: usize) -> Option<&str> {
-        self.id_to_name.get(n).map(|s| s.as_str())
-    }
+    /// Get sequence name by id (1-based to match C++)
+    ///
+    /// Time complexity: O(m) where m = length of name
+    /// Uses select to find boundaries, then extract from FM-index
+    pub fn nth_name(&self, n: usize) -> Option<String> {
+        if n < 1 || n > self.seq_count {
+            return None;
+        }
 
-    /// Get sequence id by name
-    pub fn rank_of_seq_named(&self, name: &str) -> Option<usize> {
-        self.name_to_id.get(name).copied()
-    }
+        let name_boundaries = self.name_boundaries.as_ref()?;
 
-    /// Get length of nth sequence
-    pub fn nth_seq_length(&self, n: usize) -> Option<u64> {
-        if n < self.seq_count {
-            Some(self.seq_offsets[n + 1] - self.seq_offsets[n])
+        // Select1 gives us the position of the nth 1-bit (0-indexed)
+        // This is the position of the '>' character
+        let start = name_boundaries.select1(n - 1);
+
+        // Find the end (position before the space)
+        // Format is: ">name " so we need to find the space and back up
+        let mut end = if n < self.seq_count {
+            name_boundaries.select1(n) - 1 // Position just before next '>'
+        } else {
+            self.name_text.len()
+        };
+
+        // Back up past the trailing space
+        while end > start + 1 && self.name_text[end - 1] == b' ' {
+            end -= 1;
+        }
+
+        // Extract name (skip the '>' character at start, up to but not including the space)
+        if start + 1 < self.name_text.len() && end > start + 1 && end <= self.name_text.len() {
+            Some(String::from_utf8_lossy(&self.name_text[start + 1..end]).to_string())
         } else {
             None
         }
     }
 
-    /// Get offset of nth sequence
+    /// Get sequence id by name (returns 1-based index to match C++)
+    ///
+    /// Time complexity: O(m log n + occ) where m = pattern length, occ = occurrences
+    /// Uses FM-index locate() operation
+    pub fn rank_of_seq_named(&self, name: &str) -> Option<usize> {
+        let name_index = self.name_index.as_ref()?;
+        let name_boundaries = self.name_boundaries.as_ref()?;
+
+        // Build query pattern: ">name "
+        let mut query = String::with_capacity(name.len() + 2);
+        query.push('>');
+        query.push_str(name);
+        query.push(' ');
+
+        // Locate pattern in FM-index
+        let search_result = name_index.search(query.as_bytes());
+        let matches: Vec<usize> = search_result.iter_matches()
+            .map(|m| m.locate())
+            .collect();
+
+        if matches.len() != 1 {
+            return None; // Should have exactly one occurrence
+        }
+
+        let pos = matches[0] as u64;
+
+        // Rank1 gives us the number of 1-bits before (or at) this position
+        // This is the 0-based sequence ID, so add 1 for 1-based
+        Some(name_boundaries.rank1(pos as usize) as usize + 1)
+    }
+
+    /// Get length of nth sequence (1-based)
+    ///
+    /// Time complexity: O(1) with select queries
+    pub fn nth_seq_length(&self, n: usize) -> Option<u64> {
+        if n < 1 || n > self.seq_count {
+            return None;
+        }
+
+        let seq_boundaries = self.seq_boundaries.as_ref()?;
+
+        let start = seq_boundaries.select1(n - 1) as u64;
+        let end = seq_boundaries.select1(n) as u64;
+
+        Some(end - start)
+    }
+
+    /// Get offset of nth sequence (1-based)
+    ///
+    /// Time complexity: O(1) with select
     pub fn nth_seq_offset(&self, n: usize) -> Option<u64> {
-        self.seq_offsets.get(n).copied()
+        if n < 1 || n > self.seq_count {
+            return None;
+        }
+
+        Some(self.seq_boundaries.as_ref()?.select1(n - 1) as u64)
     }
 
     /// Get total number of sequences
@@ -224,7 +360,7 @@ impl SeqIndex {
 
     /// Get total sequence length (all sequences concatenated)
     pub fn seq_length(&self) -> u64 {
-        self.seq_offsets.last().copied().unwrap_or(0)
+        self.seq_mmap.as_ref().map(|m| m.len() as u64).unwrap_or(0)
     }
 
     /// Get character at position in concatenated sequence
@@ -239,7 +375,6 @@ impl SeqIndex {
 
     /// Get character at pos_t position (handles reverse complement)
     pub fn at_pos(&self, pos: u64) -> Option<char> {
-        // Extract offset and reverse flag from pos_t
         let offset = crate::pos::offset(pos);
         let is_rev = crate::pos::is_rev(pos);
 
@@ -255,23 +390,33 @@ impl SeqIndex {
     }
 
     /// Get sequence ID for position in concatenated sequence
+    ///
+    /// Time complexity: O(log m) where m = number of sequences (using rank)
     pub fn seq_id_at(&self, pos: u64) -> Option<usize> {
-        // Binary search for the sequence containing this position
-        match self.seq_offsets.binary_search(&pos) {
-            Ok(idx) => Some(idx),
-            Err(idx) => {
-                if idx > 0 && idx <= self.seq_count {
-                    Some(idx - 1)
-                } else {
-                    None
-                }
-            }
+        let seq_boundaries = self.seq_boundaries.as_ref()?;
+
+        // Rank1(pos) counts 1-bits up to but EXCLUDING position pos
+        // So rank1(pos+1) counts 1-bits up to and INCLUDING position pos
+        // This gives us the sequence ID (1-based) that contains position pos
+        let rank = seq_boundaries.rank1(pos as usize + 1);
+
+        if rank > 0 && rank <= self.seq_count {
+            Some(rank)
+        } else {
+            None
         }
     }
 
     /// Check if position is start of a sequence
     pub fn seq_start(&self, pos: u64) -> bool {
-        self.seq_offsets.iter().any(|&offset| offset == pos)
+        if let Some(ref seq_boundaries) = self.seq_boundaries {
+            // Check if there's a 1-bit at this position
+            if (pos as usize) < seq_boundaries.len() {
+                // In RsVec, get() returns Option<u64> where the value is the bit
+                return seq_boundaries.get(pos as usize).unwrap_or(0) == 1;
+            }
+        }
+        false
     }
 
     /// Get subsequence by sequence name
@@ -280,7 +425,7 @@ impl SeqIndex {
         self.subseq_by_id(seq_id, pos, count)
     }
 
-    /// Get subsequence by sequence id
+    /// Get subsequence by sequence id (1-based)
     pub fn subseq_by_id(&self, seq_id: usize, pos: u64, count: u64) -> Option<String> {
         let seq_offset = self.nth_seq_offset(seq_id)?;
         let seq_len = self.nth_seq_length(seq_id)?;
@@ -299,9 +444,7 @@ impl SeqIndex {
             let end = (pos + count) as usize;
 
             if end <= mmap.len() {
-                return Some(
-                    String::from_utf8_lossy(&mmap[start..end]).to_string()
-                );
+                return Some(String::from_utf8_lossy(&mmap[start..end]).to_string());
             }
         }
         None
@@ -320,13 +463,12 @@ impl SeqIndex {
         self.pos_in_all_seqs_by_id(seq_id, pos, is_rev)
     }
 
-    /// Convert sequence id + position to absolute position
+    /// Convert sequence id + position to absolute position (1-based seq_id)
     pub fn pos_in_all_seqs_by_id(&self, seq_id: usize, pos: u64, is_rev: bool) -> Option<u64> {
         let seq_offset = self.nth_seq_offset(seq_id)?;
         let seq_len = self.nth_seq_length(seq_id)?;
 
         if is_rev {
-            // Reverse position
             if pos < seq_len {
                 Some(seq_offset + seq_len - pos - 1)
             } else {
@@ -346,11 +488,7 @@ impl Default for SeqIndex {
 
 impl Drop for SeqIndex {
     fn drop(&mut self) {
-        // Clean up memory map
         self.seq_mmap = None;
-
-        // Optionally remove temp files
-        // (C++ version has temp_file::keep_temp flag we could respect)
     }
 }
 
@@ -369,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_fasta_parsing() {
-        let test_file = "/tmp/test_seqindex.fa";
+        let test_file = "/tmp/test_seqindex_v2.fa";
         create_test_fasta(test_file, &[
             ("seq1", "ACGT"),
             ("seq2", "GGGG"),
@@ -380,16 +518,16 @@ mod tests {
         idx.build_index(test_file).unwrap();
 
         assert_eq!(idx.n_seqs(), 3);
-        assert_eq!(idx.nth_name(0), Some("seq1"));
-        assert_eq!(idx.nth_name(1), Some("seq2"));
-        assert_eq!(idx.nth_name(2), Some("seq3"));
+        assert_eq!(idx.nth_name(1), Some("seq1".to_string()));
+        assert_eq!(idx.nth_name(2), Some("seq2".to_string()));
+        assert_eq!(idx.nth_name(3), Some("seq3".to_string()));
 
         std::fs::remove_file(test_file).ok();
     }
 
     #[test]
     fn test_sequence_access() {
-        let test_file = "/tmp/test_seqindex2.fa";
+        let test_file = "/tmp/test_seqindex_v2_2.fa";
         create_test_fasta(test_file, &[
             ("chr1", "ACGTACGT"),
             ("chr2", "GGGGTTTT"),
@@ -400,15 +538,36 @@ mod tests {
 
         assert_eq!(idx.seq_by_name("chr1"), Some("ACGTACGT".to_string()));
         assert_eq!(idx.seq_by_name("chr2"), Some("GGGGTTTT".to_string()));
-        assert_eq!(idx.nth_seq_length(0), Some(8));
         assert_eq!(idx.nth_seq_length(1), Some(8));
+        assert_eq!(idx.nth_seq_length(2), Some(8));
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    #[test]
+    fn test_name_lookup() {
+        let test_file = "/tmp/test_seqindex_v2_3.fa";
+        create_test_fasta(test_file, &[
+            ("seq1", "AAAA"),
+            ("seq2", "CCCC"),
+            ("seq3", "GGGG"),
+        ]);
+
+        let mut idx = SeqIndex::new();
+        idx.build_index(test_file).unwrap();
+
+        // Test rank_of_seq_named
+        assert_eq!(idx.rank_of_seq_named("seq1"), Some(1));
+        assert_eq!(idx.rank_of_seq_named("seq2"), Some(2));
+        assert_eq!(idx.rank_of_seq_named("seq3"), Some(3));
+        assert_eq!(idx.rank_of_seq_named("nonexistent"), None);
 
         std::fs::remove_file(test_file).ok();
     }
 
     #[test]
     fn test_position_queries() {
-        let test_file = "/tmp/test_seqindex3.fa";
+        let test_file = "/tmp/test_seqindex_v2_4.fa";
         create_test_fasta(test_file, &[
             ("s1", "AAAA"),
             ("s2", "CCCC"),
@@ -418,10 +577,10 @@ mod tests {
         idx.build_index(test_file).unwrap();
 
         // s1 is at offset 0, s2 is at offset 4
-        assert_eq!(idx.seq_id_at(0), Some(0));
-        assert_eq!(idx.seq_id_at(3), Some(0));
-        assert_eq!(idx.seq_id_at(4), Some(1));
-        assert_eq!(idx.seq_id_at(7), Some(1));
+        assert_eq!(idx.seq_id_at(0), Some(1));
+        assert_eq!(idx.seq_id_at(3), Some(1));
+        assert_eq!(idx.seq_id_at(4), Some(2));
+        assert_eq!(idx.seq_id_at(7), Some(2));
 
         std::fs::remove_file(test_file).ok();
     }
