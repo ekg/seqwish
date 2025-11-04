@@ -13,6 +13,7 @@
 #include "seqindex.hpp"
 #include "gzstream.h"
 #include "pos.hpp"
+#include "seqwish_rs.h"
 
 namespace seqwish {
 
@@ -33,9 +34,13 @@ void unpack_paf_alignments(
     const float& sparsification_factor,
     const uint64_t& num_threads);
 
-uint64_t match_hash(const pos_t& q, const pos_t& t, const uint64_t& l);
+inline uint64_t match_hash(const pos_t& q, const pos_t& t, const uint64_t& l) {
+    return ::match_hash(q, t, l);
+}
 
-bool keep_sparse(const pos_t& q, const pos_t& t, const uint64_t& l, const float f);
+inline bool keep_sparse(const pos_t& q, const pos_t& t, const uint64_t& l, const float f) {
+    return ::keep_sparse(q, t, l, f);
+}
 
 
 /*

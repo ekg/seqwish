@@ -1,16 +1,6 @@
 #include "alignments.hpp"
-#include "seqwish_rs.h"
 
 namespace seqwish {
-
-
-uint64_t match_hash(const pos_t& q, const pos_t& t, const uint64_t& l) {
-    return ::match_hash(q, t, l);
-}
-
-bool keep_sparse(const pos_t& q, const pos_t& t, const uint64_t& l, const float f) {
-    return ::keep_sparse(q, t, l, f);
-}
 
 void paf_worker(
     igzstream& paf_in,
