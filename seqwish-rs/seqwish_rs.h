@@ -179,6 +179,16 @@ void parse_paf_spec(const char *spec,
                     void *user_data,
                     void (*callback)(void*, const char*, uint64_t));
 
+/**
+ * Hash function for match parameters
+ */
+uint64_t match_hash(uint64_t q, uint64_t t, uint64_t l);
+
+/**
+ * Determine if a match should be kept based on sparsification factor
+ */
+bool keep_sparse(uint64_t q, uint64_t t, uint64_t l, float f);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
