@@ -12,6 +12,7 @@ pub mod paf;
 pub mod sxs;
 pub mod alignments;
 pub mod version;
+pub mod seqindex;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
