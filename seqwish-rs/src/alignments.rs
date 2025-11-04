@@ -277,6 +277,11 @@ pub fn unpack_paf_alignments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::seqindex::SeqIndex;
+    use std::fs::File;
+    use std::io::Write;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
 
     #[test]
     fn test_match_hash_deterministic() {
@@ -350,5 +355,78 @@ mod tests {
         let result1 = keep_sparse(12345, 67890, 111, 0.3);
         let result2 = keep_sparse(12345, 67890, 111, 0.3);
         assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_unpack_paf_alignments_integration() -> std::io::Result<()> {
+        // Create temporary FASTA file with two sequences
+        let fasta_path = "/tmp/test_alignments.fasta";
+        let mut fasta_file = File::create(fasta_path)?;
+        writeln!(fasta_file, ">seq1")?;
+        writeln!(fasta_file, "ACGTACGTACGT")?;  // 12 bases
+        writeln!(fasta_file, ">seq2")?;
+        writeln!(fasta_file, "ACGTACGTACGT")?;  // 12 bases (identical)
+        fasta_file.flush()?;
+
+        // Build SeqIndex
+        let mut seqidx = SeqIndex::new();
+        seqidx.build_index(fasta_path).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        })?;
+        let seqidx = Arc::new(seqidx);
+
+        // Create temporary gzipped PAF file
+        // PAF format: query_name, query_len, query_start, query_end, strand, target_name, target_len, target_start, target_end, matches, block_len, mapq, [tags]
+        let paf_path = "/tmp/test_alignments.paf.gz";
+        let paf_file = File::create(paf_path)?;
+        let mut gz = GzEncoder::new(paf_file, Compression::default());
+
+        // Simple alignment: seq1[0..12] aligns to seq2[0..12] with perfect match
+        writeln!(gz, "seq1\t12\t0\t12\t+\tseq2\t12\t0\t12\t12\t12\t60\tcg:Z:12M")?;
+        gz.finish()?;
+
+        // Create iitree
+        let iitree_path = "/tmp/test_alignments.iitree";
+        let mut tree = IITree::new(iitree_path)?;
+        tree.open_writer()?;
+        let tree = Arc::new(Mutex::new(tree));
+
+        // Process PAF file
+        unpack_paf_alignments(
+            paf_path,
+            Arc::clone(&tree),
+            Arc::clone(&seqidx),
+            1,    // min_match_len
+            0.0,  // sparsification_factor (keep all)
+            1,    // num_threads
+        )?;
+
+        // Index the tree
+        {
+            let mut tree_guard = tree.lock().unwrap();
+            tree_guard.index()?;
+        }
+
+        // Verify intervals were added
+        let tree_guard = tree.lock().unwrap();
+        let num_intervals = tree_guard.len();
+
+        // We expect at least 2 intervals (one for each direction of the alignment)
+        assert!(num_intervals >= 2, "Expected at least 2 intervals, got {}", num_intervals);
+
+        // Query for overlaps at position 0 (start of seq1)
+        let mut found_overlaps = 0;
+        tree_guard.overlap(0, 1, |_idx, _start, _end, _data| {
+            found_overlaps += 1;
+        })?;
+
+        assert!(found_overlaps > 0, "Expected overlaps at position 0, found {}", found_overlaps);
+
+        // Cleanup
+        std::fs::remove_file(fasta_path).ok();
+        std::fs::remove_file(paf_path).ok();
+        std::fs::remove_file(iitree_path).ok();
+
+        Ok(())
     }
 }
