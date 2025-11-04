@@ -13,8 +13,7 @@ namespace seqwish {
 struct cigar_op_t { uint64_t len; char op; };
 typedef std::vector<cigar_op_t> cigar_t;
 
-inline cigar_t cigar_from_string(const std::string& s) {
-    CigarHandle* handle = ::cigar_from_string(s.c_str());
+inline cigar_t cigar_from_handle(const CigarHandle* handle) {
     if (handle == nullptr) {
         return cigar_t();
     }
@@ -31,6 +30,12 @@ inline cigar_t cigar_from_string(const std::string& s) {
         }
     }
 
+    return result;
+}
+
+inline cigar_t cigar_from_string(const std::string& s) {
+    CigarHandle* handle = ::cigar_from_string(s.c_str());
+    cigar_t result = cigar_from_handle(handle);
     ::cigar_free(handle);
     return result;
 }

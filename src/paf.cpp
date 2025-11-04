@@ -1,36 +1,10 @@
 #include "paf.hpp"
-#include "tokenize.hpp"
 #include "seqwish_rs.h"
 
-namespace seqwish {
+// PAF row parsing now implemented in Rust (seqwish-rs/src/paf.rs)
+// This file only provides utility functions
 
-paf_row_t::paf_row_t(const std::string& line) {
-    std::vector<std::string> fields;
-    tokenize(line, fields, " \t");
-    query_sequence_name = fields[0];
-    query_sequence_length = std::stoull(fields[1]);
-    query_start = std::stoull(fields[2]);
-    query_end = std::stoull(fields[3]);
-    query_target_same_strand = (fields[4] == "+");
-    target_sequence_name = fields[5];
-    target_sequence_length = std::stoull(fields[6]);
-    target_start = std::stoull(fields[7]);
-    target_end = std::stoull(fields[8]);
-    num_matches = std::stoull(fields[9]);
-    alignment_block_length = std::stoull(fields[10]);
-    mapping_quality = std::stoi(fields[11]);
-    // find the cigar in the last fields
-    for (size_t i = 12; i < fields.size(); ++i) {
-        // cg:Z:
-        auto& f = fields[i];
-        //std::string::size_type n;
-        auto n = f.find("cg:Z:");
-        if (n == 0) {
-            cigar = cigar_from_string(f.substr(5));
-            break;
-        }
-    }
-}
+namespace seqwish {
 
 std::ostream& operator<<(std::ostream& out, const paf_row_t& pafrow) {
     out << pafrow.query_sequence_name << "\t"
@@ -57,7 +31,6 @@ void dump_paf_alignments(const std::string& filename) {
         std::cout << pafrow << std::endl;
     }
 }
-
 
 // Callback helper for parse_paf_spec FFI
 extern "C" void paf_spec_callback(void* user_data, const char* filename, uint64_t weight) {
