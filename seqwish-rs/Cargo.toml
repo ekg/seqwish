@@ -11,6 +11,8 @@ libc = "0.2"
 once_cell = "1.21"
 memmap2 = "0.9"
 flate2 = "1.0"  # For gzip support
+fm-index = "0.3"  # FM-index / CSA for sequence name lookup
+vers-vecs = "1.1"  # Succinct bitvectors with rank/select
 
 [build-dependencies]
 cbindgen = "0.27"
