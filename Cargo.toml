@@ -10,6 +10,18 @@ keywords = ["bioinformatics", "genomics", "pangenome", "variation-graph", "gfa"]
 categories = ["science", "command-line-utilities"]
 readme = "README.md"
 rust-version = "1.70"
+exclude = [
+    "test/*",
+    "data/*",
+    "cpp/*",
+    "*.pdf",
+    "*.md",
+    "!README.md",
+    ".github/*",
+    ".claude/*",
+    "Dockerfile",
+    "SEQINDEX_ANALYSIS_FINAL_REPORT.txt",
+]
 
 [lib]
 crate-type = ["staticlib", "cdylib"]
