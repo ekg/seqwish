@@ -1,6 +1,6 @@
 [package]
 name = "seqwish"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Erik Garrison <erik.garrison@gmail.com>"]
 description = "A variation graph inducer - build pangenome graphs from pairwise alignments"
@@ -14,6 +14,7 @@ exclude = [
     "test/*",
     "data/*",
     "cpp/*",
+    "deps/*",
     "*.pdf",
     "*.md",
     "!README.md",
