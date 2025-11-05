@@ -1,7 +1,15 @@
 [package]
-name = "seqwish_rs"
+name = "seqwish"
 version = "0.1.0"
 edition = "2021"
+authors = ["Erik Garrison <erik.garrison@gmail.com>"]
+description = "A variation graph inducer - build pangenome graphs from pairwise alignments"
+repository = "https://github.com/pangenome/seqwish"
+license = "MIT"
+keywords = ["bioinformatics", "genomics", "pangenome", "variation-graph", "gfa"]
+categories = ["science", "command-line-utilities"]
+readme = "README.md"
+rust-version = "1.70"
 
 [lib]
 crate-type = ["staticlib", "cdylib"]

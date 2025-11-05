@@ -1,3 +1,44 @@
+//! # seqwish - A variation graph inducer
+//!
+//! Seqwish builds variation graphs from pairwise sequence alignments.
+//! It transforms a collection of sequences and their all-to-all alignments
+//! into a graph representation that captures the variation between the sequences.
+//!
+//! ## Overview
+//!
+//! The algorithm proceeds in several stages:
+//!
+//! 1. **Sequence Indexing** - Load and index input sequences
+//! 2. **Alignment Processing** - Parse and index PAF alignments
+//! 3. **Transitive Closure** - Compute equivalence classes of aligned positions
+//! 4. **Node Compaction** - Merge non-bifurcating regions into single nodes
+//! 5. **Link Derivation** - Extract edges between nodes
+//! 6. **GFA Emission** - Output the variation graph in GFA format
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use seqwish::seqindex::SeqIndex;
+//! use std::sync::{Arc, Mutex};
+//!
+//! // Build a sequence index
+//! let mut seqidx = SeqIndex::new();
+//! seqidx.build_index("sequences.fa").unwrap();
+//! ```
+//!
+//! ## Command-line Usage
+//!
+//! ```bash
+//! seqwish -s sequences.fa -p alignments.paf -g output.gfa
+//! ```
+//!
+//! ## Features
+//!
+//! - Memory-safe parallel processing
+//! - Disk-backed data structures for scalability
+//! - Produces GFA v1.0 format output
+//! - Compatible with standard pangenome tools
+
 use std::ffi::{c_char, CStr, CString};
 use std::ptr;
 use std::sync::{Arc, Mutex};
