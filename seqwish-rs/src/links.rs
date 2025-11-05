@@ -80,6 +80,11 @@ impl LinkSet {
         self.links.par_sort_unstable();
     }
 
+    /// Deduplicate links after sorting
+    pub fn dedup(&mut self) {
+        self.links.dedup();
+    }
+
     pub fn len(&self) -> usize {
         self.links.len()
     }
@@ -207,8 +212,9 @@ pub fn derive_links(
         }
     }
 
-    // Sort the links
+    // Sort and deduplicate the links
     link_set.sort();
+    link_set.dedup();
 
     Ok(link_set)
 }
