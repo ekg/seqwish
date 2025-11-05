@@ -1,5 +1,6 @@
 use std::ffi::{c_char, CStr, CString};
 use std::ptr;
+use std::sync::{Arc, Mutex};
 
 pub mod tempfile;
 pub mod pos;
@@ -13,6 +14,7 @@ pub mod sxs;
 pub mod alignments;
 pub mod version;
 pub mod seqindex;
+pub mod transclosure;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -240,6 +242,16 @@ pub extern "C" fn dna_reverse_complement_in_place(seq: *mut c_char, len: usize) 
 /// Opaque handle to CIGAR vector
 pub struct CigarHandle {
     cigar: Vec<cigar::CigarOp>,
+}
+
+/// Opaque handle to SeqIndex
+pub struct SeqIndexHandle {
+    seqidx: Arc<seqindex::SeqIndex>,
+}
+
+/// Opaque handle to IITree
+pub struct IITreeHandle {
+    iitree: Arc<Mutex<iitree_rs::IITree<u64, pos::PosT>>>,
 }
 
 /// Parse CIGAR string and return handle to CIGAR vector
@@ -723,6 +735,83 @@ pub extern "C" fn sxs_is_good(handle: *const SxsHandle) -> bool {
 pub extern "C" fn sxs_is_reverse(handle: *const SxsHandle) -> bool {
     if handle.is_null() { return false; }
     unsafe { (*handle).aln.is_reverse() }
+}
+
+// FFI wrappers for transclosure module
+
+// TODO: Add helper functions to create handles from C++ objects
+// For now, the C++ side needs to manage creation of SeqIndexHandle and IITreeHandle
+// directly by wrapping the Rust objects in Arc<> and Arc<Mutex<>>
+
+/// Compute transitive closures for variation graph construction
+///
+/// # Arguments
+/// * `seqidx_handle` - Handle to the seqindex
+/// * `aln_iitree_handle` - Handle to the alignment iitree
+/// * `seq_v_file` - Path to output sequence file
+/// * `node_iitree_handle` - Handle to the node iitree
+/// * `path_iitree_handle` - Handle to the path iitree
+/// * `repeat_max` - Maximum repeat count
+/// * `min_repeat_dist` - Minimum repeat distance
+/// * `transclose_batch_size` - Batch size for transitive closure
+/// * `show_progress` - Whether to show progress messages
+/// * `num_threads` - Number of threads to use
+///
+/// # Returns
+/// The length of the graph sequence, or 0 on error
+#[no_mangle]
+pub extern "C" fn transclosure_compute(
+    seqidx_handle: *const SeqIndexHandle,
+    aln_iitree_handle: *const IITreeHandle,
+    seq_v_file: *const c_char,
+    node_iitree_handle: *const IITreeHandle,
+    path_iitree_handle: *const IITreeHandle,
+    repeat_max: u64,
+    min_repeat_dist: u64,
+    transclose_batch_size: u64,
+    show_progress: bool,
+    num_threads: usize,
+) -> usize {
+    if seqidx_handle.is_null() || aln_iitree_handle.is_null() || seq_v_file.is_null()
+        || node_iitree_handle.is_null() || path_iitree_handle.is_null()
+    {
+        eprintln!("[transclosure] Error: null pointer passed to transclosure_compute");
+        return 0;
+    }
+
+    unsafe {
+        let seqidx = Arc::clone(&(*seqidx_handle).seqidx);
+        let aln_iitree = Arc::clone(&(*aln_iitree_handle).iitree);
+        let node_iitree = Arc::clone(&(*node_iitree_handle).iitree);
+        let path_iitree = Arc::clone(&(*path_iitree_handle).iitree);
+
+        let seq_v_file_str = match CStr::from_ptr(seq_v_file).to_str() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[transclosure] Error converting seq_v_file path: {}", e);
+                return 0;
+            }
+        };
+
+        match transclosure::compute_transitive_closures(
+            seqidx,
+            aln_iitree,
+            seq_v_file_str,
+            node_iitree,
+            path_iitree,
+            repeat_max,
+            min_repeat_dist,
+            transclose_batch_size,
+            show_progress,
+            num_threads,
+        ) {
+            Ok(length) => length,
+            Err(e) => {
+                eprintln!("[transclosure] Error in compute_transitive_closures: {}", e);
+                0
+            }
+        }
+    }
 }
 
 #[cfg(test)]

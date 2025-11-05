@@ -9,9 +9,19 @@
 typedef struct CigarHandle CigarHandle;
 
 /**
+ * Opaque handle to IITree
+ */
+typedef struct IITreeHandle IITreeHandle;
+
+/**
  * Opaque handle to a parsed PAF row
  */
 typedef struct PafRowHandle PafRowHandle;
+
+/**
+ * Opaque handle to SeqIndex
+ */
+typedef struct SeqIndexHandle SeqIndexHandle;
 
 /**
  * Opaque handle to a parsed SXS alignment
@@ -273,6 +283,35 @@ struct CigarHandle *sxs_cigar(const struct SxsHandle *handle);
 bool sxs_is_good(const struct SxsHandle *handle);
 
 bool sxs_is_reverse(const struct SxsHandle *handle);
+
+/**
+ * Compute transitive closures for variation graph construction
+ *
+ * # Arguments
+ * * `seqidx_handle` - Handle to the seqindex
+ * * `aln_iitree_handle` - Handle to the alignment iitree
+ * * `seq_v_file` - Path to output sequence file
+ * * `node_iitree_handle` - Handle to the node iitree
+ * * `path_iitree_handle` - Handle to the path iitree
+ * * `repeat_max` - Maximum repeat count
+ * * `min_repeat_dist` - Minimum repeat distance
+ * * `transclose_batch_size` - Batch size for transitive closure
+ * * `show_progress` - Whether to show progress messages
+ * * `num_threads` - Number of threads to use
+ *
+ * # Returns
+ * The length of the graph sequence, or 0 on error
+ */
+uintptr_t transclosure_compute(const struct SeqIndexHandle *seqidx_handle,
+                               const struct IITreeHandle *aln_iitree_handle,
+                               const char *seq_v_file,
+                               const struct IITreeHandle *node_iitree_handle,
+                               const struct IITreeHandle *path_iitree_handle,
+                               uint64_t repeat_max,
+                               uint64_t min_repeat_dist,
+                               uint64_t transclose_batch_size,
+                               bool show_progress,
+                               uintptr_t num_threads);
 
 char *version_get_version(void);
 
