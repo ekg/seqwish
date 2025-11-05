@@ -285,6 +285,29 @@ bool sxs_is_good(const struct SxsHandle *handle);
 bool sxs_is_reverse(const struct SxsHandle *handle);
 
 /**
+ * Compact nodes by marking boundaries in the graph
+ *
+ * # Arguments
+ * * `seqidx_handle` - Handle to the seqindex
+ * * `graph_size` - Size of the graph sequence
+ * * `node_iitree_handle` - Handle to the node iitree
+ * * `path_iitree_handle` - Handle to the path iitree
+ * * `seq_id_bv` - Pointer to bitvector array (will be modified)
+ * * `seq_id_bv_size` - Size of the bitvector
+ * * `num_threads` - Number of threads to use
+ *
+ * # Returns
+ * 0 on success, 1 on error
+ */
+int32_t compact_compact_nodes(const struct SeqIndexHandle *seqidx_handle,
+                              uintptr_t graph_size,
+                              const struct IITreeHandle *node_iitree_handle,
+                              const struct IITreeHandle *path_iitree_handle,
+                              uint64_t *seq_id_bv,
+                              uintptr_t seq_id_bv_size,
+                              uintptr_t num_threads);
+
+/**
  * Compute transitive closures for variation graph construction
  *
  * # Arguments

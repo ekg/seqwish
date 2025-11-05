@@ -2,6 +2,8 @@ use std::ffi::{c_char, CStr, CString};
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
+use bitvec::prelude::*;
+
 pub mod tempfile;
 pub mod pos;
 pub mod dna;
@@ -15,6 +17,7 @@ pub mod alignments;
 pub mod version;
 pub mod seqindex;
 pub mod transclosure;
+pub mod compact;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -735,6 +738,75 @@ pub extern "C" fn sxs_is_good(handle: *const SxsHandle) -> bool {
 pub extern "C" fn sxs_is_reverse(handle: *const SxsHandle) -> bool {
     if handle.is_null() { return false; }
     unsafe { (*handle).aln.is_reverse() }
+}
+
+// FFI wrappers for compact module
+
+/// Compact nodes by marking boundaries in the graph
+///
+/// # Arguments
+/// * `seqidx_handle` - Handle to the seqindex
+/// * `graph_size` - Size of the graph sequence
+/// * `node_iitree_handle` - Handle to the node iitree
+/// * `path_iitree_handle` - Handle to the path iitree
+/// * `seq_id_bv` - Pointer to bitvector array (will be modified)
+/// * `seq_id_bv_size` - Size of the bitvector
+/// * `num_threads` - Number of threads to use
+///
+/// # Returns
+/// 0 on success, 1 on error
+#[no_mangle]
+pub extern "C" fn compact_compact_nodes(
+    seqidx_handle: *const SeqIndexHandle,
+    graph_size: usize,
+    node_iitree_handle: *const IITreeHandle,
+    path_iitree_handle: *const IITreeHandle,
+    seq_id_bv: *mut u64,
+    seq_id_bv_size: usize,
+    num_threads: usize,
+) -> i32 {
+    if seqidx_handle.is_null() || node_iitree_handle.is_null()
+        || path_iitree_handle.is_null() || seq_id_bv.is_null()
+    {
+        eprintln!("[compact] Error: null pointer passed to compact_compact_nodes");
+        return 1;
+    }
+
+    unsafe {
+        let seqidx = Arc::clone(&(*seqidx_handle).seqidx);
+        let node_iitree = Arc::clone(&(*node_iitree_handle).iitree);
+        let path_iitree = Arc::clone(&(*path_iitree_handle).iitree);
+
+        // Create BitVec from raw pointer
+        let bit_count = seq_id_bv_size * 64;  // 64 bits per u64
+        let slice = std::slice::from_raw_parts_mut(seq_id_bv, seq_id_bv_size);
+        let mut bitvec = BitVec::from_slice(slice);
+        bitvec.resize(bit_count, false);
+
+        match compact::compact_nodes(
+            seqidx,
+            graph_size,
+            node_iitree,
+            path_iitree,
+            &mut bitvec,
+            num_threads,
+        ) {
+            Ok(()) => {
+                // Copy bitvec back to raw pointer
+                let bitvec_slice = bitvec.as_raw_slice();
+                std::ptr::copy_nonoverlapping(
+                    bitvec_slice.as_ptr(),
+                    seq_id_bv,
+                    seq_id_bv_size.min(bitvec_slice.len()),
+                );
+                0
+            }
+            Err(e) => {
+                eprintln!("[compact] Error in compact_nodes: {}", e);
+                1
+            }
+        }
+    }
 }
 
 // FFI wrappers for transclosure module
