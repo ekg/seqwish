@@ -19,6 +19,7 @@ pub mod seqindex;
 pub mod transclosure;
 pub mod compact;
 pub mod links;
+pub mod gfa;
 
 /// Returns the version string of the Rust component
 #[no_mangle]

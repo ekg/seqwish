@@ -14,11 +14,12 @@ use iitree_rs::IITree;
 
 /// Represents a ranked/select-capable bitvector
 /// This is a simplified interface for the SDSL sd_vector used in C++
+#[derive(Clone)]
 pub struct RankSelectBitVector {
     /// Positions where bits are set (sorted)
-    set_positions: Vec<usize>,
+    pub set_positions: Vec<usize>,
     /// Total size of the bitvector
-    size: usize,
+    pub size: usize,
 }
 
 impl RankSelectBitVector {
