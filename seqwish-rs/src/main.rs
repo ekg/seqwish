@@ -158,7 +158,9 @@ fn main() -> io::Result<()> {
         eprintln!("[seqwish::alignments] {:.3} loading alignments", start_time.elapsed().as_secs_f64());
     }
     let aln_iitree_idx = tempfile::create("seqwish-", ".sqa")?;
-    let aln_iitree = Arc::new(Mutex::new(IITree::<u64, u64>::new(&aln_iitree_idx)?));
+    let mut aln_iitree_obj = IITree::<u64, u64>::new(&aln_iitree_idx)?;
+    aln_iitree_obj.open_writer()?;
+    let aln_iitree = Arc::new(Mutex::new(aln_iitree_obj));
 
     unpack_paf_alignments(
         paf_file,
@@ -186,8 +188,13 @@ fn main() -> io::Result<()> {
     let node_iitree_idx = tempfile::create("seqwish-", ".sqn")?;
     let path_iitree_idx = tempfile::create("seqwish-", ".sqp")?;
 
-    let node_iitree = Arc::new(Mutex::new(IITree::<u64, u64>::new(&node_iitree_idx)?));
-    let path_iitree = Arc::new(Mutex::new(IITree::<u64, u64>::new(&path_iitree_idx)?));
+    let mut node_iitree_obj = IITree::<u64, u64>::new(&node_iitree_idx)?;
+    node_iitree_obj.open_writer()?;
+    let node_iitree = Arc::new(Mutex::new(node_iitree_obj));
+
+    let mut path_iitree_obj = IITree::<u64, u64>::new(&path_iitree_idx)?;
+    path_iitree_obj.open_writer()?;
+    let path_iitree = Arc::new(Mutex::new(path_iitree_obj));
 
     let graph_length = compute_transitive_closures(
         Arc::clone(&seqidx),
