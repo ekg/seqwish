@@ -5,14 +5,15 @@
 // - L lines (links/edges between nodes)
 // - P lines (paths showing input sequences through the graph)
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::io::{self, Write};
 
 use crate::pos::{PosT, offset, is_rev, make_pos_t, incr_pos};
 use crate::seqindex::SeqIndex;
 use crate::links::RankSelectBitVector;
 use crate::mmap::mmap_open;
-use iitree_rs::IITree;
+use crate::intervaltree::AdaptiveTree;
+use crate::intervaltree::IntervalTree;
 
 /// Emit GFA format output for the variation graph
 ///
@@ -32,8 +33,8 @@ pub fn emit_gfa<W: Write>(
     out: &mut W,
     _graph_length: usize,
     seq_v_file: &str,
-    _node_iitree: Arc<Mutex<IITree<u64, PosT>>>,
-    path_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    _node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
+    path_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     seq_id_cbv: &RankSelectBitVector,
     seqidx: Arc<SeqIndex>,
     links: &[(PosT, PosT)],
@@ -116,7 +117,7 @@ pub fn emit_gfa<W: Write>(
             let mut pos_start_in_s = 0u64;
 
             // Find overlap in path_iitree
-            if let Ok(path_guard) = path_iitree.lock() {
+            if let Ok(path_guard) = path_iitree.read() {
                 path_guard.overlap(j, j + 1, |_idx, start, end, pos| {
                     overlap_count += 1;
                     ovlp_start_in_q = start;

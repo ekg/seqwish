@@ -1,8 +1,8 @@
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use memmap2::Mmap;
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use fm_index::{FMIndexWithLocate, Text, Search, SearchIndex, MatchWithLocate};
 use vers_vecs::{BitVec, RsVec};
 
@@ -69,18 +69,19 @@ impl SeqIndex {
             .map_err(|e| format!("Failed to open {}: {}", filename, e))?;
 
         let reader: Box<dyn BufRead> = if filename.ends_with(".gz") {
-            Box::new(BufReader::new(GzDecoder::new(file)))
+            Box::new(BufReader::new(MultiGzDecoder::new(file)))
         } else {
             Box::new(BufReader::new(file))
         };
 
-        // Open output file for sequences
-        let mut seq_out = OpenOptions::new()
+        // Open output file for sequences (WITH LARGE BUFFER!)
+        // Use 1MB buffer to minimize write syscalls (default 8KB is too small)
+        let mut seq_out = BufWriter::with_capacity(1024 * 1024, OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(&seq_file)
-            .map_err(|e| format!("Failed to create sequence file: {}", e))?;
+            .map_err(|e| format!("Failed to create sequence file: {}", e))?);
 
         let mut lines = reader.lines();
 
@@ -118,6 +119,7 @@ impl SeqIndex {
 
             // Get sequence
             let mut seq = String::new();
+            let mut found_next_header = false;
 
             if is_fasta {
                 // Read until next '>' or EOF
@@ -125,6 +127,7 @@ impl SeqIndex {
                     let line = line.map_err(|e| format!("Failed to read line: {}", e))?;
                     if line.starts_with('>') {
                         current_line = line;
+                        found_next_header = true;
                         break;
                     }
                     seq.push_str(&line);
@@ -151,7 +154,8 @@ impl SeqIndex {
                     notified_empty_seqs = true;
                     eprintln!("[seqindex] WARNING: input contains empty sequences, which will be ignored.");
                 }
-                if is_fasta && lines.by_ref().next().is_none() {
+                // If we reached EOF or there's no next header, stop
+                if is_fasta && !found_next_header {
                     break;
                 }
                 continue;
@@ -178,7 +182,8 @@ impl SeqIndex {
 
             // Check EOF
             if is_fasta {
-                if !current_line.starts_with('>') {
+                if !found_next_header {
+                    // Reached EOF without finding another header
                     break;
                 }
             } else {

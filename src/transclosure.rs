@@ -4,7 +4,7 @@
 // identifying equivalence classes that form nodes in the variation graph.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::io;
@@ -12,11 +12,14 @@ use std::io;
 use crossbeam_queue::ArrayQueue;
 use bitvec::prelude::*;
 use rayon::prelude::*;
-use uf_rush::UFRush;
+use std::sync::atomic::AtomicU64;
+use crate::dset64_asm::DisjointSetsAsm;
+use sucds::bit_vectors::{BitVector as SucdsBitVector, Rank9Sel, Rank};
 
 use crate::pos::{PosT, offset, is_rev, incr_pos, incr_pos_by, decr_pos, decr_pos_by, make_pos_t};
 use crate::seqindex::SeqIndex;
-use iitree_rs::IITree;
+use crate::intervaltree::AdaptiveTree;
+use crate::intervaltree::IntervalTree;
 
 /// Thomas Wang's 64-bit integer hash function
 ///
@@ -70,33 +73,39 @@ type RangeAtomicQueue = ArrayQueue<(PosT, u64)>;
 type OverlapAtomicQueue = ArrayQueue<(Match, bool)>;
 
 /// Atomic bitvector wrapper for thread-safe bit operations
-/// Using BitVec with atomic operations on individual bits
+/// Uses Vec<AtomicU64> with fetch_or for truly atomic bit operations
+/// (compiles to lock-free CPU instructions like LOCK OR on x86)
 #[derive(Debug)]
 struct AtomicBitVec {
-    bits: BitVec<u64, Lsb0>,
+    data: Vec<AtomicU64>,
 }
 
 impl AtomicBitVec {
     fn new(size: usize) -> Self {
-        AtomicBitVec {
-            bits: BitVec::repeat(false, size),
+        let num_words = (size + 63) / 64;
+        let mut data = Vec::with_capacity(num_words);
+        for _ in 0..num_words {
+            data.push(AtomicU64::new(0));
         }
+        AtomicBitVec { data }
     }
 
     /// Atomically set a bit and return its previous value
-    /// Note: This is a simplified version - in production would need true atomics
-    fn set(&self, index: usize) -> bool {
-        unsafe {
-            let ptr = self.bits.as_raw_slice().as_ptr() as *mut u64;
-            let word_index = index / 64;
-            let bit_index = index % 64;
-            let mask = 1u64 << bit_index;
-            let word_ptr = ptr.add(word_index);
-            let old_word = std::ptr::read_volatile(word_ptr);
-            let old_bit = (old_word & mask) != 0;
-            std::ptr::write_volatile(word_ptr, old_word | mask);
-            old_bit
-        }
+    fn set(&self, index: usize, _value: bool, ordering: Ordering) -> bool {
+        let word_index = index / 64;
+        let bit_index = index % 64;
+        let mask = 1u64 << bit_index;
+        let prev = self.data[word_index].fetch_or(mask, ordering);
+        (prev & mask) != 0
+    }
+
+    /// Get a bit value
+    fn get(&self, index: usize, ordering: Ordering) -> bool {
+        let word_index = index / 64;
+        let bit_index = index % 64;
+        let mask = 1u64 << bit_index;
+        let word = self.data[word_index].load(ordering);
+        (word & mask) != 0
     }
 }
 
@@ -109,8 +118,8 @@ pub fn extend_range(
     q_pos: PosT,
     range_buffer: &mut HashMap<PosT, Range>,
     seqidx: &SeqIndex,
-    node_iitree: &mut IITree<u64, PosT>,
-    path_iitree: &mut IITree<u64, PosT>,
+    node_iitree: &mut AdaptiveTree<u64, PosT>,
+    path_iitree: &mut AdaptiveTree<u64, PosT>,
 ) -> io::Result<()> {
     // Find position to add onto (must match position and orientation)
     let mut q_last_pos = q_pos;
@@ -152,8 +161,8 @@ pub fn extend_range(
 fn flush_single_range(
     range_in_s: &Range,
     match_end_pos_in_q: PosT,
-    node_iitree: &mut IITree<u64, PosT>,
-    path_iitree: &mut IITree<u64, PosT>,
+    node_iitree: &mut AdaptiveTree<u64, PosT>,
+    path_iitree: &mut AdaptiveTree<u64, PosT>,
 ) -> io::Result<()> {
     let is_rev_match = is_rev(match_end_pos_in_q);
     let match_length = range_in_s.end - range_in_s.begin;
@@ -190,8 +199,8 @@ fn flush_single_range(
 pub fn flush_ranges(
     s_pos: u64,
     range_buffer: &mut HashMap<PosT, Range>,
-    node_iitree: &mut IITree<u64, PosT>,
-    path_iitree: &mut IITree<u64, PosT>,
+    node_iitree: &mut AdaptiveTree<u64, PosT>,
+    path_iitree: &mut AdaptiveTree<u64, PosT>,
 ) -> io::Result<()> {
     let to_flush: Vec<_> = range_buffer
         .iter()
@@ -247,8 +256,8 @@ fn handle_range(
     let mut all_set_there = true;
     let mut n = s.data;
     for _i in s.start..s.end {
-        // Set the bit and check if it was already set
-        let was_set = curr_bv.set(offset(n) as usize);
+        // Set the bit and check if it was already set (using truly atomic fetch_or)
+        let was_set = curr_bv.set(offset(n) as usize, true, Ordering::AcqRel);
         all_set_there = all_set_there && was_set;
         incr_pos(&mut n);
     }
@@ -264,7 +273,7 @@ fn explore_overlaps(
     b: &Match,
     seen_bv: &[bool],
     curr_bv: &AtomicBitVec,
-    aln_iitree: &IITree<u64, PosT>,
+    aln_iitree: &AdaptiveTree<u64, PosT>,
     ovlp_q: &OverlapAtomicQueue,
     todo_in: &RangeAtomicQueue,
 ) {
@@ -290,8 +299,8 @@ fn explore_overlaps(
 /// Write a chunk of the graph sequence from disjoint sets
 fn write_graph_chunk(
     seqidx: &SeqIndex,
-    node_iitree: &mut IITree<u64, PosT>,
-    path_iitree: &mut IITree<u64, PosT>,
+    node_iitree: &mut AdaptiveTree<u64, PosT>,
+    path_iitree: &mut AdaptiveTree<u64, PosT>,
     seq_v_out: &mut Vec<u8>,
     range_buffer: &mut HashMap<PosT, Range>,
     dsets: Vec<(u64, u64)>,
@@ -389,10 +398,10 @@ fn write_graph_chunk(
 /// the variation graph sequence and interval trees.
 pub fn compute_transitive_closures(
     seqidx: Arc<SeqIndex>,
-    aln_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    aln_iitree: Arc<Mutex<AdaptiveTree<u64, PosT>>>,
     seq_v_file: &str,
-    node_iitree: Arc<Mutex<IITree<u64, PosT>>>,
-    path_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
+    path_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     repeat_max: u64,
     min_repeat_dist: u64,
     transclose_batch_size: u64,
@@ -404,24 +413,29 @@ pub fn compute_transitive_closures(
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    let start_time = std::time::Instant::now();
     eprintln!("[transclosure] Starting transitive closure computation");
     eprintln!("[transclosure] Using {} threads", num_threads);
 
-    // Open iitree writers
-    node_iitree.lock().unwrap().open_writer()?;
-    path_iitree.lock().unwrap().open_writer()?;
+    // Open iitree writers (need write access)
+    node_iitree.write().unwrap().open_writer()?;
+    path_iitree.write().unwrap().open_writer()?;
 
     // Open output file
-    let mut seq_v_out = Vec::new();
+    let mut seq_v_out = Some(Vec::new());
 
     // Bitvector to track visited positions
     let input_seq_length = seqidx.seq_length() as usize;
     let mut q_seen_bv = vec![false; input_seq_length];
 
     // Range buffer for writing to iitrees
-    let mut range_buffer: HashMap<PosT, Range> = HashMap::new();
+    let mut range_buffer = Some(HashMap::new());
 
     let mut bases_seen = 0u64;
+
+    // Writer thread handle for pipelining (like C++)
+    // The thread writes while we compute the next batch
+    let mut writer_thread: Option<thread::JoinHandle<io::Result<(Vec<u8>, HashMap<PosT, Range>)>>> = None;
 
     // Main loop: process input sequence in chunks
     let mut i = 0;
@@ -446,7 +460,8 @@ pub fn compute_transitive_closures(
 
         if show_progress {
             eprintln!(
-                "[transclosure] {:.2}% {}-{} overlap_collect",
+                "[transclosure] {:.3}s {:.2}% {}-{} overlap_collect",
+                start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
                 chunk_end
@@ -470,7 +485,7 @@ pub fn compute_transitive_closures(
             &q_seen_bv,
             |b| {
                 for j in b.start..b.end {
-                    q_curr_bv.set(j as usize);
+                    q_curr_bv.set(j as usize, true, Ordering::Release);
                 }
                 let range = (make_pos_t(b.start, false), b.end - b.start);
                 if todo_out.push(range).is_err() {
@@ -480,12 +495,17 @@ pub fn compute_transitive_closures(
         );
 
         // Parallel exploration
-        let work_todo = Arc::new(AtomicBool::new(true));
+        let work_todo = Arc::new(AtomicBool::new(false)); // Start false, set true after workers created
         let aln_iitree_clone = Arc::clone(&aln_iitree);
         let q_curr_bv_shared = Arc::new(q_curr_bv);
 
+        // Per-thread exploring flags (like C++)
+        let exploring: Vec<Arc<AtomicBool>> = (0..num_threads)
+            .map(|_| Arc::new(AtomicBool::new(false)))
+            .collect();
+
         let workers: Vec<_> = (0..num_threads)
-            .map(|_| {
+            .map(|tid| {
                 let work_todo = Arc::clone(&work_todo);
                 let todo_out = Arc::clone(&todo_out);
                 let todo_in = Arc::clone(&todo_in);
@@ -493,10 +513,18 @@ pub fn compute_transitive_closures(
                 let aln_iitree = Arc::clone(&aln_iitree_clone);
                 let q_curr_bv = Arc::clone(&q_curr_bv_shared);
                 let q_seen_bv_clone = q_seen_bv.clone();
+                let exploring_flag = Arc::clone(&exploring[tid]);
 
                 thread::spawn(move || {
+                    // Wait for work_todo to become true (like C++)
+                    while !work_todo.load(Ordering::Relaxed) {
+                        thread::sleep(std::time::Duration::from_nanos(1));
+                    }
+                    exploring_flag.store(true, Ordering::Relaxed);
+
                     while work_todo.load(Ordering::Relaxed) {
                         if let Some(item) = todo_out.pop() {
+                            exploring_flag.store(true, Ordering::Relaxed);
                             let (pos, match_len) = item;
                             let n = if !is_rev(pos) {
                                 offset(pos)
@@ -517,16 +545,26 @@ pub fn compute_transitive_closures(
                                 );
                             }
                         } else {
+                            exploring_flag.store(false, Ordering::Relaxed);
                             thread::sleep(std::time::Duration::from_nanos(1));
                         }
                     }
+                    exploring_flag.store(false, Ordering::Relaxed);
                 })
             })
             .collect();
 
+        // Helper to check if any worker is actively exploring
+        let still_exploring = || {
+            exploring.iter().any(|e| e.load(Ordering::Relaxed))
+        };
+
+        // Start workers (like C++ work_todo.store(true))
+        work_todo.store(true, Ordering::Relaxed);
+
         // Manage work distribution
         let mut empty_iter_count = 0;
-        while !todo_in.is_empty() || !todo.is_empty() || !todo_out.is_empty() || !ovlp_q.is_empty() || empty_iter_count < 1000 {
+        while !todo_in.is_empty() || !todo.is_empty() || !todo_out.is_empty() || !ovlp_q.is_empty() || still_exploring() || empty_iter_count < 1000 {
             thread::sleep(std::time::Duration::from_nanos(10));
 
             // Transfer from todo_in to todo
@@ -557,26 +595,66 @@ pub fn compute_transitive_closures(
         }
 
         work_todo.store(false, Ordering::Relaxed);
+        // Verify all work is complete before joining (like C++ assert)
+        assert!(todo.is_empty() && todo_in.is_empty() && todo_out.is_empty() && ovlp_q.is_empty() && !still_exploring(),
+                "Work queues not empty or workers still exploring at termination!");
         for worker in workers {
             worker.join().ok();
         }
 
         if show_progress {
             eprintln!(
-                "[transclosure] {:.2}% {}-{} union_find",
+                "[transclosure] {:.3}s {:.2}% {}-{} union_find",
+                start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
                 chunk_end
             );
         }
 
-        // Build dense mapping using rank
+        // Build dense mapping using rank (like C++ sdsl::rank_1_type)
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} rank_build_start",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
+
         let q_curr_bv_final = Arc::try_unwrap(q_curr_bv_shared).unwrap();
+
+        // Parallelize rank building (like C++ parallel_for for q_curr_bv_vec)
+        // Process in parallel chunks of 100000 positions
+        let chunk_size = 100000;
+        let num_chunks = (input_seq_length + chunk_size - 1) / chunk_size;
+
+        let results: Vec<(Vec<bool>, Vec<u64>)> = (0..num_chunks)
+            .into_par_iter()
+            .map(|chunk_idx| {
+                let start = chunk_idx * chunk_size;
+                let end = (start + chunk_size).min(input_seq_length);
+                let mut local_bits = Vec::with_capacity(end - start);
+                let mut local_positions = Vec::new();
+
+                for pos in start..end {
+                    let bit_set = q_curr_bv_final.get(pos, Ordering::Acquire);
+                    local_bits.push(bit_set);
+                    if bit_set {
+                        local_positions.push(pos as u64);
+                    }
+                }
+                (local_bits, local_positions)
+            })
+            .collect();
+
+        // Merge results sequentially
+        let mut bits_vec = Vec::with_capacity(input_seq_length);
         let mut q_curr_positions = Vec::new();
-        for pos in 0..input_seq_length {
-            if q_curr_bv_final.bits[pos] {
-                q_curr_positions.push(pos as u64);
-            }
+        for (bits, positions) in results {
+            bits_vec.extend(bits);
+            q_curr_positions.extend(positions);
         }
 
         let q_curr_bv_count = q_curr_positions.len();
@@ -585,23 +663,42 @@ pub fn compute_transitive_closures(
             continue;
         }
 
-        // Union-find
-        let dsets = UFRush::new(q_curr_bv_count);
+        let sucds_bv = SucdsBitVector::from_bits(bits_vec);
+        let q_curr_rank = Rank9Sel::new(sucds_bv);
 
-        ovlp.par_iter().for_each(|s| {
-            let r = &s.0;
-            let mut p = r.data;
-            for j in r.start..r.end {
-                let j_rank = q_curr_positions.binary_search(&j).unwrap();
-                let p_rank = q_curr_positions.binary_search(&offset(p)).unwrap();
-                dsets.unite(j_rank, p_rank);
-                incr_pos(&mut p);
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} rank_build_end",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
+
+        // Union-find with O(1) rank lookups (using INLINE ASM to match C++ perf)
+        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
+
+        // Use chunked iteration with grain size 10000 (like C++ paryfor grain size)
+        // This reduces contention on the lock-free union-find structure
+        ovlp.par_chunks(10000).for_each(|chunk| {
+            for s in chunk {
+                let r = &s.0;
+                let mut p = r.data;
+                for j in r.start..r.end {
+                    // O(1) rank lookups: rank1(pos) counts 1-bits in [0..pos), giving 0-indexed rank
+                    let j_rank = q_curr_rank.rank1(j as usize).unwrap();
+                    let p_rank = q_curr_rank.rank1(offset(p) as usize).unwrap();
+                    dsets.unite(j_rank, p_rank);
+                    incr_pos(&mut p);
+                }
             }
         });
 
         if show_progress {
             eprintln!(
-                "[transclosure] {:.2}% {}-{} dset_write",
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_write",
+                start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
                 chunk_end
@@ -609,10 +706,12 @@ pub fn compute_transitive_closures(
         }
 
         // Read out disjoint sets
-        let mut dsets_vec: Vec<(u64, u64)> = q_curr_positions
-            .par_iter()
-            .enumerate()
-            .filter_map(|(j, &p)| {
+        // Use chunked iteration with grain size 10000 to reduce overhead
+        let mut dsets_vec: Vec<(u64, u64)> = (0..q_curr_positions.len())
+            .into_par_iter()
+            .with_min_len(10000)
+            .filter_map(|j| {
+                let p = q_curr_positions[j];
                 if !q_seen_bv[p as usize] {
                     Some((dsets.find(j) as u64, p))
                 } else {
@@ -629,7 +728,8 @@ pub fn compute_transitive_closures(
         // Sort and compress
         if show_progress {
             eprintln!(
-                "[transclosure] {:.2}% {}-{} dset_sort",
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_sort_start",
+                start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
                 chunk_end
@@ -637,6 +737,16 @@ pub fn compute_transitive_closures(
         }
 
         dsets_vec.par_sort_unstable();
+
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_sort1_end",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
 
         // Compress dset IDs
         let mut c = 0u64;
@@ -659,7 +769,27 @@ pub fn compute_transitive_closures(
             *minpos = (*minpos).min(d.1);
         }
 
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_sort2_start",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
+
         dsets_by_min_pos.par_sort_unstable();
+
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_sort2_end",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
 
         // Invert naming
         let mut dset_names = vec![0u64; (c + 1) as usize];
@@ -671,7 +801,28 @@ pub fn compute_transitive_closures(
         for d in &mut dsets_vec {
             d.0 = dset_names[d.0 as usize];
         }
+
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_sort3_start",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
+
         dsets_vec.par_sort_unstable();
+
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} dset_sort3_end",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end
+            );
+        }
 
         // Mark as seen
         for d in &dsets_vec {
@@ -681,31 +832,62 @@ pub fn compute_transitive_closures(
 
         if show_progress {
             eprintln!(
-                "[transclosure] {:.2}% {}-{} graph_emission",
+                "[transclosure] {:.3}s {:.2}% {}-{} graph_emission",
+                start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
                 chunk_end
             );
         }
 
-        // Write graph chunk
-        {
-            let mut node_guard = node_iitree.lock().unwrap();
-            let mut path_guard = path_iitree.lock().unwrap();
+        // Pipeline write_graph_chunk (like C++):
+        // Join previous writer (if any) to get back seq_v_out and range_buffer
+        if let Some(handle) = writer_thread.take() {
+            let result = handle.join().expect("Writer thread panicked")?;
+            seq_v_out = Some(result.0);
+            range_buffer = Some(result.1);
+        }
+
+        // Take ownership of seq_v_out and range_buffer for the thread
+        let mut seq_v = seq_v_out.take().unwrap();
+        let mut range_buf = range_buffer.take().unwrap();
+
+        // Spawn new writer thread with cloned Arc handles
+        let node_iitree_clone = Arc::clone(&node_iitree);
+        let path_iitree_clone = Arc::clone(&path_iitree);
+        let seqidx_clone = Arc::clone(&seqidx);
+
+        writer_thread = Some(thread::spawn(move || -> io::Result<(Vec<u8>, HashMap<PosT, Range>)> {
+            let mut node_guard = node_iitree_clone.write().unwrap();
+            let mut path_guard = path_iitree_clone.write().unwrap();
+
             write_graph_chunk(
-                &seqidx,
+                &seqidx_clone,
                 &mut node_guard,
                 &mut path_guard,
-                &mut seq_v_out,
-                &mut range_buffer,
+                &mut seq_v,
+                &mut range_buf,
                 dsets_vec,
                 repeat_max,
                 min_repeat_dist,
             )?;
-        }
+
+            Ok((seq_v, range_buf))
+        }));
 
         i = chunk_end;
     }
+
+    // Join the final writer thread
+    if let Some(handle) = writer_thread.take() {
+        let result = handle.join().expect("Writer thread panicked")?;
+        seq_v_out = Some(result.0);
+        range_buffer = Some(result.1);
+    }
+
+    // Unwrap the final values
+    let seq_v_out = seq_v_out.unwrap();
+    let mut range_buffer = range_buffer.unwrap();
 
     // Write output file
     let mut file = File::create(seq_v_file)?;
@@ -714,8 +896,8 @@ pub fn compute_transitive_closures(
 
     // Flush remaining ranges
     {
-        let mut node_guard = node_iitree.lock().unwrap();
-        let mut path_guard = path_iitree.lock().unwrap();
+        let mut node_guard = node_iitree.write().unwrap();
+        let mut path_guard = path_iitree.write().unwrap();
         flush_ranges(seq_bytes as u64 + 1, &mut range_buffer, &mut node_guard, &mut path_guard)?;
     }
 
@@ -724,10 +906,10 @@ pub fn compute_transitive_closures(
     }
 
     // Close writers and build indexes
-    node_iitree.lock().unwrap().close_writer()?;
-    path_iitree.lock().unwrap().close_writer()?;
-    node_iitree.lock().unwrap().index()?;
-    path_iitree.lock().unwrap().index()?;
+    node_iitree.write().unwrap().close_writer()?;
+    path_iitree.write().unwrap().close_writer()?;
+    node_iitree.write().unwrap().index()?;
+    path_iitree.write().unwrap().index()?;
 
     eprintln!("[transclosure] Transitive closure computation complete");
 

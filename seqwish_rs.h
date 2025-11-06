@@ -4,12 +4,17 @@
 #include <stdlib.h>
 
 /**
+ * Opaque handle to Alignment IITree (uses Mutex for writing)
+ */
+typedef struct AlnIITreeHandle AlnIITreeHandle;
+
+/**
  * Opaque handle to CIGAR vector
  */
 typedef struct CigarHandle CigarHandle;
 
 /**
- * Opaque handle to IITree
+ * Opaque handle to IITree (for node/path iitrees that use RwLock)
  */
 typedef struct IITreeHandle IITreeHandle;
 
@@ -326,7 +331,7 @@ int32_t compact_compact_nodes(const struct SeqIndexHandle *seqidx_handle,
  * The length of the graph sequence, or 0 on error
  */
 uintptr_t transclosure_compute(const struct SeqIndexHandle *seqidx_handle,
-                               const struct IITreeHandle *aln_iitree_handle,
+                               const struct AlnIITreeHandle *aln_iitree_handle,
                                const char *seq_v_file,
                                const struct IITreeHandle *node_iitree_handle,
                                const struct IITreeHandle *path_iitree_handle,

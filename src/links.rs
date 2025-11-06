@@ -3,14 +3,15 @@
 // This module determines the graph topology by finding which nodes connect
 // to which other nodes based on the input sequences.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::io;
 
 use rayon::prelude::*;
 
 use crate::pos::{PosT, offset, is_rev, incr_pos_by, make_pos_t};
 use crate::seqindex::SeqIndex;
-use iitree_rs::IITree;
+use crate::intervaltree::AdaptiveTree;
+use crate::intervaltree::IntervalTree;
 
 /// Represents a ranked/select-capable bitvector
 /// This is a simplified interface for the SDSL sd_vector used in C++
@@ -100,20 +101,21 @@ impl LinkSet {
 /// * `node_iitree` - Interval tree mapping graph positions to input positions
 /// * `path_iitree` - Interval tree mapping input positions to graph positions
 /// * `seq_id_cbv` - Ranked/select bitvector marking node boundaries
-/// * `num_threads` - Number of threads for parallel processing
+/// * `_num_threads` - Number of threads for parallel processing
 ///
 /// # Returns
 /// A LinkSet containing all edges in the graph as (from_node, to_node) pairs
 pub fn derive_links(
     seqidx: Arc<SeqIndex>,
-    node_iitree: Arc<Mutex<IITree<u64, PosT>>>,
-    path_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
+    path_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     seq_id_cbv: &RankSelectBitVector,
-    num_threads: usize,
+    _num_threads: usize,
 ) -> io::Result<LinkSet> {
     let n_nodes = seq_id_cbv.rank(seq_id_cbv.size() - 1);
 
     // Collect links in parallel
+    // PERFORMANCE FIX: Use RwLock::read() instead of Mutex for concurrent read access
     let links: Vec<Vec<(PosT, PosT)>> = (1..=n_nodes)
         .into_par_iter()
         .map(|id| {
@@ -129,7 +131,7 @@ pub fn derive_links(
             };
 
             // Find overlaps in node_iitree
-            if let Ok(node_guard) = node_iitree.lock() {
+            if let Ok(node_guard) = node_iitree.read() {
                 node_guard
                     .overlap(node_start_in_s, node_end_in_s, |_idx, ovlp_start_in_s, ovlp_end_in_s, base_pos_start_in_q| {
                         let ovlp_length = ovlp_end_in_s - ovlp_start_in_s;
@@ -176,7 +178,7 @@ pub fn derive_links(
 
                         // Only consider cases within sequence boundaries
                         if end_in_q + 1 <= seq_end {
-                            if let Ok(path_guard) = path_iitree.lock() {
+                            if let Ok(path_guard) = path_iitree.read() {
                                 path_guard
                                     .overlap(end_in_q, end_in_q + 1, |_idx, ovlp_start_in_q, _ovlp_end_in_q, base_pos_start_in_s| {
                                         let mut pos_start_in_s = base_pos_start_in_s;

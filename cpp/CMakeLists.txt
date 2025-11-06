@@ -1,6 +1,6 @@
 # Specify the minimum version for CMake
 
-cmake_minimum_required(VERSION 3.1...4.0)
+cmake_minimum_required(VERSION 3.1)
 
 # Project's name
 project(seqwish)
@@ -9,24 +9,6 @@ set(CMAKE_CXX_STANDARD 14)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
-
-# --- Start: Logic for using JEMALLOC on Apple Silicon ---
-set(JEMALLOC_LINK_LIBRARIES "jemalloc")
-
-if (APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64"))
-  pkg_check_modules(HOMEBREW_JEMALLOC QUIET jemalloc)
-  if (HOMEBREW_JEMALLOC_FOUND)
-    set(JEMALLOC_LINK_LIBRARIES ${HOMEBREW_JEMALLOC_LINK_LIBRARIES})
-    message(STATUS "Apple Silicon: Found Homebrew Jemalloc. Will use it.")
-    message(STATUS "  Homebrew jemalloc Includes: ${HOMEBREW_JEMALLOC_INCLUDE_DIRS}")
-    message(STATUS "  Homebrew jemalloc Link Libraries: ${HOMEBREW_JEMALLOC_LINK_LIBRARIES}")
-  else()
-    message(WARNING "Apple Silicon: Homebrew jemalloc not found via pkg-config. Will try using default jemalloc.")
-  endif ()
-  message(STATUS "jemalloc Link Library: ${JEMALLOC_LINK_LIBRARIES}")
-endif ()
-# --- End: Logic for using Homebrew HTSlib, GSL, and LibDeflate on Apple Silicon ---
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING
@@ -65,55 +47,15 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") # untested
   # TODO: can't we though?
   # adapted from https://stackoverflow.com/questions/46414660/macos-cmake-and-openmp
   # find_package(OpenMP) does not work reliably on macOS, so we do its work ourselves
-  set (HOMEBREW_PREFIX "$ENV{HOMEBREW_PREFIX}")
-  if ("${HOMEBREW_PREFIX}" STREQUAL "")
-    # We sometimes (like on Github Actions) have Homebrew but no HOMEBREW_PREFIX environment variable.
-    # Ask Homebrew if it exists and where it is.
-    # Returns an empty string if this command can't run.
-    execute_process(COMMAND brew --prefix OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE HOMEBREW_PREFIX)
-  endif()
-  if ("${HOMEBREW_PREFIX}" STREQUAL "")
-    # Default to somewhere.
-    set (HOMEBREW_PREFIX "/opt/homebrew")
-  else()
-    message("Homebrew appears to be installed in ${HOMEBREW_PREFIX}")
-  endif()
-
-  find_path(OMP_INCLUDE_PATH omp.h
-            PATHS "${HOMEBREW_PREFIX}/opt/libomp/include" "${HOMEBREW_PREFIX}/include" /opt/local/include/libomp /usr/local/include
-            REQUIRED)
-  if ("${OMP_INCLUDE_PATH}" STREQUAL "")
-    # REQUIRED is a new CMake feature
-    message(FATAL_ERROR "Could not find omp.h")
-  else()
-    message("Found libomp headers in ${OMP_INCLUDE_PATH}")
-  endif()
-            
-  find_path(OMP_LIB_PATH libomp.dylib
-            PATHS "${HOMEBREW_PREFIX}/opt/libomp/lib" "${HOMEBREW_PREFIX}/lib" /opt/local/lib /usr/local/lib
-            REQUIRED)
-  if ("${OMP_LIB_PATH}" STREQUAL "")
-    # REQUIRED is a new CMake feature
-    message(FATAL_ERROR "Could not find libomp.dylib")
-  else()
-    message("Found libomp libraries in ${OMP_LIB_PATH}")
-  endif()
-  
-  set (OMP_INCLUDE_FLAGS "-I${OMP_INCLUDE_PATH}")
-  set (OMP_LIB_FLAGS "-L${OMP_LIB_PATH}")
-
   set (OpenMP_C "${CMAKE_C_COMPILER}")
-  set (OpenMP_C_FLAGS " -Xpreprocessor -fopenmp ${OMP_INCLUDE_FLAGS}")
+  set (OpenMP_C_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
   set (OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5")
   set (OpenMP_CXX "${CMAKE_CXX_COMPILER}")
-  set (OpenMP_CXX_FLAGS " -Xpreprocessor -fopenmp ${OMP_INCLUDE_FLAGS}")
+  set (OpenMP_CXX_FLAGS " -Xpreprocessor -fopenmp -I/opt/local/include/libomp -I/usr/local/include -L/opt/local/lib/libomp -L/usr/local/lib")
   set (OpenMP_CXX_LIB_NAMES "libomp" "libgomp" "libiomp5")
-  set (OpenMP_EXE_LINKER_FLAGS "${OMP_LIB_FLAGS}")
-  set (OpenMP_SHARED_LINKER_FLAGS "${OMP_LIB_FLAGS}")
   set (OpenMP_libomp_LIBRARY "omp")
   set (OpenMP_libgomp_LIBRARY "gomp")
   set (OpenMP_libiomp5_LIBRARY "iomp5")
-  
   # and now add the OpenMP parameters to the compile flags
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
@@ -136,11 +78,6 @@ include_directories("${PROJECT_SOURCE_DIR}")
 
 # Add external projects
 include(${CMAKE_ROOT}/Modules/ExternalProject.cmake)
-
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "4.0")
-  # Compatibility with CMake < 3.5 has been removed from CMake starting 4.0
-  set(CMAKE_ARGS "${CMAKE_ARGS};-DCMAKE_POLICY_VERSION_MINIMUM=3.5")
-endif()
 
 # sdsl-lite (full build using its cmake config)
 ExternalProject_Add(sdsl-lite
@@ -263,16 +200,16 @@ ExternalProject_Add(mio
 ExternalProject_Get_property(mio SOURCE_DIR)
 set(mio_INCLUDE "${SOURCE_DIR}/include")
 
-# Rust library (seqwish-rs)
-set(RUST_LIB "${CMAKE_SOURCE_DIR}/seqwish-rs/target/release/libseqwish_rs.a")
-set(RUST_HEADER "${CMAKE_SOURCE_DIR}/src/seqwish_rs.h")
-add_custom_target(seqwish_rs_target ALL
-    COMMAND cargo build --release
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/seqwish-rs/seqwish_rs.h ${RUST_HEADER}
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/seqwish-rs
-    BYPRODUCTS ${RUST_LIB}
-    COMMENT "Building Rust library"
-)
+# Rust library (seqwish-rs) - DISABLED FOR PURE C++ BUILD
+# set(RUST_LIB "${CMAKE_SOURCE_DIR}/seqwish-rs/target/release/libseqwish_rs.a")
+# set(RUST_HEADER "${CMAKE_SOURCE_DIR}/src/seqwish_rs.h")
+# add_custom_target(seqwish_rs_target ALL
+#     COMMAND cargo build --release
+#     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/seqwish-rs/seqwish_rs.h ${RUST_HEADER}
+#     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/seqwish-rs
+#     BYPRODUCTS ${RUST_LIB}
+#     COMMENT "Building Rust library"
+# )
 
 #set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_BUILD_TYPE Release)
@@ -304,7 +241,7 @@ add_dependencies(seqwish atomicqueue)
 add_dependencies(seqwish ska)
 add_dependencies(seqwish paryfor)
 add_dependencies(seqwish mio)
-add_dependencies(seqwish seqwish_rs_target)
+# add_dependencies(seqwish seqwish_rs_target)  # DISABLED
 target_include_directories(seqwish PUBLIC
   "${sdsl-lite_INCLUDE}"
   "${sdsl-lite-divsufsort_INCLUDE}"
@@ -323,20 +260,18 @@ target_link_libraries(seqwish
   "${sdsl-lite_LIB}/libsdsl.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort.a"
   "${sdsl-lite-divsufsort_LIB}/libdivsufsort64.a"
-  "-Wl,--whole-archive"
-  ${RUST_LIB}
-  "-Wl,--no-whole-archive"
+  # "-Wl,--whole-archive"
+  # ${RUST_LIB}
+  # "-Wl,--no-whole-archive"
+  "-latomic"
   Threads::Threads
-  "${JEMALLOC_LINK_LIBRARIES}"
+  jemalloc
   z
   dl
-  pthread)
-
-# macOS does not need `-latomic` to use atomics.
-if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  target_link_libraries(seqwish "-latomic")
-endif()
-
+  gcc_s
+  pthread
+  c
+  m)
 if (BUILD_STATIC)
   #set(CMAKE_EXE_LINKER_FLAGS "-static")
   set(CMAKE_EXE_LINKER_FLAGS "-static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
