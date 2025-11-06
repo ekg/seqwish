@@ -38,7 +38,7 @@ memmap2 = "0.9"
 flate2 = "1.0"  # For gzip support
 fm-index = "0.3"  # FM-index / CSA for sequence name lookup
 vers-vecs = "1.1"  # Succinct bitvectors with rank/select
-iitree-rs = "0.1.0"  # Interval tree with disk-backed storage
+iitree-rs = "0.1.1"  # Interval tree with disk-backed storage
 
 # Transclosure dependencies
 rayon = "1.11"                  # Parallel iteration & sorting
@@ -47,6 +47,8 @@ bitvec = { version = "1.0", features = ["atomic"] }  # Atomic bitvector
 parking_lot = "0.12"            # Fast mutexes
 sucds = "0.8"                   # Succinct data structures (rank/select)
 uf_rush = "0.1"                 # Lock-free union-find
+rdst = "0.20"                    # Fast parallel radix sort
+portable-atomic = "1.9"         # 128-bit atomics for dset64
 
 # CLI dependencies
 clap = { version = "4.5", features = ["derive"] }  # Command-line argument parsing

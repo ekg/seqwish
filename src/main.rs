@@ -3,7 +3,7 @@
 // Complete Rust implementation of the seqwish algorithm for building
 // variation graphs from pairwise alignments.
 
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -23,6 +23,10 @@ mod sxs;
 mod alignments;
 mod version;
 mod seqindex;
+mod dset64;
+mod dset64_unsafe;
+mod dset64_asm;
+mod intervaltree;
 mod transclosure;
 mod compact;
 mod links;
@@ -34,7 +38,7 @@ use crate::transclosure::compute_transitive_closures;
 use crate::compact::compact_nodes;
 use crate::links::{derive_links, RankSelectBitVector};
 use crate::gfa::emit_gfa;
-use iitree_rs::IITree;
+use crate::intervaltree::{AdaptiveTree, IntervalTree};
 
 fn main() -> io::Result<()> {
     let matches = Command::new("seqwish")
@@ -108,6 +112,11 @@ fn main() -> io::Result<()> {
             .long("show-progress")
             .help("Log algorithm progress")
             .action(clap::ArgAction::SetTrue))
+        .arg(Arg::new("in-memory")
+            .short('M')
+            .long("in-memory")
+            .help("Use in-memory interval trees instead of disk-backed (faster for small datasets)")
+            .action(clap::ArgAction::SetTrue))
         .get_matches();
 
     let start_time = Instant::now();
@@ -124,6 +133,7 @@ fn main() -> io::Result<()> {
     let transclose_batch: u64 = matches.get_one::<String>("transclose-batch").unwrap().parse().unwrap_or(1000000);
     let keep_temp = matches.get_flag("keep-temp");
     let show_progress = matches.get_flag("show-progress");
+    let use_in_memory = matches.get_flag("in-memory");
 
     // Set up temp directory
     if let Some(temp_dir) = matches.get_one::<String>("temp-dir") {
@@ -158,7 +168,11 @@ fn main() -> io::Result<()> {
         eprintln!("[seqwish::alignments] {:.3} loading alignments", start_time.elapsed().as_secs_f64());
     }
     let aln_iitree_idx = tempfile::create("seqwish-", ".sqa")?;
-    let mut aln_iitree_obj = IITree::<u64, u64>::new(&aln_iitree_idx)?;
+    let mut aln_iitree_obj = if use_in_memory {
+        AdaptiveTree::new_memory()?
+    } else {
+        AdaptiveTree::new_disk(&aln_iitree_idx)?
+    };
     aln_iitree_obj.open_writer()?;
     let aln_iitree = Arc::new(Mutex::new(aln_iitree_obj));
 
@@ -188,13 +202,21 @@ fn main() -> io::Result<()> {
     let node_iitree_idx = tempfile::create("seqwish-", ".sqn")?;
     let path_iitree_idx = tempfile::create("seqwish-", ".sqp")?;
 
-    let mut node_iitree_obj = IITree::<u64, u64>::new(&node_iitree_idx)?;
+    let mut node_iitree_obj = if use_in_memory {
+        AdaptiveTree::new_memory()?
+    } else {
+        AdaptiveTree::new_disk(&node_iitree_idx)?
+    };
     node_iitree_obj.open_writer()?;
-    let node_iitree = Arc::new(Mutex::new(node_iitree_obj));
+    let node_iitree = Arc::new(std::sync::RwLock::new(node_iitree_obj));
 
-    let mut path_iitree_obj = IITree::<u64, u64>::new(&path_iitree_idx)?;
+    let mut path_iitree_obj = if use_in_memory {
+        AdaptiveTree::new_memory()?
+    } else {
+        AdaptiveTree::new_disk(&path_iitree_idx)?
+    };
     path_iitree_obj.open_writer()?;
-    let path_iitree = Arc::new(Mutex::new(path_iitree_obj));
+    let path_iitree = Arc::new(std::sync::RwLock::new(path_iitree_obj));
 
     let graph_length = compute_transitive_closures(
         Arc::clone(&seqidx),
@@ -265,7 +287,8 @@ fn main() -> io::Result<()> {
     }
 
     if let Some(gfa_path) = gfa_file {
-        let mut out = File::create(gfa_path)?;
+        // Use large buffer (1MB) for GFA output to minimize write syscalls
+        let mut out = BufWriter::with_capacity(1024 * 1024, File::create(gfa_path)?);
         emit_gfa(
             &mut out,
             graph_length,
@@ -279,7 +302,8 @@ fn main() -> io::Result<()> {
         )?;
     } else {
         let stdout = io::stdout();
-        let mut out = stdout.lock();
+        // Use large buffer (1MB) for stdout GFA output to minimize write syscalls
+        let mut out = BufWriter::with_capacity(1024 * 1024, stdout.lock());
         emit_gfa(
             &mut out,
             graph_length,

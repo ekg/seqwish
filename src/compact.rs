@@ -3,7 +3,7 @@
 // This module marks node boundaries in the variation graph by identifying
 // positions where the graph structure changes (bifurcations, joins, etc.)
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::io;
 
 use rayon::prelude::*;
@@ -11,7 +11,8 @@ use bitvec::prelude::*;
 
 use crate::pos::{PosT, offset, is_rev, incr_pos_by};
 use crate::seqindex::SeqIndex;
-use iitree_rs::IITree;
+use crate::intervaltree::AdaptiveTree;
+use crate::intervaltree::IntervalTree;
 
 /// Atomic bitvector for thread-safe bit marking
 struct AtomicBitVec {
@@ -65,8 +66,8 @@ impl AtomicBitVec {
 pub fn compact_nodes(
     seqidx: Arc<SeqIndex>,
     graph_size: usize,
-    node_iitree: Arc<Mutex<IITree<u64, PosT>>>,
-    path_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
+    path_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     seq_id_bv: &mut BitVec<u64, Lsb0>,
     num_threads: usize,
 ) -> io::Result<()> {
@@ -98,7 +99,7 @@ pub fn compact_nodes(
             let mut pos_start_in_s = 0u64;
 
             // Find overlaps for this position
-            if let Ok(path_guard) = path_iitree.lock() {
+            if let Ok(path_guard) = path_iitree.read() {
                 path_guard.overlap(j, j + 1, |_idx, start, end, pos| {
                     overlap_count += 1;
                     ovlp_start_in_q = start;
@@ -118,7 +119,7 @@ pub fn compact_nodes(
                     j,
                     k
                 );
-                if let Ok(path_guard) = path_iitree.lock() {
+                if let Ok(path_guard) = path_iitree.read() {
                     path_guard.overlap(j, j + 1, |_idx, start, end, pos| {
                         eprintln!(
                             "ovlp_start_in_q = {} ovlp_end_in_q = {} pos_start_in_s = {}+",

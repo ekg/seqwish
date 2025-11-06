@@ -1,8 +1,9 @@
 use crate::paf::PafRow;
 use crate::pos::{decr_pos, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
 use crate::seqindex::SeqIndex;
-use flate2::read::GzDecoder;
-use iitree_rs::IITree;
+use flate2::read::MultiGzDecoder;
+use crate::intervaltree::AdaptiveTree;
+use crate::intervaltree::IntervalTree;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
@@ -34,9 +35,9 @@ pub fn keep_sparse(q: u64, t: u64, l: u64, f: f32) -> bool {
 
 /// Worker thread that processes PAF alignments
 fn paf_worker(
-    reader: Arc<Mutex<BufReader<GzDecoder<File>>>>,
+    reader: Arc<Mutex<Box<dyn BufRead + Send>>>,
     more: Arc<AtomicBool>,
-    aln_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    aln_iitree: Arc<Mutex<AdaptiveTree<u64, PosT>>>,
     seqidx: Arc<SeqIndex>,
     min_match_len: u64,
     sparsification_factor: f32,
@@ -218,20 +219,23 @@ fn paf_worker(
 
 /// Unpack PAF alignments into an interval tree
 ///
-/// Reads a gzipped PAF file, spawns worker threads to process alignments,
+/// Reads a PAF file (gzipped or plain text), spawns worker threads to process alignments,
 /// and populates the interval tree with match intervals.
 pub fn unpack_paf_alignments(
     paf_file: &str,
-    aln_iitree: Arc<Mutex<IITree<u64, PosT>>>,
+    aln_iitree: Arc<Mutex<AdaptiveTree<u64, PosT>>>,
     seqidx: Arc<SeqIndex>,
     min_match_len: u64,
     sparsification_factor: f32,
     num_threads: usize,
 ) -> io::Result<()> {
-    // Open gzipped PAF file
+    // Open PAF file (auto-detect gzipped or plain text)
     let file = File::open(paf_file)?;
-    let gz = GzDecoder::new(file);
-    let reader = BufReader::new(gz);
+    let reader: Box<dyn BufRead + Send> = if paf_file.ends_with(".gz") {
+        Box::new(BufReader::new(MultiGzDecoder::new(file)))
+    } else {
+        Box::new(BufReader::new(file))
+    };
     let reader = Arc::new(Mutex::new(reader));
 
     let more = Arc::new(AtomicBool::new(true));
@@ -387,7 +391,7 @@ mod tests {
 
         // Create iitree
         let iitree_path = "/tmp/test_alignments.iitree";
-        let mut tree = IITree::new(iitree_path)?;
+        let mut tree = AdaptiveTree::new_disk(iitree_path)?;
         tree.open_writer()?;
         let tree = Arc::new(Mutex::new(tree));
 

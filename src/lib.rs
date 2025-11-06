@@ -57,6 +57,10 @@ pub mod sxs;
 pub mod alignments;
 pub mod version;
 pub mod seqindex;
+pub mod dset64;
+pub mod dset64_unsafe;
+pub mod dset64_asm;
+pub mod intervaltree;
 pub mod transclosure;
 pub mod compact;
 pub mod links;
@@ -295,9 +299,14 @@ pub struct SeqIndexHandle {
     seqidx: Arc<seqindex::SeqIndex>,
 }
 
-/// Opaque handle to IITree
+/// Opaque handle to IITree (for node/path iitrees that use RwLock)
 pub struct IITreeHandle {
-    iitree: Arc<Mutex<iitree_rs::IITree<u64, pos::PosT>>>,
+    iitree: Arc<std::sync::RwLock<crate::intervaltree::AdaptiveTree<u64, pos::PosT>>>,
+}
+
+/// Opaque handle to Alignment IITree (uses Mutex for writing)
+pub struct AlnIITreeHandle {
+    iitree: Arc<std::sync::Mutex<crate::intervaltree::AdaptiveTree<u64, pos::PosT>>>,
 }
 
 /// Parse CIGAR string and return handle to CIGAR vector
@@ -877,7 +886,7 @@ pub extern "C" fn compact_compact_nodes(
 #[no_mangle]
 pub extern "C" fn transclosure_compute(
     seqidx_handle: *const SeqIndexHandle,
-    aln_iitree_handle: *const IITreeHandle,
+    aln_iitree_handle: *const AlnIITreeHandle,
     seq_v_file: *const c_char,
     node_iitree_handle: *const IITreeHandle,
     path_iitree_handle: *const IITreeHandle,
