@@ -95,6 +95,10 @@ impl LinkSet {
     pub fn len(&self) -> usize {
         self.links.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.links.is_empty()
+    }
 }
 
 /// Derive links between nodes in the variation graph
