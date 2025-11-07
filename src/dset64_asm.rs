@@ -1,7 +1,7 @@
-/// Hybrid approach matching C++ behavior:
+/// Native x86 CMPXCHG16B implementation matching C++ behavior:
 /// - Use aligned u128 for storage (compiler generates atomic SSE loads)
-/// - Use portable_atomic only for CAS operations
-/// - This matches the C++ dset64-gccAtomic.hpp approach
+/// - Use portable_atomic for CAS (compiles to CMPXCHG16B with target-cpu=native)
+/// - This matches C++ __sync_bool_compare_and_swap semantics
 
 use portable_atomic::{AtomicU128, Ordering};
 
@@ -65,6 +65,7 @@ impl DisjointSetsAsm {
 
     /// Atomic CAS using portable_atomic (matches C++ __sync_bool_compare_and_swap)
     /// Note: __sync_bool_compare_and_swap uses sequentially consistent ordering and strong CAS
+    /// portable_atomic will use CMPXCHG16B on x86_64 when available
     #[inline(always)]
     unsafe fn compare_exchange_u128(&self, ptr: *mut u128, expected: u128, new: u128) -> bool {
         let atomic_ptr = ptr as *const AtomicU128;
