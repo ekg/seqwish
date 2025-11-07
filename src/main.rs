@@ -3,14 +3,19 @@
 // Complete Rust implementation of the seqwish algorithm for building
 // variation graphs from pairwise alignments.
 
+// Allow dead code - some functions are exported for FFI or kept for future use
+#![allow(dead_code)]
+// Allow complex types and many arguments in certain contexts
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use bitvec::prelude::*;
 use clap::{Arg, Command};
-use rayon;
 
 mod alignments;
 mod cigar;
@@ -176,8 +181,7 @@ fn main() -> io::Result<()> {
     // Check input files exist
     if !std::path::Path::new(seq_file).exists() {
         eprintln!(
-            "[seqwish] ERROR: input sequence file {} does not exist",
-            seq_file
+            "[seqwish] ERROR: input sequence file {seq_file} does not exist"
         );
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -186,8 +190,7 @@ fn main() -> io::Result<()> {
     }
     if !std::path::Path::new(paf_file).exists() {
         eprintln!(
-            "[seqwish] ERROR: input alignment file {} does not exist",
-            paf_file
+            "[seqwish] ERROR: input alignment file {paf_file} does not exist"
         );
         return Err(io::Error::new(
             io::ErrorKind::NotFound,

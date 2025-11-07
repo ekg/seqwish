@@ -50,7 +50,7 @@ pub fn get_codename() -> Option<&'static str> {
 
 pub fn get_short() -> String {
     match get_codename() {
-        Some(codename) => format!("{} \"{}\"", GIT_VERSION, codename),
+        Some(codename) => format!("{GIT_VERSION} \"{codename}\""),
         None => GIT_VERSION.to_string(),
     }
 }

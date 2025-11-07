@@ -56,7 +56,7 @@ pub fn create(base: &str, suffix: &str) -> Result<PathBuf, std::io::Error> {
         let template = format!("{}/{}", temp_dir.display(), base);
 
         // Use mkdtemp to create unique directory
-        let c_template = CString::new(format!("{}XXXXXX", template))
+        let c_template = CString::new(format!("{template}XXXXXX"))
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"))?;
 
         let ptr = unsafe { libc::mkdtemp(c_template.as_ptr() as *mut i8) };

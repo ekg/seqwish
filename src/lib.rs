@@ -39,6 +39,15 @@
 //! - Produces GFA v1.0 format output
 //! - Compatible with standard pangenome tools
 
+// Allow clippy warnings for FFI functions that dereference raw pointers
+// These are inherently unsafe operations but are needed for C compatibility
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+// Allow dead code - some functions are exported for FFI or future use
+#![allow(dead_code)]
+// Allow complex types and many arguments in certain contexts
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+
 use std::ffi::{c_char, CStr, CString};
 use std::ptr;
 use std::sync::Arc;
@@ -897,7 +906,7 @@ pub extern "C" fn compact_compact_nodes(
                 0
             }
             Err(e) => {
-                eprintln!("[compact] Error in compact_nodes: {}", e);
+                eprintln!("[compact] Error in compact_nodes: {e}");
                 1
             }
         }
@@ -967,7 +976,7 @@ pub extern "C" fn transclosure_compute(
         let seq_v_file_str = match CStr::from_ptr(seq_v_file).to_str() {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[transclosure] Error converting seq_v_file path: {}", e);
+                eprintln!("[transclosure] Error converting seq_v_file path: {e}");
                 return 0;
             }
         };
@@ -986,7 +995,7 @@ pub extern "C" fn transclosure_compute(
         ) {
             Ok(length) => length,
             Err(e) => {
-                eprintln!("[transclosure] Error in compute_transitive_closures: {}", e);
+                eprintln!("[transclosure] Error in compute_transitive_closures: {e}");
                 0
             }
         }

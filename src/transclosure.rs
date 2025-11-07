@@ -198,8 +198,8 @@ fn flush_single_range(
     };
 
     // Add to both iitrees
-    node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q);
-    path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s);
+    node_iitree.add(match_start_in_s, match_end_in_s, match_pos_in_q)?;
+    path_iitree.add(match_start_in_q, match_end_in_q, match_pos_in_s)?;
 
     Ok(())
 }
@@ -324,7 +324,7 @@ fn write_graph_chunk(
 
     let close_to_prev = |seq_id: u64, pos: PosT, last_seq_pos: &HashMap<u64, PosT>| -> bool {
         if let Some(&last_pos) = last_seq_pos.get(&seq_id) {
-            let dist = (offset(pos) as i64 - offset(last_pos) as i64).abs() as u64;
+            let dist = (offset(pos) as i64 - offset(last_pos) as i64).unsigned_abs();
             dist < min_repeat_dist
         } else {
             false
@@ -399,7 +399,7 @@ fn write_graph_chunk(
             } else {
                 todos
                     .entry(curr_seq_count)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(curr_q_pos);
             }
             last_seq_pos.insert(curr_seq_id, curr_q_pos);
@@ -446,7 +446,7 @@ pub fn compute_transitive_closures(
 
     let start_time = std::time::Instant::now();
     eprintln!("[transclosure] Starting transitive closure computation");
-    eprintln!("[transclosure] Using {} threads", num_threads);
+    eprintln!("[transclosure] Using {num_threads} threads");
 
     // Open iitree writers (need write access)
     node_iitree.write().unwrap().open_writer()?;
