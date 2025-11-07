@@ -1,32 +1,30 @@
 // Integration test for seqwish in-memory vs disk mode
-use seqwish::*;
-use seqwish::intervaltree::IntervalTree;
-use std::io::Write;
-use std::fs::File;
-use std::sync::{Arc, Mutex, RwLock};
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use seqwish::intervaltree::IntervalTree;
+use seqwish::*;
+use std::fs::File;
+use std::io::Write;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Helper function to run full pipeline and return GFA output
 fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
     // Create unique temporary paths
-    let unique_id = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_nanos();
+    let unique_id = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let fasta_path = format!("/tmp/test_pipeline_{}_{}.fasta", unique_id, in_memory);
     let paf_path = format!("/tmp/test_pipeline_{}_{}.paf.gz", unique_id, in_memory);
-    let base_dir = format!("/tmp/test_pipeline_{}_{}",  unique_id, in_memory);
+    let base_dir = format!("/tmp/test_pipeline_{}_{}", unique_id, in_memory);
     std::fs::create_dir_all(&base_dir)?;
 
     // Create test FASTA with 3 sequences
     let mut fasta_file = File::create(&fasta_path)?;
     writeln!(fasta_file, ">seq1")?;
-    writeln!(fasta_file, "ACGTACGTACGT")?;  // 12 bases
+    writeln!(fasta_file, "ACGTACGTACGT")?; // 12 bases
     writeln!(fasta_file, ">seq2")?;
-    writeln!(fasta_file, "ACGTACGTACGT")?;  // 12 bases (identical to seq1)
+    writeln!(fasta_file, "ACGTACGTACGT")?; // 12 bases (identical to seq1)
     writeln!(fasta_file, ">seq3")?;
-    writeln!(fasta_file, "ACGTACGTTTTT")?;  // 12 bases (8bp match, 4bp different)
+    writeln!(fasta_file, "ACGTACGTTTTT")?; // 12 bases (8bp match, 4bp different)
     fasta_file.flush()?;
 
     // Build SeqIndex
@@ -38,7 +36,10 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
     let paf_file = File::create(&paf_path)?;
     let mut gz = GzEncoder::new(paf_file, Compression::default());
     // seq1 vs seq2: perfect match
-    writeln!(gz, "seq1\t12\t0\t12\t+\tseq2\t12\t0\t12\t12\t12\t60\tcg:Z:12M")?;
+    writeln!(
+        gz,
+        "seq1\t12\t0\t12\t+\tseq2\t12\t0\t12\t12\t12\t60\tcg:Z:12M"
+    )?;
     // seq1 vs seq3: 8bp match
     writeln!(gz, "seq1\t12\t0\t8\t+\tseq3\t12\t0\t8\t8\t8\t60\tcg:Z:8M")?;
     gz.finish()?;
@@ -58,9 +59,9 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         &paf_path,
         Arc::clone(&aln_iitree),
         Arc::clone(&seqidx),
-        1,    // min_match_len
-        0.0,  // sparsification_factor (keep all)
-        1,    // num_threads
+        1,   // min_match_len
+        0.0, // sparsification_factor (keep all)
+        1,   // num_threads
     )?;
 
     // Index alignment tree
@@ -93,7 +94,7 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         Arc::try_unwrap(aln_iitree)
             .map_err(|_| "Cannot unwrap aln_iitree Arc")?
             .into_inner()
-            .unwrap()
+            .unwrap(),
     );
 
     // Run transclosure
@@ -104,11 +105,11 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         &seq_v_file,
         Arc::clone(&node_iitree),
         Arc::clone(&path_iitree),
-        0,      // repeat_max
-        0,      // min_repeat_dist
-        10000,  // transclose_batch_size
-        false,  // show_progress
-        1,      // num_threads
+        0,     // repeat_max
+        0,     // min_repeat_dist
+        10000, // transclose_batch_size
+        false, // show_progress
+        1,     // num_threads
     )?;
 
     // Index trees
@@ -130,11 +131,12 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         Arc::clone(&node_iitree),
         Arc::clone(&path_iitree),
         &mut seq_id_bv,
-        1,  // num_threads
+        1, // num_threads
     )?;
 
     // Build rank/select bitvector
-    let seq_id_cbv = links::RankSelectBitVector::from_bitvec(&seq_id_bv.iter().by_vals().collect::<Vec<bool>>());
+    let seq_id_cbv =
+        links::RankSelectBitVector::from_bitvec(&seq_id_bv.iter().by_vals().collect::<Vec<bool>>());
 
     // Derive links
     let link_v = links::derive_links(
@@ -142,7 +144,7 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         Arc::clone(&node_iitree),
         Arc::clone(&path_iitree),
         &seq_id_cbv,
-        1,  // num_threads
+        1, // num_threads
     )?;
 
     // Generate GFA output
@@ -156,7 +158,7 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         &seq_id_cbv,
         Arc::clone(&seqidx),
         link_v.links(),
-        1,  // num_threads
+        1, // num_threads
     )?;
 
     // Cleanup
@@ -182,7 +184,10 @@ fn test_pipeline_disk_vs_memory_identical() -> Result<(), Box<dyn std::error::Er
     );
 
     // Verify we got valid GFA output
-    assert!(disk_gfa.starts_with("H\tVN:Z:1.0"), "GFA should start with header");
+    assert!(
+        disk_gfa.starts_with("H\tVN:Z:1.0"),
+        "GFA should start with header"
+    );
     assert!(disk_gfa.contains("S\t"), "GFA should contain segments");
     assert!(disk_gfa.contains("P\t"), "GFA should contain paths");
 
@@ -215,10 +220,17 @@ fn test_pipeline_memory_mode_basic() -> Result<(), Box<dyn std::error::Error>> {
     // Verify we have expected structure
     assert_eq!(num_header, 1, "Should have exactly 1 header line");
     assert!(num_segments > 0, "Should have at least 1 segment");
-    assert!(num_paths == 3, "Should have exactly 3 paths (one per input sequence)");
+    assert!(
+        num_paths == 3,
+        "Should have exactly 3 paths (one per input sequence)"
+    );
 
     // Verify paths contain our sequence names
-    let path_lines: Vec<&str> = lines.iter().filter(|l| l.starts_with("P\t")).map(|&s| s).collect();
+    let path_lines: Vec<&str> = lines
+        .iter()
+        .filter(|l| l.starts_with("P\t"))
+        .map(|&s| s)
+        .collect();
     let path_str = path_lines.join("\n");
     assert!(path_str.contains("seq1"), "Should have path for seq1");
     assert!(path_str.contains("seq2"), "Should have path for seq2");

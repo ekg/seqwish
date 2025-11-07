@@ -2,7 +2,6 @@
 /// - Use aligned u128 for storage (compiler generates atomic SSE loads)
 /// - Use portable_atomic for CAS (compiles to CMPXCHG16B with target-cpu=native)
 /// - This matches C++ __sync_bool_compare_and_swap semantics
-
 use portable_atomic::{AtomicU128, Ordering};
 
 /// 16-byte aligned u128 - compiler will use atomic SSE loads
@@ -69,12 +68,9 @@ impl DisjointSetsAsm {
     #[inline(always)]
     unsafe fn compare_exchange_u128(&self, ptr: *mut u128, expected: u128, new: u128) -> bool {
         let atomic_ptr = ptr as *const AtomicU128;
-        (*atomic_ptr).compare_exchange(
-            expected,
-            new,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ).is_ok()
+        (*atomic_ptr)
+            .compare_exchange(expected, new, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
     }
 
     #[inline(always)]
@@ -99,14 +95,22 @@ impl DisjointSetsAsm {
             let new_entry = ((r1 as u128) << 64) | (id2 as u128);
 
             unsafe {
-                if !self.compare_exchange_u128(self.data.add(id1) as *mut u128, old_entry, new_entry) {
+                if !self.compare_exchange_u128(
+                    self.data.add(id1) as *mut u128,
+                    old_entry,
+                    new_entry,
+                ) {
                     continue;
                 }
 
                 if r1 == r2 {
                     let old_entry = ((r2 as u128) << 64) | (id2 as u128);
                     let new_entry = (((r2 + 1) as u128) << 64) | (id2 as u128);
-                    self.compare_exchange_u128(self.data.add(id2) as *mut u128, old_entry, new_entry);
+                    self.compare_exchange_u128(
+                        self.data.add(id2) as *mut u128,
+                        old_entry,
+                        new_entry,
+                    );
                 }
 
                 return id2;

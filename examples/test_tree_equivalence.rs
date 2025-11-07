@@ -13,8 +13,8 @@ fn main() -> std::io::Result<()> {
     // Add some overlapping intervals
     let intervals = vec![
         (10, 20, 1u64),
-        (10, 25, 2u64),  // Same start, different end
-        (10, 15, 3u64),  // Same start, different end
+        (10, 25, 2u64), // Same start, different end
+        (10, 15, 3u64), // Same start, different end
         (15, 25, 4u64),
         (30, 40, 5u64),
     ];
@@ -63,8 +63,14 @@ fn main() -> std::io::Result<()> {
         println!("\n✓ Results match (ignoring indices)");
     } else {
         println!("\n✗ Results differ!");
-        println!("In memory but not disk: {:?}", mem_set.difference(&disk_set).collect::<Vec<_>>());
-        println!("In disk but not memory: {:?}", disk_set.difference(&mem_set).collect::<Vec<_>>());
+        println!(
+            "In memory but not disk: {:?}",
+            mem_set.difference(&disk_set).collect::<Vec<_>>()
+        );
+        println!(
+            "In disk but not memory: {:?}",
+            disk_set.difference(&mem_set).collect::<Vec<_>>()
+        );
     }
 
     Ok(())

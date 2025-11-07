@@ -5,16 +5,16 @@
 // - L lines (links/edges between nodes)
 // - P lines (paths showing input sequences through the graph)
 
-use std::sync::{Arc, RwLock};
 use std::io::{self, Write};
+use std::sync::{Arc, RwLock};
 
-use crate::pos::{PosT, offset, is_rev, make_pos_t, incr_pos};
-use crate::seqindex::SeqIndex;
-use crate::links::RankSelectBitVector;
-use crate::mmap::mmap_open;
+use crate::dna::complement;
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
-use crate::dna::complement;
+use crate::links::RankSelectBitVector;
+use crate::mmap::mmap_open;
+use crate::pos::{incr_pos, is_rev, make_pos_t, offset, PosT};
+use crate::seqindex::SeqIndex;
 
 /// Emit GFA format output for the variation graph
 ///
@@ -46,9 +46,8 @@ pub fn emit_gfa<W: Write>(
 
     // Memory-map the graph sequence file
     let mmap_handle = mmap_open(seq_v_file)?;
-    let seq_v_slice = unsafe {
-        std::slice::from_raw_parts(mmap_handle.ptr as *const u8, mmap_handle.size)
-    };
+    let seq_v_slice =
+        unsafe { std::slice::from_raw_parts(mmap_handle.ptr as *const u8, mmap_handle.size) };
 
     // Get number of nodes
     let n_nodes = seq_id_cbv.rank(seq_id_cbv.size() - 1);
@@ -77,7 +76,6 @@ pub fn emit_gfa<W: Write>(
             writeln!(out, "S\t{}\t{}", id, seq)?;
         }
     }
-
 
     // Write links (L lines)
     for (from, to) in links {
@@ -119,21 +117,27 @@ pub fn emit_gfa<W: Write>(
 
             // Find overlap in path_iitree
             if let Ok(path_guard) = path_iitree.read() {
-                path_guard.overlap(j, j + 1, |_idx, start, end, pos| {
-                    overlap_count += 1;
-                    ovlp_start_in_q = start;
-                    ovlp_end_in_q = end;
-                    pos_start_in_s = pos;
-                }).ok();
+                path_guard
+                    .overlap(j, j + 1, |_idx, start, end, pos| {
+                        overlap_count += 1;
+                        ovlp_start_in_q = start;
+                        ovlp_end_in_q = end;
+                        pos_start_in_s = pos;
+                    })
+                    .ok();
             }
 
             // Each input base should map to exactly one place in the graph
             if overlap_count != 1 {
-                let seq_name = seqidx.nth_name(i).unwrap_or_else(|| "<unknown>".to_string());
+                let seq_name = seqidx
+                    .nth_name(i)
+                    .unwrap_or_else(|| "<unknown>".to_string());
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
-                    format!("[gfa] error: found {} overlaps for seq {} idx {} at j={} of {}",
-                            overlap_count, seq_name, i, j, k)
+                    format!(
+                        "[gfa] error: found {} overlaps for seq {} idx {} at j={} of {}",
+                        overlap_count, seq_name, i, j, k
+                    ),
                 ));
             }
 
@@ -154,7 +158,9 @@ pub fn emit_gfa<W: Write>(
 
                     if let Some(input_char) = seqidx.at(q) {
                         if input_char != graph_char as char {
-                            let seq_name = seqidx.nth_name(i).unwrap_or_else(|| "<unknown>".to_string());
+                            let seq_name = seqidx
+                                .nth_name(i)
+                                .unwrap_or_else(|| "<unknown>".to_string());
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
                                 format!("[gfa] GRAPH BROKEN @ {} pos {} -> graph pos {}: expected {} got {}",
@@ -198,11 +204,15 @@ pub fn emit_gfa<W: Write>(
         }
 
         if seen_bp != seq_len {
-            let seq_name = seqidx.nth_name(i).unwrap_or_else(|| "<unknown>".to_string());
+            let seq_name = seqidx
+                .nth_name(i)
+                .unwrap_or_else(|| "<unknown>".to_string());
             return Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("[gfa] length mismatch for {}, expected {} but got {}",
-                        seq_name, seq_len, seen_bp)
+                format!(
+                    "[gfa] length mismatch for {}, expected {} but got {}",
+                    seq_name, seq_len, seen_bp
+                ),
             ));
         }
 
@@ -224,7 +234,6 @@ pub fn emit_gfa<W: Write>(
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

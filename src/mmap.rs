@@ -16,16 +16,17 @@ pub struct MmapHandle {
 /// Memory advice is set to MADV_WILLNEED | MADV_SEQUENTIAL for optimal sequential access.
 pub fn mmap_open(filename: &str) -> io::Result<MmapHandle> {
     if filename.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "filename is empty"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "filename is empty",
+        ));
     }
 
     // Open file with read-write permissions
     let c_filename = std::ffi::CString::new(filename)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "filename contains null byte"))?;
 
-    let fd = unsafe {
-        libc::open(c_filename.as_ptr(), libc::O_RDWR)
-    };
+    let fd = unsafe { libc::open(c_filename.as_ptr(), libc::O_RDWR) };
 
     if fd == -1 {
         return Err(io::Error::last_os_error());
@@ -36,7 +37,9 @@ pub fn mmap_open(filename: &str) -> io::Result<MmapHandle> {
     let result = unsafe { libc::fstat(fd, &mut stats) };
 
     if result == -1 {
-        unsafe { libc::close(fd); }
+        unsafe {
+            libc::close(fd);
+        }
         return Err(io::Error::last_os_error());
     }
 
@@ -55,17 +58,15 @@ pub fn mmap_open(filename: &str) -> io::Result<MmapHandle> {
     };
 
     if ptr == libc::MAP_FAILED {
-        unsafe { libc::close(fd); }
+        unsafe {
+            libc::close(fd);
+        }
         return Err(io::Error::last_os_error());
     }
 
     // Give memory access hints
     unsafe {
-        libc::madvise(
-            ptr,
-            fsize,
-            libc::MADV_WILLNEED | libc::MADV_SEQUENTIAL,
-        );
+        libc::madvise(ptr, fsize, libc::MADV_WILLNEED | libc::MADV_SEQUENTIAL);
     }
 
     Ok(MmapHandle {
@@ -121,9 +122,8 @@ mod tests {
         assert_eq!(handle.size, test_data.len());
 
         // Read data through mmap
-        let mapped_data = unsafe {
-            std::slice::from_raw_parts(handle.ptr as *const u8, handle.size)
-        };
+        let mapped_data =
+            unsafe { std::slice::from_raw_parts(handle.ptr as *const u8, handle.size) };
         assert_eq!(mapped_data, test_data);
 
         // Close the mapping

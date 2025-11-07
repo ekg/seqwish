@@ -74,7 +74,11 @@ impl PafRow {
             self.query_sequence_length,
             self.query_start,
             self.query_end,
-            if self.query_target_same_strand { "+" } else { "-" },
+            if self.query_target_same_strand {
+                "+"
+            } else {
+                "-"
+            },
             self.target_sequence_name,
             self.target_sequence_length,
             self.target_start,
@@ -143,21 +147,27 @@ mod tests {
     #[test]
     fn test_parse_paf_spec_multiple_files() {
         let result = parse_paf_spec("file1.paf,file2.paf,file3.paf");
-        assert_eq!(result, vec![
-            ("file1.paf".to_string(), 0),
-            ("file2.paf".to_string(), 0),
-            ("file3.paf".to_string(), 0),
-        ]);
+        assert_eq!(
+            result,
+            vec![
+                ("file1.paf".to_string(), 0),
+                ("file2.paf".to_string(), 0),
+                ("file3.paf".to_string(), 0),
+            ]
+        );
     }
 
     #[test]
     fn test_parse_paf_spec_mixed() {
         let result = parse_paf_spec("file1.paf:100,file2.paf,file3.paf:250");
-        assert_eq!(result, vec![
-            ("file1.paf".to_string(), 100),
-            ("file2.paf".to_string(), 0),
-            ("file3.paf".to_string(), 250),
-        ]);
+        assert_eq!(
+            result,
+            vec![
+                ("file1.paf".to_string(), 100),
+                ("file2.paf".to_string(), 0),
+                ("file3.paf".to_string(), 250),
+            ]
+        );
     }
 
     #[test]
@@ -169,10 +179,10 @@ mod tests {
     #[test]
     fn test_parse_paf_spec_whitespace() {
         let result = parse_paf_spec("  file1.paf:100  ,  file2.paf  ");
-        assert_eq!(result, vec![
-            ("file1.paf".to_string(), 100),
-            ("file2.paf".to_string(), 0),
-        ]);
+        assert_eq!(
+            result,
+            vec![("file1.paf".to_string(), 100), ("file2.paf".to_string(), 0),]
+        );
     }
 
     #[test]
@@ -208,7 +218,8 @@ mod tests {
 
     #[test]
     fn test_paf_row_parsing_with_cigar() {
-        let line = "query1\t1000\t100\t900\t-\ttarget1\t2000\t200\t1000\t750\t800\t60\tcg:Z:100M10I50M";
+        let line =
+            "query1\t1000\t100\t900\t-\ttarget1\t2000\t200\t1000\t750\t800\t60\tcg:Z:100M10I50M";
         let row = PafRow::from_line(line).unwrap();
 
         assert_eq!(row.query_target_same_strand, false);
