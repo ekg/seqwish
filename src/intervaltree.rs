@@ -125,7 +125,7 @@ pub mod memory {
     struct Interval<K, V> {
         start: K,
         end: K,
-        max: K,  // Maximum end position in subtree (for augmented tree)
+        max: K, // Maximum end position in subtree (for augmented tree)
         value: V,
     }
 
@@ -136,7 +136,7 @@ pub mod memory {
     {
         intervals: Vec<Interval<K, V>>,
         indexed: bool,
-        max_level: usize,  // Maximum level in the implicit binary tree
+        max_level: usize, // Maximum level in the implicit binary tree
     }
 
     impl<K, V> InMemoryTree<K, V>
@@ -174,9 +174,9 @@ pub mod memory {
 
             #[derive(Clone, Copy)]
             struct StackCell {
-                k: usize,  // level
-                x: usize,  // node index
-                w: u8,     // 0 if left child not processed, 1 if processed
+                k: usize, // level
+                x: usize, // node index
+                w: u8,    // 0 if left child not processed, 1 if processed
             }
 
             let mut stack = [StackCell { k: 0, x: 0, w: 0 }; 64];
@@ -205,7 +205,12 @@ pub mod memory {
                             break;
                         }
                         if query_start < self.intervals[i].end {
-                            func(i, self.intervals[i].start, self.intervals[i].end, self.intervals[i].value);
+                            func(
+                                i,
+                                self.intervals[i].start,
+                                self.intervals[i].end,
+                                self.intervals[i].value,
+                            );
                         }
                     }
                 } else if z.w == 0 {
@@ -232,7 +237,12 @@ pub mod memory {
                 } else if z.x < n && self.intervals[z.x].start < query_end {
                     // Process current node and push right child
                     if query_start < self.intervals[z.x].end {
-                        func(z.x, self.intervals[z.x].start, self.intervals[z.x].end, self.intervals[z.x].value);
+                        func(
+                            z.x,
+                            self.intervals[z.x].start,
+                            self.intervals[z.x].end,
+                            self.intervals[z.x].value,
+                        );
                     }
 
                     // Push right child
@@ -256,7 +266,7 @@ pub mod memory {
             self.intervals.push(Interval {
                 start,
                 end,
-                max: end,  // Initially set max to end
+                max: end, // Initially set max to end
                 value,
             });
             self.indexed = false;
@@ -296,9 +306,8 @@ pub mod memory {
                     a.start.cmp(&b.start).then_with(|| a.end.cmp(&b.end))
                 });
             } else {
-                self.intervals.sort_unstable_by(|a, b| {
-                    a.start.cmp(&b.start).then_with(|| a.end.cmp(&b.end))
-                });
+                self.intervals
+                    .sort_unstable_by(|a, b| a.start.cmp(&b.start).then_with(|| a.end.cmp(&b.end)));
             }
 
             // Build augmented tree (compute max values bottom-up)
@@ -410,7 +419,9 @@ where
 
     /// Create an in-memory tree with capacity hint
     pub fn new_memory_with_capacity(capacity: usize) -> io::Result<Self> {
-        Ok(AdaptiveTree::Memory(memory::InMemoryTree::with_capacity(capacity)))
+        Ok(AdaptiveTree::Memory(memory::InMemoryTree::with_capacity(
+            capacity,
+        )))
     }
 }
 
@@ -484,7 +495,8 @@ mod tests {
         let mut results = Vec::new();
         tree.overlap(17, 18, |_idx, _start, _end, value| {
             results.push(value);
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(results.len(), 2);
         assert!(results.contains(&1));
         assert!(results.contains(&2));
@@ -493,14 +505,16 @@ mod tests {
         let mut results = Vec::new();
         tree.overlap(35, 36, |_idx, _start, _end, value| {
             results.push(value);
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(results, vec![3]);
 
         // Query range [5, 6) should find nothing
         let mut results = Vec::new();
         tree.overlap(5, 6, |_idx, _start, _end, value| {
             results.push(value);
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(results.len(), 0);
     }
 
@@ -516,8 +530,8 @@ mod tests {
         // Add same intervals to both - including ones with same start but different ends
         let intervals = vec![
             (10, 20, 1u64),
-            (10, 25, 2u64),  // Same start, different end
-            (10, 15, 3u64),  // Same start, different end
+            (10, 25, 2u64), // Same start, different end
+            (10, 15, 3u64), // Same start, different end
             (15, 25, 4u64),
             (30, 40, 5u64),
         ];
@@ -536,23 +550,29 @@ mod tests {
         let mut mem_results = Vec::new();
         let mut disk_results = Vec::new();
 
-        mem_tree.overlap(12, 18, |idx, start, end, val| {
-            mem_results.push((idx, start, end, val));
-        }).unwrap();
+        mem_tree
+            .overlap(12, 18, |idx, start, end, val| {
+                mem_results.push((idx, start, end, val));
+            })
+            .unwrap();
 
-        disk_tree.overlap(12, 18, |idx, start, end, val| {
-            disk_results.push((idx, start, end, val));
-        }).unwrap();
+        disk_tree
+            .overlap(12, 18, |idx, start, end, val| {
+                disk_results.push((idx, start, end, val));
+            })
+            .unwrap();
 
         // Compare ignoring index (since that might differ due to sort stability)
         let mem_set: HashSet<_> = mem_results.iter().map(|(_, s, e, v)| (s, e, v)).collect();
         let disk_set: HashSet<_> = disk_results.iter().map(|(_, s, e, v)| (s, e, v)).collect();
 
-        assert_eq!(mem_set, disk_set,
+        assert_eq!(
+            mem_set, disk_set,
             "Memory and disk trees should return the same intervals.\n\
              Memory: {:?}\n\
              Disk: {:?}",
-            mem_results, disk_results);
+            mem_results, disk_results
+        );
 
         // Clean up temp file
         tempfile::remove(&disk_path);

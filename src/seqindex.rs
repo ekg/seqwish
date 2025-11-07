@@ -1,9 +1,9 @@
+use flate2::read::MultiGzDecoder;
+use fm_index::{FMIndexWithLocate, MatchWithLocate, Search, SearchIndex, Text};
+use memmap2::Mmap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-use memmap2::Mmap;
-use flate2::read::MultiGzDecoder;
-use fm_index::{FMIndexWithLocate, Text, Search, SearchIndex, MatchWithLocate};
 
 /// Simple sparse bitvector for sequence boundaries
 /// Much faster than RsVec for sparse data (select is O(1) array access vs hierarchical search)
@@ -36,9 +36,10 @@ impl SparseBitVec {
     /// O(log n) binary search
     #[inline]
     fn rank1(&self, i: usize) -> usize {
-        self.positions.binary_search(&i)
-            .map(|idx| idx)  // Found at idx, rank = # elements before it = idx
-            .unwrap_or_else(|idx| idx)  // Not found, idx is insertion point = rank
+        self.positions
+            .binary_search(&i)
+            .map(|idx| idx) // Found at idx, rank = # elements before it = idx
+            .unwrap_or_else(|idx| idx) // Not found, idx is insertion point = rank
     }
 
     /// Get the size of the bitvector
@@ -117,8 +118,8 @@ impl SeqIndex {
         self.seq_filename = Some(seq_file.clone());
 
         // Open input file (with optional gzip support)
-        let file = File::open(filename)
-            .map_err(|e| format!("Failed to open {}: {}", filename, e))?;
+        let file =
+            File::open(filename).map_err(|e| format!("Failed to open {}: {}", filename, e))?;
 
         let reader: Box<dyn BufRead> = if filename.ends_with(".gz") {
             Box::new(BufReader::new(MultiGzDecoder::new(file)))
@@ -128,17 +129,21 @@ impl SeqIndex {
 
         // Open output file for sequences (WITH LARGE BUFFER!)
         // Use 1MB buffer to minimize write syscalls (default 8KB is too small)
-        let mut seq_out = BufWriter::with_capacity(1024 * 1024, OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&seq_file)
-            .map_err(|e| format!("Failed to create sequence file: {}", e))?);
+        let mut seq_out = BufWriter::with_capacity(
+            1024 * 1024,
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&seq_file)
+                .map_err(|e| format!("Failed to create sequence file: {}", e))?,
+        );
 
         let mut lines = reader.lines();
 
         // Detect format from first line
-        let first_line = lines.next()
+        let first_line = lines
+            .next()
             .ok_or("Empty file".to_string())?
             .map_err(|e| format!("Failed to read first line: {}", e))?;
 
@@ -162,11 +167,17 @@ impl SeqIndex {
         loop {
             // Parse sequence name
             let seq_name = if is_fasta {
-                current_line[1..].split_whitespace().next()
-                    .unwrap_or("").to_string()
+                current_line[1..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
             } else {
-                current_line[1..].split_whitespace().next()
-                    .unwrap_or("").to_string()
+                current_line[1..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
             };
 
             // Get sequence
@@ -226,7 +237,8 @@ impl SeqIndex {
 
             // Write upper-case sequence
             let seq_upper = seq.to_uppercase();
-            seq_out.write_all(seq_upper.as_bytes())
+            seq_out
+                .write_all(seq_upper.as_bytes())
                 .map_err(|e| format!("Failed to write sequence: {}", e))?;
 
             seq_bytes_written += seq_upper.len() as u64;
@@ -258,23 +270,28 @@ impl SeqIndex {
         name_bytes.push(0); // Add null terminator required by FM-index
         let name_len = name_bytes.len() - 1; // Length without the null terminator
         let text = Text::new(name_bytes.clone());
-        self.name_index = Some(FMIndexWithLocate::new(&text, 2)
-            .map_err(|e| format!("Failed to build FM-index: {:?}", e))?); // Sample every 2^2=4 positions
+        self.name_index = Some(
+            FMIndexWithLocate::new(&text, 2)
+                .map_err(|e| format!("Failed to build FM-index: {:?}", e))?,
+        ); // Sample every 2^2=4 positions
         name_bytes.pop(); // Remove null terminator from stored copy
         self.name_text = name_bytes;
 
         // Build sparse bitvector for name boundaries (just store positions directly!)
         // Space: O(m) words where m = # sequences - much simpler and faster than RsVec
         self.name_boundaries = Some(SparseBitVec::from_positions(
-            name_boundary_positions.iter().map(|&p| p as usize).collect(),
-            name_len
+            name_boundary_positions
+                .iter()
+                .map(|&p| p as usize)
+                .collect(),
+            name_len,
         ));
 
         // Build sparse bitvector for sequence boundaries
         // Space: O(m) words where m = # sequences
         self.seq_boundaries = Some(SparseBitVec::from_positions(
             seq_boundary_positions.iter().map(|&p| p as usize).collect(),
-            (seq_bytes_written + 1) as usize
+            (seq_bytes_written + 1) as usize,
         ));
 
         // Memory-map the sequence file
@@ -283,7 +300,6 @@ impl SeqIndex {
         Ok(())
     }
 
-
     /// Memory-map the sequence file
     fn open_mmap(&mut self) -> Result<(), String> {
         if let Some(ref seq_file) = self.seq_filename {
@@ -291,8 +307,7 @@ impl SeqIndex {
                 .map_err(|e| format!("Failed to open sequence file for mmap: {}", e))?;
 
             let mmap = unsafe {
-                Mmap::map(&file)
-                    .map_err(|e| format!("Failed to mmap sequence file: {}", e))?
+                Mmap::map(&file).map_err(|e| format!("Failed to mmap sequence file: {}", e))?
             };
 
             self.seq_mmap = Some(mmap);
@@ -354,9 +369,7 @@ impl SeqIndex {
 
         // Locate pattern in FM-index
         let search_result = name_index.search(query.as_bytes());
-        let matches: Vec<usize> = search_result.iter_matches()
-            .map(|m| m.locate())
-            .collect();
+        let matches: Vec<usize> = search_result.iter_matches().map(|m| m.locate()).collect();
 
         if matches.len() != 1 {
             return None; // Should have exactly one occurrence
@@ -551,11 +564,10 @@ mod tests {
     #[test]
     fn test_fasta_parsing() {
         let test_file = "/tmp/test_seqindex_v2.fa";
-        create_test_fasta(test_file, &[
-            ("seq1", "ACGT"),
-            ("seq2", "GGGG"),
-            ("seq3", "TTTT"),
-        ]);
+        create_test_fasta(
+            test_file,
+            &[("seq1", "ACGT"), ("seq2", "GGGG"), ("seq3", "TTTT")],
+        );
 
         let mut idx = SeqIndex::new();
         idx.build_index(test_file).unwrap();
@@ -571,10 +583,7 @@ mod tests {
     #[test]
     fn test_sequence_access() {
         let test_file = "/tmp/test_seqindex_v2_2.fa";
-        create_test_fasta(test_file, &[
-            ("chr1", "ACGTACGT"),
-            ("chr2", "GGGGTTTT"),
-        ]);
+        create_test_fasta(test_file, &[("chr1", "ACGTACGT"), ("chr2", "GGGGTTTT")]);
 
         let mut idx = SeqIndex::new();
         idx.build_index(test_file).unwrap();
@@ -590,11 +599,10 @@ mod tests {
     #[test]
     fn test_name_lookup() {
         let test_file = "/tmp/test_seqindex_v2_3.fa";
-        create_test_fasta(test_file, &[
-            ("seq1", "AAAA"),
-            ("seq2", "CCCC"),
-            ("seq3", "GGGG"),
-        ]);
+        create_test_fasta(
+            test_file,
+            &[("seq1", "AAAA"), ("seq2", "CCCC"), ("seq3", "GGGG")],
+        );
 
         let mut idx = SeqIndex::new();
         idx.build_index(test_file).unwrap();
@@ -611,10 +619,7 @@ mod tests {
     #[test]
     fn test_position_queries() {
         let test_file = "/tmp/test_seqindex_v2_4.fa";
-        create_test_fasta(test_file, &[
-            ("s1", "AAAA"),
-            ("s2", "CCCC"),
-        ]);
+        create_test_fasta(test_file, &[("s1", "AAAA"), ("s2", "CCCC")]);
 
         let mut idx = SeqIndex::new();
         idx.build_index(test_file).unwrap();

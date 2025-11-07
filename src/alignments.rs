@@ -1,26 +1,29 @@
+use crate::intervaltree::AdaptiveTree;
+use crate::intervaltree::IntervalTree;
 use crate::paf::PafRow;
 use crate::pos::{decr_pos, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
 use crate::seqindex::SeqIndex;
 use flate2::read::MultiGzDecoder;
-use crate::intervaltree::AdaptiveTree;
-use crate::intervaltree::IntervalTree;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// Hash function for match parameters
 /// Uses a Wang hash-like mixing algorithm
 pub fn match_hash(q: u64, t: u64, l: u64) -> u64 {
     let mut seed = q | t | l;
-    seed ^= q.wrapping_add(0x9e3779b97f4a7c15)
+    seed ^= q
+        .wrapping_add(0x9e3779b97f4a7c15)
         .wrapping_add(seed << 17)
         .wrapping_add(seed >> 9);
-    seed ^= t.wrapping_add(0x9e3779b97f4a7c15)
+    seed ^= t
+        .wrapping_add(0x9e3779b97f4a7c15)
         .wrapping_add(seed << 7)
         .wrapping_add(seed >> 23);
-    seed ^= l.wrapping_add(0x9e3779b97f4a7c15)
+    seed ^= l
+        .wrapping_add(0x9e3779b97f4a7c15)
         .wrapping_add(seed << 9)
         .wrapping_add(seed >> 2);
     seed
@@ -133,43 +136,50 @@ fn paf_worker(
                     let mut match_len = 0u64;
 
                     // Helper to add a match to the iitree
-                    let add_match = |q_start: PosT,
-                                          q_end: PosT,
-                                          t_start: PosT,
-                                          t_end: PosT,
-                                          len: u64| {
-                        if len >= min_match_len
-                            && (sparsification_factor == 0.0
-                                || keep_sparse(
-                                    offset(q_start),
-                                    offset(t_start),
-                                    len,
-                                    sparsification_factor,
-                                ))
-                        {
-                            let mut tree = aln_iitree.lock().unwrap();
-                            if is_rev(q_end) {
-                                // Reverse query
-                                let mut x_pos = q_end;
-                                decr_pos(&mut x_pos);
-                                tree.add(offset(x_pos), offset(q_start) + 1, make_pos_t(offset(t_end) - 1, true))
+                    let add_match =
+                        |q_start: PosT, q_end: PosT, t_start: PosT, t_end: PosT, len: u64| {
+                            if len >= min_match_len
+                                && (sparsification_factor == 0.0
+                                    || keep_sparse(
+                                        offset(q_start),
+                                        offset(t_start),
+                                        len,
+                                        sparsification_factor,
+                                    ))
+                            {
+                                let mut tree = aln_iitree.lock().unwrap();
+                                if is_rev(q_end) {
+                                    // Reverse query
+                                    let mut x_pos = q_end;
+                                    decr_pos(&mut x_pos);
+                                    tree.add(
+                                        offset(x_pos),
+                                        offset(q_start) + 1,
+                                        make_pos_t(offset(t_end) - 1, true),
+                                    )
                                     .ok();
-                                tree.add(offset(t_start), offset(t_end), make_pos_t(offset(q_start), true))
+                                    tree.add(
+                                        offset(t_start),
+                                        offset(t_end),
+                                        make_pos_t(offset(q_start), true),
+                                    )
                                     .ok();
-                            } else {
-                                // Forward query
-                                tree.add(offset(q_start), offset(q_end), t_start).ok();
-                                tree.add(offset(t_start), offset(t_end), q_start).ok();
+                                } else {
+                                    // Forward query
+                                    tree.add(offset(q_start), offset(q_end), t_start).ok();
+                                    tree.add(offset(t_start), offset(t_end), q_start).ok();
+                                }
                             }
-                        }
-                    };
+                        };
 
                     // Process each base in the match
                     for _ in 0..c.len {
-                        let query_base = seqidx.at_pos(q_pos)
-                            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid query position"))?;
-                        let target_base = seqidx.at_pos(t_pos)
-                            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid target position"))?;
+                        let query_base = seqidx.at_pos(q_pos).ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::Other, "Invalid query position")
+                        })?;
+                        let target_base = seqidx.at_pos(t_pos).ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::Other, "Invalid target position")
+                        })?;
 
                         if query_base == target_base
                             && query_base != 'N'
@@ -186,7 +196,13 @@ fn paf_worker(
                         } else {
                             // Mismatch or end of match
                             if match_len > 0 {
-                                add_match(q_pos_match_start, q_pos, t_pos_match_start, t_pos, match_len);
+                                add_match(
+                                    q_pos_match_start,
+                                    q_pos,
+                                    t_pos_match_start,
+                                    t_pos,
+                                    match_len,
+                                );
                                 match_len = 0;
                             }
                             incr_pos(&mut q_pos);
@@ -196,7 +212,13 @@ fn paf_worker(
 
                     // Handle any final match
                     if match_len > 0 {
-                        add_match(q_pos_match_start, q_pos, t_pos_match_start, t_pos, match_len);
+                        add_match(
+                            q_pos_match_start,
+                            q_pos,
+                            t_pos_match_start,
+                            t_pos,
+                            match_len,
+                        );
                     }
                 }
                 b'I' => {
@@ -282,10 +304,10 @@ pub fn unpack_paf_alignments(
 mod tests {
     use super::*;
     use crate::seqindex::SeqIndex;
-    use std::fs::File;
-    use std::io::Write;
     use flate2::write::GzEncoder;
     use flate2::Compression;
+    use std::fs::File;
+    use std::io::Write;
 
     #[test]
     fn test_match_hash_deterministic() {
@@ -377,16 +399,16 @@ mod tests {
         // Create temporary FASTA file with two sequences
         let mut fasta_file = File::create(&fasta_path)?;
         writeln!(fasta_file, ">seq1")?;
-        writeln!(fasta_file, "ACGTACGTACGT")?;  // 12 bases
+        writeln!(fasta_file, "ACGTACGTACGT")?; // 12 bases
         writeln!(fasta_file, ">seq2")?;
-        writeln!(fasta_file, "ACGTACGTACGT")?;  // 12 bases (identical)
+        writeln!(fasta_file, "ACGTACGTACGT")?; // 12 bases (identical)
         fasta_file.flush()?;
 
         // Build SeqIndex
         let mut seqidx = SeqIndex::new();
-        seqidx.build_index(&fasta_path).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e)
-        })?;
+        seqidx
+            .build_index(&fasta_path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let seqidx = Arc::new(seqidx);
 
         // Create temporary gzipped PAF file
@@ -395,7 +417,10 @@ mod tests {
         let mut gz = GzEncoder::new(paf_file, Compression::default());
 
         // Simple alignment: seq1[0..12] aligns to seq2[0..12] with perfect match
-        writeln!(gz, "seq1\t12\t0\t12\t+\tseq2\t12\t0\t12\t12\t12\t60\tcg:Z:12M")?;
+        writeln!(
+            gz,
+            "seq1\t12\t0\t12\t+\tseq2\t12\t0\t12\t12\t12\t60\tcg:Z:12M"
+        )?;
         gz.finish()?;
 
         // Create iitree
@@ -408,9 +433,9 @@ mod tests {
             &paf_path,
             Arc::clone(&tree),
             Arc::clone(&seqidx),
-            1,    // min_match_len
-            0.0,  // sparsification_factor (keep all)
-            1,    // num_threads
+            1,   // min_match_len
+            0.0, // sparsification_factor (keep all)
+            1,   // num_threads
         )?;
 
         // Index the tree
@@ -424,7 +449,11 @@ mod tests {
         let num_intervals = tree_guard.len();
 
         // We expect at least 2 intervals (one for each direction of the alignment)
-        assert!(num_intervals >= 2, "Expected at least 2 intervals, got {}", num_intervals);
+        assert!(
+            num_intervals >= 2,
+            "Expected at least 2 intervals, got {}",
+            num_intervals
+        );
 
         // Cleanup
         std::fs::remove_file(&fasta_path).ok();

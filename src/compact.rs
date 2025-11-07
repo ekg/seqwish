@@ -3,16 +3,16 @@
 // This module marks node boundaries in the variation graph by identifying
 // positions where the graph structure changes (bifurcations, joins, etc.)
 
-use std::sync::{Arc, RwLock};
 use std::io;
+use std::sync::{Arc, RwLock};
 
-use rayon::prelude::*;
 use bitvec::prelude::*;
+use rayon::prelude::*;
 
-use crate::pos::{PosT, offset, is_rev, incr_pos_by};
-use crate::seqindex::SeqIndex;
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
+use crate::pos::{incr_pos_by, is_rev, offset, PosT};
+use crate::seqindex::SeqIndex;
 
 /// Atomic bitvector for thread-safe bit marking
 struct AtomicBitVec {
@@ -100,32 +100,36 @@ pub fn compact_nodes(
 
             // Find overlaps for this position
             if let Ok(path_guard) = path_iitree.read() {
-                path_guard.overlap(j, j + 1, |_idx, start, end, pos| {
-                    overlap_count += 1;
-                    ovlp_start_in_q = start;
-                    ovlp_end_in_q = end;
-                    pos_start_in_s = pos;
-                }).ok();
+                path_guard
+                    .overlap(j, j + 1, |_idx, start, end, pos| {
+                        overlap_count += 1;
+                        ovlp_start_in_q = start;
+                        ovlp_end_in_q = end;
+                        pos_start_in_s = pos;
+                    })
+                    .ok();
             }
 
             // Each input base should map to exactly one place in the graph
             if overlap_count != 1 {
-                let seq_name = seqidx.nth_name(i).unwrap_or_else(|| "<unknown>".to_string());
+                let seq_name = seqidx
+                    .nth_name(i)
+                    .unwrap_or_else(|| "<unknown>".to_string());
                 eprintln!(
                     "[compact] error: found {} overlaps for seq {} idx {} at j={} of {}",
-                    overlap_count,
-                    seq_name,
-                    i,
-                    j,
-                    k
+                    overlap_count, seq_name, i, j, k
                 );
                 if let Ok(path_guard) = path_iitree.read() {
-                    path_guard.overlap(j, j + 1, |_idx, start, end, pos| {
-                        eprintln!(
-                            "ovlp_start_in_q = {} ovlp_end_in_q = {} pos_start_in_s = {}+",
-                            start, end, offset(pos)
-                        );
-                    }).ok();
+                    path_guard
+                        .overlap(j, j + 1, |_idx, start, end, pos| {
+                            eprintln!(
+                                "ovlp_start_in_q = {} ovlp_end_in_q = {} pos_start_in_s = {}+",
+                                start,
+                                end,
+                                offset(pos)
+                            );
+                        })
+                        .ok();
                 }
                 panic!("Overlap count mismatch");
             }
@@ -135,12 +139,18 @@ pub fn compact_nodes(
 
             if !match_is_rev {
                 // Forward match
-                incr_pos_by(&mut pos_end_in_s, (ovlp_end_in_q - ovlp_start_in_q) as usize);
+                incr_pos_by(
+                    &mut pos_end_in_s,
+                    (ovlp_end_in_q - ovlp_start_in_q) as usize,
+                );
                 seq_id_abv.set(offset(pos_start_in_s) as usize);
                 seq_id_abv.set(offset(pos_end_in_s) as usize);
             } else {
                 // Reverse match
-                incr_pos_by(&mut pos_end_in_s, (ovlp_end_in_q - ovlp_start_in_q - 1) as usize);
+                incr_pos_by(
+                    &mut pos_end_in_s,
+                    (ovlp_end_in_q - ovlp_start_in_q - 1) as usize,
+                );
                 seq_id_abv.set(offset(pos_end_in_s) as usize);
                 seq_id_abv.set((offset(pos_start_in_s) + 1) as usize);
             }

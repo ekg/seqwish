@@ -4,22 +4,22 @@
 // identifying equivalence classes that form nodes in the variation graph.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
-use std::sync::atomic::Ordering;
-use std::thread;
 use std::io;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 
-use crossbeam_queue::ArrayQueue;
+use crate::dset64_asm::DisjointSetsAsm;
 use bitvec::prelude::*;
+use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
 use std::sync::atomic::AtomicU64;
-use crate::dset64_asm::DisjointSetsAsm;
-use sucds::bit_vectors::{BitVector as SucdsBitVector, Rank9Sel, Rank};
+use sucds::bit_vectors::{BitVector as SucdsBitVector, Rank, Rank9Sel};
 
-use crate::pos::{PosT, offset, is_rev, incr_pos, incr_pos_by, decr_pos, decr_pos_by, make_pos_t};
-use crate::seqindex::SeqIndex;
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
+use crate::pos::{decr_pos, decr_pos_by, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
+use crate::seqindex::SeqIndex;
 
 /// Thomas Wang's 64-bit integer hash function
 ///
@@ -175,7 +175,12 @@ fn flush_single_range(
         let match_start_in_q = match_end_in_q - match_length;
         let match_pos_in_s = make_pos_t(match_start_in_s, false);
         let match_pos_in_q = make_pos_t(match_start_in_q, false);
-        (match_pos_in_s, match_pos_in_q, match_start_in_q, match_end_in_q)
+        (
+            match_pos_in_s,
+            match_pos_in_q,
+            match_start_in_q,
+            match_end_in_q,
+        )
     } else {
         // Reverse match
         let match_end_in_q = offset(match_end_pos_in_q);
@@ -185,7 +190,12 @@ fn flush_single_range(
         let match_pos_in_q = make_pos_t(offset(match_end_pos_in_q_tmp) - 1, true);
         let match_start_in_q = match_end_in_q;
         let match_end_in_q = offset(match_end_pos_in_q_tmp);
-        (match_pos_in_s, match_pos_in_q, match_start_in_q, match_end_in_q)
+        (
+            match_pos_in_s,
+            match_pos_in_q,
+            match_start_in_q,
+            match_end_in_q,
+        )
     };
 
     // Add to both iitrees
@@ -219,11 +229,8 @@ pub fn flush_ranges(
 /// Break a large range into component ranges we haven't seen yet
 ///
 /// Walk the range, breaking where we've seen it, emitting new ranges via lambda
-fn for_each_fresh_range<F>(
-    range: &Match,
-    seen_bv: &[bool],
-    mut lambda: F,
-) where
+fn for_each_fresh_range<F>(range: &Match, seen_bv: &[bool], mut lambda: F)
+where
     F: FnMut(Match),
 {
     let mut p = range.start;
@@ -277,23 +284,25 @@ fn explore_overlaps(
     ovlp_q: &OverlapAtomicQueue,
     todo_in: &RangeAtomicQueue,
 ) {
-    aln_iitree.overlap(b.start, b.end, |_idx, start, end, pos| {
-        let mut r = Match::new(start, end, pos);
-        // Trim the range to fit within b
-        if b.start > r.start {
-            let trim_from_start = b.start - r.start;
-            r.start += trim_from_start;
-            incr_pos_by(&mut r.data, trim_from_start as usize);
-        }
-        if r.end > b.end {
-            let trim_from_end = r.end - b.end;
-            r.end -= trim_from_end;
-        }
-        assert!(r.start < r.end);
-        for_each_fresh_range(&r, seen_bv, |s| {
-            handle_range(s, curr_bv, ovlp_q, todo_in);
-        });
-    }).ok();  // Ignore Result
+    aln_iitree
+        .overlap(b.start, b.end, |_idx, start, end, pos| {
+            let mut r = Match::new(start, end, pos);
+            // Trim the range to fit within b
+            if b.start > r.start {
+                let trim_from_start = b.start - r.start;
+                r.start += trim_from_start;
+                incr_pos_by(&mut r.data, trim_from_start as usize);
+            }
+            if r.end > b.end {
+                let trim_from_end = r.end - b.end;
+                r.end -= trim_from_end;
+            }
+            assert!(r.start < r.end);
+            for_each_fresh_range(&r, seen_bv, |s| {
+                handle_range(s, curr_bv, ovlp_q, todo_in);
+            });
+        })
+        .ok(); // Ignore Result
 }
 
 /// Write a chunk of the graph sequence from disjoint sets
@@ -338,7 +347,14 @@ fn write_graph_chunk(
                     seq_v_out.push(current_base);
                     seq_v_length += 1;
                     for pos in positions {
-                        extend_range(seq_v_length - 1, *pos, range_buffer, seqidx, node_iitree, path_iitree)?;
+                        extend_range(
+                            seq_v_length - 1,
+                            *pos,
+                            range_buffer,
+                            seqidx,
+                            node_iitree,
+                            path_iitree,
+                        )?;
                     }
                 }
                 todos.clear();
@@ -373,9 +389,19 @@ fn write_graph_chunk(
             }
 
             if curr_seq_count == 0 {
-                extend_range(seq_v_length - 1, curr_q_pos, range_buffer, seqidx, node_iitree, path_iitree)?;
+                extend_range(
+                    seq_v_length - 1,
+                    curr_q_pos,
+                    range_buffer,
+                    seqidx,
+                    node_iitree,
+                    path_iitree,
+                )?;
             } else {
-                todos.entry(curr_seq_count).or_insert_with(Vec::new).push(curr_q_pos);
+                todos
+                    .entry(curr_seq_count)
+                    .or_insert_with(Vec::new)
+                    .push(curr_q_pos);
             }
             last_seq_pos.insert(curr_seq_id, curr_q_pos);
         }
@@ -386,7 +412,14 @@ fn write_graph_chunk(
         seq_v_out.push(current_base);
         seq_v_length += 1;
         for pos in positions {
-            extend_range(seq_v_length - 1, *pos, range_buffer, seqidx, node_iitree, path_iitree)?;
+            extend_range(
+                seq_v_length - 1,
+                *pos,
+                range_buffer,
+                seqidx,
+                node_iitree,
+                path_iitree,
+            )?;
         }
     }
     Ok(())
@@ -408,9 +441,9 @@ pub fn compute_transitive_closures(
     show_progress: bool,
     num_threads: usize,
 ) -> io::Result<usize> {
+    use std::collections::VecDeque;
     use std::fs::File;
     use std::io::Write;
-    use std::collections::VecDeque;
 
     let start_time = std::time::Instant::now();
     eprintln!("[transclosure] Starting transitive closure computation");
@@ -434,7 +467,8 @@ pub fn compute_transitive_closures(
 
     // Writer thread handle for pipelining (like C++)
     // The thread writes while we compute the next batch
-    let mut writer_thread: Option<thread::JoinHandle<io::Result<(Vec<u8>, HashMap<PosT, Range>)>>> = None;
+    let mut writer_thread: Option<thread::JoinHandle<io::Result<(Vec<u8>, HashMap<PosT, Range>)>>> =
+        None;
 
     // Main loop: process input sequence in chunks
     let mut i = 0;
@@ -572,7 +606,11 @@ pub fn compute_transitive_closures(
                         std::thread::yield_now();
                         empty_count += 1;
                         // If queues have been empty for a while, we're done
-                        if empty_count > 1000 && todo.is_empty() && todo_in.is_empty() && todo_out.is_empty() {
+                        if empty_count > 1000
+                            && todo.is_empty()
+                            && todo_in.is_empty()
+                            && todo_out.is_empty()
+                        {
                             break;
                         }
                     }
@@ -638,7 +676,7 @@ pub fn compute_transitive_closures(
 
         // Build Rank9Sel directly from iterator (avoids intermediate Vec<bool> allocation)
         let sucds_bv = SucdsBitVector::from_bits(
-            (0..input_seq_length).map(|pos| q_curr_bv_final.get(pos, Ordering::Acquire))
+            (0..input_seq_length).map(|pos| q_curr_bv_final.get(pos, Ordering::Acquire)),
         );
         let q_curr_rank = Rank9Sel::new(sucds_bv);
 
@@ -833,23 +871,25 @@ pub fn compute_transitive_closures(
         let path_iitree_clone = Arc::clone(&path_iitree);
         let seqidx_clone = Arc::clone(&seqidx);
 
-        writer_thread = Some(thread::spawn(move || -> io::Result<(Vec<u8>, HashMap<PosT, Range>)> {
-            let mut node_guard = node_iitree_clone.write().unwrap();
-            let mut path_guard = path_iitree_clone.write().unwrap();
+        writer_thread = Some(thread::spawn(
+            move || -> io::Result<(Vec<u8>, HashMap<PosT, Range>)> {
+                let mut node_guard = node_iitree_clone.write().unwrap();
+                let mut path_guard = path_iitree_clone.write().unwrap();
 
-            write_graph_chunk(
-                &seqidx_clone,
-                &mut node_guard,
-                &mut path_guard,
-                &mut seq_v,
-                &mut range_buf,
-                dsets_vec,
-                repeat_max,
-                min_repeat_dist,
-            )?;
+                write_graph_chunk(
+                    &seqidx_clone,
+                    &mut node_guard,
+                    &mut path_guard,
+                    &mut seq_v,
+                    &mut range_buf,
+                    dsets_vec,
+                    repeat_max,
+                    min_repeat_dist,
+                )?;
 
-            Ok((seq_v, range_buf))
-        }));
+                Ok((seq_v, range_buf))
+            },
+        ));
 
         i = chunk_end;
     }
@@ -874,7 +914,12 @@ pub fn compute_transitive_closures(
     {
         let mut node_guard = node_iitree.write().unwrap();
         let mut path_guard = path_iitree.write().unwrap();
-        flush_ranges(seq_bytes as u64 + 1, &mut range_buffer, &mut node_guard, &mut path_guard)?;
+        flush_ranges(
+            seq_bytes as u64 + 1,
+            &mut range_buffer,
+            &mut node_guard,
+            &mut path_guard,
+        )?;
     }
 
     if show_progress {

@@ -11,7 +11,8 @@ const DNA_COMPLEMENT: [u8; 256] = [
     b'N', b'N', b'N', b'N', b'N', b'N', b'N', b'N', // 64
     b'N', b'T', b'V', b'G', b'H', b'N', b'N', b'C', // 72  (A->T, B->V, C->G, D->H)
     b'D', b'N', b'N', b'M', b'N', b'K', b'N', b'N', // 80  (H->D, K->M, M->K)
-    b'N', b'Q', b'Y', b'S', b'A', b'A', b'B', b'W', // 88  (Q->Q, R->Y, S->W, T->A, U->A, V->B, W->S)
+    b'N', b'Q', b'Y', b'S', b'A', b'A', b'B',
+    b'W', // 88  (Q->Q, R->Y, S->W, T->A, U->A, V->B, W->S)
     b'N', b'R', b'N', b'N', b'N', b'N', b'N', b'N', // 96  (Y->R)
     b'N', b't', b'v', b'g', b'h', b'N', b'N', b'c', // 104 (lowercase)
     b'd', b'N', b'N', b'm', b'N', b'k', b'n', b'N', // 112
@@ -195,7 +196,12 @@ mod tests {
             let rc_alloc = reverse_complement(test);
             let mut seq = test.to_vec();
             reverse_complement_in_place(&mut seq);
-            assert_eq!(rc_alloc, seq, "Mismatch for input: {:?}", std::str::from_utf8(test));
+            assert_eq!(
+                rc_alloc,
+                seq,
+                "Mismatch for input: {:?}",
+                std::str::from_utf8(test)
+            );
         }
     }
 

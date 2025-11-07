@@ -1,7 +1,7 @@
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::raw::c_char;
-use once_cell::sync::Lazy;
 
 // Git version injected at build time - fallback to "unknown" if not set
 const GIT_VERSION: &str = match option_env!("SEQWISH_GIT_VERSION") {
@@ -11,22 +11,25 @@ const GIT_VERSION: &str = match option_env!("SEQWISH_GIT_VERSION") {
 
 static CODENAMES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
-        m.insert("v0.1", "initial release");
-        m.insert("v0.2", "parallel union find / transclosure");
-        m.insert("v0.2.1", "unstable point release");
-        m.insert("v0.4", "improving stability");
-        m.insert("v0.4.1", "complete correction of range compression in union find");
-        m.insert("v0.5", "repeat limitation");
-        m.insert("0.6", "std::thread our way through things");
-        m.insert("v0.6.1", "simplify paths in GFA");
-        m.insert("v0.7", "memory safety and minor improvements");
-        m.insert("v0.7.1", "seqwish 0.7.1 - Sicurezza");
-        m.insert("v0.7.2", "seqwish 0.7.2 - Diffidenza");
-        m.insert("v0.7.3", "seqwish 0.7.3 - Veloce");
-        m.insert("v0.7.4", "seqwish 0.7.4 - Rifinitura");
-        m.insert("v0.7.5", "seqwish 0.7.5 - Pasticcione");
-        m.insert("v0.7.6", "seqwish 0.7.6 - Temporaneo");
-        m
+    m.insert("v0.1", "initial release");
+    m.insert("v0.2", "parallel union find / transclosure");
+    m.insert("v0.2.1", "unstable point release");
+    m.insert("v0.4", "improving stability");
+    m.insert(
+        "v0.4.1",
+        "complete correction of range compression in union find",
+    );
+    m.insert("v0.5", "repeat limitation");
+    m.insert("0.6", "std::thread our way through things");
+    m.insert("v0.6.1", "simplify paths in GFA");
+    m.insert("v0.7", "memory safety and minor improvements");
+    m.insert("v0.7.1", "seqwish 0.7.1 - Sicurezza");
+    m.insert("v0.7.2", "seqwish 0.7.2 - Diffidenza");
+    m.insert("v0.7.3", "seqwish 0.7.3 - Veloce");
+    m.insert("v0.7.4", "seqwish 0.7.4 - Rifinitura");
+    m.insert("v0.7.5", "seqwish 0.7.5 - Pasticcione");
+    m.insert("v0.7.6", "seqwish 0.7.6 - Temporaneo");
+    m
 });
 
 pub fn get_version() -> &'static str {

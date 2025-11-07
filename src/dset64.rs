@@ -7,7 +7,6 @@
 ///
 /// This is a Rust port of dset64-gccAtomic.hpp from seqwish-cpp.
 /// Uses 128-bit atomic primitives for 64-bit item ids.
-
 use portable_atomic::{AtomicU128, Ordering};
 
 /// Lock-free disjoint set data structure
@@ -30,9 +29,7 @@ impl DisjointSets {
             "AtomicU128 must be lock-free for dset64 performance!"
         );
 
-        let data: Vec<AtomicU128> = (0..size)
-            .map(|i| AtomicU128::new(i as u128))
-            .collect();
+        let data: Vec<AtomicU128> = (0..size).map(|i| AtomicU128::new(i as u128)).collect();
 
         DisjointSets { data }
     }
@@ -103,12 +100,10 @@ impl DisjointSets {
 
             // Try to make id1 point to id2
             // Use SeqCst to match C++ __sync_bool_compare_and_swap
-            if self.data[id1].compare_exchange(
-                old_entry,
-                new_entry,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ).is_err() {
+            if self.data[id1]
+                .compare_exchange(old_entry, new_entry, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
                 continue; // CAS failed, retry
             }
 

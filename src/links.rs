@@ -3,15 +3,15 @@
 // This module determines the graph topology by finding which nodes connect
 // to which other nodes based on the input sequences.
 
-use std::sync::{Arc, RwLock};
 use std::io;
+use std::sync::{Arc, RwLock};
 
 use rayon::prelude::*;
 
-use crate::pos::{PosT, offset, is_rev, incr_pos_by, make_pos_t};
-use crate::seqindex::SeqIndex;
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
+use crate::pos::{incr_pos_by, is_rev, make_pos_t, offset, PosT};
+use crate::seqindex::SeqIndex;
 
 /// Represents a ranked/select-capable bitvector
 /// This is a simplified interface for the SDSL sd_vector used in C++

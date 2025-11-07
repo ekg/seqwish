@@ -1,10 +1,10 @@
+use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use once_cell::sync::Lazy;
 
 /// Global state for temporary file management
 struct TempFileState {
@@ -78,12 +78,7 @@ pub fn create(base: &str, suffix: &str) -> Result<PathBuf, std::io::Error> {
     let c_template = CString::new(template.clone())
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"))?;
 
-    let fd = unsafe {
-        libc::mkstemps(
-            c_template.as_ptr() as *mut i8,
-            suffix.len() as i32,
-        )
-    };
+    let fd = unsafe { libc::mkstemps(c_template.as_ptr() as *mut i8, suffix.len() as i32) };
 
     if fd == -1 {
         return Err(std::io::Error::last_os_error());
@@ -150,7 +145,10 @@ mod tests {
     fn test_create_and_remove() {
         let path = create("test", ".tmp").expect("Failed to create temp file");
         assert!(path.exists(), "Temp file should exist");
-        assert!(path.to_string_lossy().ends_with(".tmp"), "Should have correct suffix");
+        assert!(
+            path.to_string_lossy().ends_with(".tmp"),
+            "Should have correct suffix"
+        );
 
         remove(&path);
         assert!(!path.exists(), "Temp file should be removed");

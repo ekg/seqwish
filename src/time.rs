@@ -35,7 +35,7 @@ mod tests {
 
         // Verify times are non-decreasing
         for i in 1..times.len() {
-            assert!(times[i] >= times[i-1]);
+            assert!(times[i] >= times[i - 1]);
         }
     }
 }

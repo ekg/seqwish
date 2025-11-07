@@ -2,7 +2,6 @@
 /// for maximum performance matching C++
 ///
 /// This matches the C++ implementation which uses raw pointers.
-
 use portable_atomic::{AtomicU128, Ordering};
 
 /// Lock-free disjoint set using raw pointer for zero-overhead array access
@@ -20,10 +19,7 @@ unsafe impl Sync for DisjointSetsUnsafe {}
 impl DisjointSetsUnsafe {
     /// Create a new disjoint set with `size` elements
     pub fn new(size: usize) -> Self {
-        assert!(
-            AtomicU128::is_lock_free(),
-            "AtomicU128 must be lock-free!"
-        );
+        assert!(AtomicU128::is_lock_free(), "AtomicU128 must be lock-free!");
 
         // Allocate aligned memory like C++
         let layout = std::alloc::Layout::array::<AtomicU128>(size).unwrap();
@@ -94,12 +90,10 @@ impl DisjointSetsUnsafe {
 
             unsafe {
                 let ptr = self.data.add(id1);
-                if (*ptr).compare_exchange(
-                    old_entry,
-                    new_entry,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                ).is_err() {
+                if (*ptr)
+                    .compare_exchange(old_entry, new_entry, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_err()
+                {
                     continue;
                 }
 

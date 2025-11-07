@@ -45,26 +45,26 @@ use std::sync::{Arc, Mutex};
 
 use bitvec::prelude::*;
 
-pub mod tempfile;
-pub mod pos;
-pub mod dna;
-pub mod cigar;
-pub mod mmap;
-pub mod utils;
-pub mod time;
-pub mod paf;
-pub mod sxs;
 pub mod alignments;
-pub mod version;
-pub mod seqindex;
-pub mod dset64;
-pub mod dset64_unsafe;
-pub mod dset64_asm;
-pub mod intervaltree;
-pub mod transclosure;
+pub mod cigar;
 pub mod compact;
-pub mod links;
+pub mod dna;
+pub mod dset64;
+pub mod dset64_asm;
+pub mod dset64_unsafe;
 pub mod gfa;
+pub mod intervaltree;
+pub mod links;
+pub mod mmap;
+pub mod paf;
+pub mod pos;
+pub mod seqindex;
+pub mod sxs;
+pub mod tempfile;
+pub mod time;
+pub mod transclosure;
+pub mod utils;
+pub mod version;
 
 /// Returns the version string of the Rust component
 #[no_mangle]
@@ -358,7 +358,12 @@ pub extern "C" fn cigar_length(handle: *const CigarHandle) -> usize {
 /// Get operation at index
 /// Returns false if index out of bounds
 #[no_mangle]
-pub extern "C" fn cigar_get_op(handle: *const CigarHandle, index: usize, len_out: *mut u64, op_out: *mut u8) -> bool {
+pub extern "C" fn cigar_get_op(
+    handle: *const CigarHandle,
+    index: usize,
+    len_out: *mut u64,
+    op_out: *mut u8,
+) -> bool {
     if handle.is_null() || len_out.is_null() || op_out.is_null() {
         return false;
     }
@@ -429,11 +434,7 @@ pub extern "C" fn mmap_close_rust(buf: *mut c_char, fd: i32, size: usize) {
         return;
     }
 
-    let mut handle = mmap::MmapHandle {
-        ptr: buf,
-        fd,
-        size,
-    };
+    let mut handle = mmap::MmapHandle { ptr: buf, fd, size };
 
     mmap::mmap_close(&mut handle);
 }
@@ -597,61 +598,81 @@ pub extern "C" fn paf_row_target_sequence_name(handle: *const PafRowHandle) -> *
 
 #[no_mangle]
 pub extern "C" fn paf_row_query_sequence_length(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.query_sequence_length }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_query_start(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.query_start }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_query_end(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.query_end }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_query_target_same_strand(handle: *const PafRowHandle) -> bool {
-    if handle.is_null() { return false; }
+    if handle.is_null() {
+        return false;
+    }
     unsafe { (*handle).row.query_target_same_strand }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_target_sequence_length(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.target_sequence_length }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_target_start(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.target_start }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_target_end(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.target_end }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_num_matches(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.num_matches }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_alignment_block_length(handle: *const PafRowHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.alignment_block_length }
 }
 
 #[no_mangle]
 pub extern "C" fn paf_row_mapping_quality(handle: *const PafRowHandle) -> u16 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).row.mapping_quality }
 }
 
@@ -661,7 +682,9 @@ pub extern "C" fn paf_row_cigar(handle: *const PafRowHandle) -> *mut CigarHandle
         return ptr::null_mut();
     }
     let row = unsafe { &(*handle).row };
-    Box::into_raw(Box::new(CigarHandle { cigar: row.cigar.clone() }))
+    Box::into_raw(Box::new(CigarHandle {
+        cigar: row.cigar.clone(),
+    }))
 }
 
 /// Create a new empty SXS alignment
@@ -737,37 +760,49 @@ pub extern "C" fn sxs_target_sequence_name(handle: *const SxsHandle) -> *mut c_c
 
 #[no_mangle]
 pub extern "C" fn sxs_query_start(handle: *const SxsHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).aln.query_start }
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_query_end(handle: *const SxsHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).aln.query_end }
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_target_start(handle: *const SxsHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).aln.target_start }
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_target_end(handle: *const SxsHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).aln.target_end }
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_num_matches(handle: *const SxsHandle) -> u64 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).aln.num_matches }
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_mapping_quality(handle: *const SxsHandle) -> u16 {
-    if handle.is_null() { return 0; }
+    if handle.is_null() {
+        return 0;
+    }
     unsafe { (*handle).aln.mapping_quality }
 }
 
@@ -777,18 +812,24 @@ pub extern "C" fn sxs_cigar(handle: *const SxsHandle) -> *mut CigarHandle {
         return ptr::null_mut();
     }
     let aln = unsafe { &(*handle).aln };
-    Box::into_raw(Box::new(CigarHandle { cigar: aln.cigar.clone() }))
+    Box::into_raw(Box::new(CigarHandle {
+        cigar: aln.cigar.clone(),
+    }))
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_is_good(handle: *const SxsHandle) -> bool {
-    if handle.is_null() { return false; }
+    if handle.is_null() {
+        return false;
+    }
     unsafe { (*handle).aln.is_good() }
 }
 
 #[no_mangle]
 pub extern "C" fn sxs_is_reverse(handle: *const SxsHandle) -> bool {
-    if handle.is_null() { return false; }
+    if handle.is_null() {
+        return false;
+    }
     unsafe { (*handle).aln.is_reverse() }
 }
 
@@ -817,8 +858,10 @@ pub extern "C" fn compact_compact_nodes(
     seq_id_bv_size: usize,
     num_threads: usize,
 ) -> i32 {
-    if seqidx_handle.is_null() || node_iitree_handle.is_null()
-        || path_iitree_handle.is_null() || seq_id_bv.is_null()
+    if seqidx_handle.is_null()
+        || node_iitree_handle.is_null()
+        || path_iitree_handle.is_null()
+        || seq_id_bv.is_null()
     {
         eprintln!("[compact] Error: null pointer passed to compact_compact_nodes");
         return 1;
@@ -830,7 +873,7 @@ pub extern "C" fn compact_compact_nodes(
         let path_iitree = Arc::clone(&(*path_iitree_handle).iitree);
 
         // Create BitVec from raw pointer
-        let bit_count = seq_id_bv_size * 64;  // 64 bits per u64
+        let bit_count = seq_id_bv_size * 64; // 64 bits per u64
         let slice = std::slice::from_raw_parts_mut(seq_id_bv, seq_id_bv_size);
         let mut bitvec = BitVec::from_slice(slice);
         bitvec.resize(bit_count, false);
@@ -896,8 +939,11 @@ pub extern "C" fn transclosure_compute(
     show_progress: bool,
     num_threads: usize,
 ) -> usize {
-    if seqidx_handle.is_null() || aln_iitree_handle.is_null() || seq_v_file.is_null()
-        || node_iitree_handle.is_null() || path_iitree_handle.is_null()
+    if seqidx_handle.is_null()
+        || aln_iitree_handle.is_null()
+        || seq_v_file.is_null()
+        || node_iitree_handle.is_null()
+        || path_iitree_handle.is_null()
     {
         eprintln!("[transclosure] Error: null pointer passed to transclosure_compute");
         return 0;

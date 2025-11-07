@@ -110,8 +110,20 @@ mod tests {
     fn test_cigar_from_string_large_numbers() {
         let cigar = cigar_from_string("12345678M9876543210D");
         assert_eq!(cigar.len(), 2);
-        assert_eq!(cigar[0], CigarOp { len: 12345678, op: b'M' });
-        assert_eq!(cigar[1], CigarOp { len: 9876543210, op: b'D' });
+        assert_eq!(
+            cigar[0],
+            CigarOp {
+                len: 12345678,
+                op: b'M'
+            }
+        );
+        assert_eq!(
+            cigar[1],
+            CigarOp {
+                len: 9876543210,
+                op: b'D'
+            }
+        );
     }
 
     #[test]
@@ -150,13 +162,7 @@ mod tests {
 
     #[test]
     fn test_cigar_roundtrip() {
-        let test_cases = vec![
-            "10M",
-            "10M2I5M",
-            "100M1D50M3I25M",
-            "5M1I2D3N4S5H6P7X8=",
-            "",
-        ];
+        let test_cases = vec!["10M", "10M2I5M", "100M1D50M3I25M", "5M1I2D3N4S5H6P7X8=", ""];
 
         for test in test_cases {
             let cigar = cigar_from_string(test);
