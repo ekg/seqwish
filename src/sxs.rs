@@ -52,7 +52,7 @@ impl SxsAlignment {
                 continue;
             }
 
-            let fields: Vec<&str> = line.split(|c| c == ' ' || c == '\t').collect();
+            let fields: Vec<&str> = line.split([' ', '\t']).collect();
             if fields.is_empty() {
                 continue;
             }
@@ -115,6 +115,7 @@ impl SxsAlignment {
     }
 
     /// Format as SXS string
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         format!(
             "A\t{}\t{}\nI\t{}\t{}\t{}\t{}\nM\t{}\nC\t{}\nQ\t{}",

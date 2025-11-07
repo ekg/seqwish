@@ -1,0 +1,1 @@
+{"rustc":11714878383040811012,"features":"[]","declared_features":"[]","target":844295649981141528,"profile":2241668132362809309,"path":14777062691366038599,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug/.fingerprint/partition-8f108a9dc76abb31/dep-lib-partition","checksum":false}}],"rustflags":["-C","target-cpu=native"],"config":2069994364910194474,"compile_kind":0}

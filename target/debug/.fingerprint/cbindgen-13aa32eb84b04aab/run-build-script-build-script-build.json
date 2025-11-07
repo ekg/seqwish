@@ -1,0 +1,1 @@
+{"rustc":11714878383040811012,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[10517443389737624495,"build_script_build",false,15969287769167996991]],"local":[{"RerunIfChanged":{"output":"debug/build/cbindgen-13aa32eb84b04aab/output","paths":["tests/rust","tests/depfile"]}}],"rustflags":["-C","target-cpu=native"],"config":0,"compile_kind":0}
