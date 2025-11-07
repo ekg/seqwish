@@ -1,0 +1,111 @@
+[seqwish::seqindex] 0.000 loading sequences
+[seqwish::seqindex] 0.800 loaded 112 sequences
+[seqwish::alignments] 0.800 loading alignments
+[seqwish::alignments] 4.099 indexing
+[seqwish::alignments] 4.679 index built
+[seqwish::transclosure] 4.679 computing transitive closures
+[transclosure] Starting transitive closure computation
+[transclosure] Using 8 threads
+[transclosure] 0.00% 0-1000000 overlap_collect
+[transclosure] 0.00% 0-1000000 union_find
+[transclosure] 0.00% 0-1000000 dset_write
+[transclosure] 0.00% 0-1000000 dset_sort
+[transclosure] 8.63% 0-1000000 graph_emission
+[transclosure] 8.63% 1000000-2007372 overlap_collect
+[transclosure] 8.63% 1000000-2007372 union_find
+[transclosure] 8.63% 1000000-2007372 dset_write
+[transclosure] 8.63% 1000000-2007372 dset_sort
+[transclosure] 17.11% 1000000-2007372 graph_emission
+[transclosure] 17.11% 2007372-3017507 overlap_collect
+[transclosure] 17.11% 2007372-3017507 union_find
+[transclosure] 17.11% 2007372-3017507 dset_write
+[transclosure] 17.11% 2007372-3017507 dset_sort
+[transclosure] 25.21% 2007372-3017507 graph_emission
+[transclosure] 25.21% 3017507-4039921 overlap_collect
+[transclosure] 25.21% 3017507-4039921 union_find
+[transclosure] 25.21% 3017507-4039921 dset_write
+[transclosure] 25.21% 3017507-4039921 dset_sort
+[transclosure] 33.42% 3017507-4039921 graph_emission
+[transclosure] 33.42% 4039921-5078337 overlap_collect
+[transclosure] 33.42% 4039921-5078337 union_find
+[transclosure] 33.42% 4039921-5078337 dset_write
+[transclosure] 33.42% 4039921-5078337 dset_sort
+[transclosure] 41.66% 4039921-5078337 graph_emission
+[transclosure] 41.66% 5078337-6136679 overlap_collect
+[transclosure] 41.66% 5078337-6136679 union_find
+[transclosure] 41.66% 5078337-6136679 dset_write
+[transclosure] 41.66% 5078337-6136679 dset_sort
+[transclosure] 49.87% 5078337-6136679 graph_emission
+[transclosure] 49.87% 6136679-7171785 overlap_collect
+[transclosure] 49.87% 6136679-7171785 union_find
+[transclosure] 49.87% 6136679-7171785 dset_write
+[transclosure] 49.87% 6136679-7171785 dset_sort
+[transclosure] 58.20% 6136679-7171785 graph_emission
+[transclosure] 58.20% 7171785-8202990 overlap_collect
+[transclosure] 58.20% 7171785-8202990 union_find
+[transclosure] 58.20% 7171785-8202990 dset_write
+[transclosure] 58.20% 7171785-8202990 dset_sort
+[transclosure] 66.21% 7171785-8202990 graph_emission
+[transclosure] 66.21% 8202990-9236186 overlap_collect
+[transclosure] 66.21% 8202990-9236186 union_find
+[transclosure] 66.21% 8202990-9236186 dset_write
+[transclosure] 66.21% 8202990-9236186 dset_sort
+[transclosure] 74.34% 8202990-9236186 graph_emission
+[transclosure] 74.34% 9236186-10272681 overlap_collect
+[transclosure] 74.34% 9236186-10272681 union_find
+[transclosure] 74.34% 9236186-10272681 dset_write
+[transclosure] 74.34% 9236186-10272681 dset_sort
+[transclosure] 82.41% 9236186-10272681 graph_emission
+[transclosure] 82.41% 10272681-11293657 overlap_collect
+[transclosure] 82.41% 10272681-11293657 union_find
+[transclosure] 82.41% 10272681-11293657 dset_write
+[transclosure] 82.41% 10272681-11293657 dset_sort
+[transclosure] 90.59% 10272681-11293657 graph_emission
+[transclosure] 90.59% 11293657-20254452 overlap_collect
+[transclosure] 90.59% 11293657-20254452 union_find
+[transclosure] 90.59% 11293657-20254452 dset_write
+[transclosure] 90.59% 11293657-20254452 dset_sort
+[transclosure] 97.85% 11293657-20254452 graph_emission
+[transclosure] 97.85% 20254960-60565713 overlap_collect
+[transclosure] 97.85% 20254960-60565713 union_find
+[transclosure] 97.85% 20254960-60565713 dset_write
+[transclosure] 97.85% 20254960-60565713 dset_sort
+[transclosure] 99.44% 20254960-60565713 graph_emission
+[transclosure] 99.44% 60565723-83530630 overlap_collect
+[transclosure] 99.44% 60565723-83530630 union_find
+[transclosure] 99.44% 60565723-83530630 dset_write
+[transclosure] 99.44% 60565723-83530630 dset_sort
+[transclosure] 100.00% 60565723-83530630 graph_emission
+[transclosure] Building node_iitree and path_iitree indexes
+[transclosure] Transitive closure computation complete
+[seqwish::transclosure] 44.886 done with transitive closures (graph length: 12864355)
+[seqwish::compact] 44.886 compacting nodes
+[seqwish::compact] 44.983 done compacting
+[seqwish::compact] 45.000 built node index
+[seqwish::links] 45.000 finding graph links
+[seqwish::links] 48.521 links derived (973208 links)
+[seqwish::gfa] 48.521 writing graph
+[seqwish::gfa] 55.243 done
+	Command being timed: "/home/erik/seqwish/target/release/seqwish -p y.paf -s cerevisiae.fa.gz -g y.gfa -t 8 -P"
+	User time (seconds): 202.89
+	System time (seconds): 12.30
+	Percent of CPU this job got: 389%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:55.28
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1353380
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 3403868
+	Voluntary context switches: 2280406
+	Involuntary context switches: 421008
+	Swaps: 0
+	File system inputs: 48
+	File system outputs: 1798064
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

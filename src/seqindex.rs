@@ -4,7 +4,59 @@ use std::path::PathBuf;
 use memmap2::Mmap;
 use flate2::read::MultiGzDecoder;
 use fm_index::{FMIndexWithLocate, Text, Search, SearchIndex, MatchWithLocate};
-use vers_vecs::{BitVec, RsVec};
+
+/// Simple sparse bitvector for sequence boundaries
+/// Much faster than RsVec for sparse data (select is O(1) array access vs hierarchical search)
+#[derive(Clone)]
+struct SparseBitVec {
+    /// Sorted positions where bits are set to 1
+    positions: Vec<usize>,
+    /// Total size of the bitvector
+    size: usize,
+}
+
+impl SparseBitVec {
+    /// Create from a list of 1-bit positions
+    fn from_positions(positions: Vec<usize>, size: usize) -> Self {
+        SparseBitVec { positions, size }
+    }
+
+    /// Select: return position of i-th 1-bit (0-indexed for compatibility with RsVec usage)
+    /// O(1) - direct array access!
+    #[inline]
+    fn select1(&self, i: usize) -> usize {
+        if i < self.positions.len() {
+            self.positions[i]
+        } else {
+            self.size
+        }
+    }
+
+    /// Rank: count number of 1-bits BEFORE position i (excluding i itself)
+    /// O(log n) binary search
+    #[inline]
+    fn rank1(&self, i: usize) -> usize {
+        self.positions.binary_search(&i)
+            .map(|idx| idx)  // Found at idx, rank = # elements before it = idx
+            .unwrap_or_else(|idx| idx)  // Not found, idx is insertion point = rank
+    }
+
+    /// Get the size of the bitvector
+    #[inline]
+    fn len(&self) -> usize {
+        self.size
+    }
+
+    /// Get bit value at position i (for compatibility)
+    #[inline]
+    fn get(&self, i: usize) -> u64 {
+        if self.positions.binary_search(&i).is_ok() {
+            1
+        } else {
+            0
+        }
+    }
+}
 
 /// Sequence index for FASTA/FASTQ files
 /// Uses compressed suffix array (CSA) and succinct bitvectors to match C++ Big O bounds
@@ -27,15 +79,15 @@ pub struct SeqIndex {
     /// Original name text (needed for extraction since FM-index doesn't expose it)
     name_text: Vec<u8>,
 
-    /// Succinct bitvector marking start of each sequence name in name_index
-    /// Space: O(m log(N/m)) bits where m = # sequences
+    /// Sparse bitvector marking start of each sequence name in name_index
+    /// Space: O(m) words where m = # sequences (simple array of positions)
     /// A 1-bit marks the position of each '>' character
-    name_boundaries: Option<RsVec>,
+    name_boundaries: Option<SparseBitVec>,
 
-    /// Succinct bitvector marking start of each sequence in seq_mmap
-    /// Space: O(m log(N/m)) bits where m = # sequences
+    /// Sparse bitvector marking start of each sequence in seq_mmap
+    /// Space: O(m) words where m = # sequences (simple array of positions)
     /// A 1-bit at position i means sequence starts at seq_mmap[i]
-    seq_boundaries: Option<RsVec>,
+    seq_boundaries: Option<SparseBitVec>,
 
     /// Total number of sequences
     seq_count: usize,
@@ -211,15 +263,19 @@ impl SeqIndex {
         name_bytes.pop(); // Remove null terminator from stored copy
         self.name_text = name_bytes;
 
-        // Build succinct bitvector for name boundaries
-        // Space: O(m log(N/m)) bits where m = # sequences, N = total name text length
-        let name_bv = self.build_bitvector(&name_boundary_positions, name_len as u64);
-        self.name_boundaries = Some(RsVec::from_bit_vec(name_bv));
+        // Build sparse bitvector for name boundaries (just store positions directly!)
+        // Space: O(m) words where m = # sequences - much simpler and faster than RsVec
+        self.name_boundaries = Some(SparseBitVec::from_positions(
+            name_boundary_positions.iter().map(|&p| p as usize).collect(),
+            name_len
+        ));
 
-        // Build succinct bitvector for sequence boundaries
-        // Space: O(m log(N/m)) bits where m = # sequences, N = total sequence length
-        let seq_bv = self.build_bitvector(&seq_boundary_positions, seq_bytes_written + 1);
-        self.seq_boundaries = Some(RsVec::from_bit_vec(seq_bv));
+        // Build sparse bitvector for sequence boundaries
+        // Space: O(m) words where m = # sequences
+        self.seq_boundaries = Some(SparseBitVec::from_positions(
+            seq_boundary_positions.iter().map(|&p| p as usize).collect(),
+            (seq_bytes_written + 1) as usize
+        ));
 
         // Memory-map the sequence file
         self.open_mmap()?;
@@ -227,24 +283,6 @@ impl SeqIndex {
         Ok(())
     }
 
-    /// Build a bitvector from positions
-    /// Sets bit to 1 at each position in the list
-    fn build_bitvector(&self, positions: &[u64], total_length: u64) -> BitVec {
-        let mut bv = BitVec::new();
-
-        // Build bitvector bit by bit
-        let mut pos_idx = 0;
-        for i in 0..total_length {
-            if pos_idx < positions.len() && positions[pos_idx] == i {
-                bv.append_bit(1);
-                pos_idx += 1;
-            } else {
-                bv.append_bit(0);
-            }
-        }
-
-        bv
-    }
 
     /// Memory-map the sequence file
     fn open_mmap(&mut self) -> Result<(), String> {
@@ -417,8 +455,8 @@ impl SeqIndex {
         if let Some(ref seq_boundaries) = self.seq_boundaries {
             // Check if there's a 1-bit at this position
             if (pos as usize) < seq_boundaries.len() {
-                // In RsVec, get() returns Option<u64> where the value is the bit
-                return seq_boundaries.get(pos as usize).unwrap_or(0) == 1;
+                // SparseBitVec get() returns u64 directly (0 or 1)
+                return seq_boundaries.get(pos as usize) == 1;
             }
         }
         false
