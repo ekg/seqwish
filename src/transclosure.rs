@@ -531,9 +531,8 @@ pub fn compute_transitive_closures(
                                 &todo_in,
                             );
                         } else {
-                            // No work available, check if more work might arrive
-                            // Sleep briefly to avoid spinning
-                            thread::sleep(std::time::Duration::from_micros(10));
+                            // No work available, yield to scheduler (like C++ 1ns sleep)
+                            std::thread::yield_now();
 
                             // If still no work and no work in todo_in, we're likely done
                             if todo_out.is_empty() && todo_in.is_empty() {
@@ -570,7 +569,7 @@ pub fn compute_transitive_closures(
                     if did_work {
                         empty_count = 0;
                     } else {
-                        thread::sleep(std::time::Duration::from_micros(10));
+                        std::thread::yield_now();
                         empty_count += 1;
                         // If queues have been empty for a while, we're done
                         if empty_count > 1000 && todo.is_empty() && todo_in.is_empty() && todo_out.is_empty() {
