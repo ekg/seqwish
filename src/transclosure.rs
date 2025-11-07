@@ -627,35 +627,25 @@ pub fn compute_transitive_closures(
 
         // Parallelize rank building (like C++ parallel_for for q_curr_bv_vec)
         // Process in parallel chunks of 100000 positions
+        // Collect only the set bit positions in parallel (no need for full Vec<bool>)
         let chunk_size = 100000;
         let num_chunks = (input_seq_length + chunk_size - 1) / chunk_size;
 
-        let results: Vec<(Vec<bool>, Vec<u64>)> = (0..num_chunks)
+        let q_curr_positions: Vec<u64> = (0..num_chunks)
             .into_par_iter()
-            .map(|chunk_idx| {
+            .flat_map(|chunk_idx| {
                 let start = chunk_idx * chunk_size;
                 let end = (start + chunk_size).min(input_seq_length);
-                let mut local_bits = Vec::with_capacity(end - start);
                 let mut local_positions = Vec::new();
 
                 for pos in start..end {
-                    let bit_set = q_curr_bv_final.get(pos, Ordering::Acquire);
-                    local_bits.push(bit_set);
-                    if bit_set {
+                    if q_curr_bv_final.get(pos, Ordering::Acquire) {
                         local_positions.push(pos as u64);
                     }
                 }
-                (local_bits, local_positions)
+                local_positions
             })
             .collect();
-
-        // Merge results sequentially
-        let mut bits_vec = Vec::with_capacity(input_seq_length);
-        let mut q_curr_positions = Vec::new();
-        for (bits, positions) in results {
-            bits_vec.extend(bits);
-            q_curr_positions.extend(positions);
-        }
 
         let q_curr_bv_count = q_curr_positions.len();
         if q_curr_bv_count == 0 {
@@ -663,7 +653,10 @@ pub fn compute_transitive_closures(
             continue;
         }
 
-        let sucds_bv = SucdsBitVector::from_bits(bits_vec);
+        // Build Rank9Sel directly from iterator (avoids intermediate Vec<bool> allocation)
+        let sucds_bv = SucdsBitVector::from_bits(
+            (0..input_seq_length).map(|pos| q_curr_bv_final.get(pos, Ordering::Acquire))
+        );
         let q_curr_rank = Rank9Sel::new(sucds_bv);
 
         if show_progress {
