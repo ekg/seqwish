@@ -138,25 +138,31 @@ pub fn emit_gfa<W: Write>(
 
             let match_is_rev = is_rev(pos_start_in_s);
             let length = ovlp_end_in_q - ovlp_start_in_q;
-            let mut p = pos_start_in_s;
 
-            // Iterate through nodes in this range
-            for _ in 0..length {
-                let p_offset = offset(p) as usize;
-                if seq_id_cbv.select(1).is_some() && p_offset < seq_id_cbv.size() {
-                    // Check if this position is a node boundary
-                    let node_id = seq_id_cbv.rank(p_offset + 1);
+            // Optimize: iterate through nodes, not individual bases
+            // Find the first and last nodes in this range
+            let start_offset = offset(pos_start_in_s) as usize;
+            let end_offset = start_offset + length as usize;
+
+            if seq_id_cbv.select(1).is_some() && start_offset < seq_id_cbv.size() {
+                let first_node = seq_id_cbv.rank(start_offset + 1);
+                let last_node = if end_offset < seq_id_cbv.size() {
+                    seq_id_cbv.rank(end_offset)
+                } else {
+                    seq_id_cbv.rank(seq_id_cbv.size() - 1)
+                };
+
+                // Add all nodes in range [first_node, last_node]
+                for node_id in first_node..=last_node {
                     if node_id > 0 {
-                        // Only add if we're at the start of a node
-                        let node_start = seq_id_cbv.select(node_id);
-                        if let Some(start_pos) = node_start {
-                            if start_pos == p_offset {
+                        if let Some(node_start) = seq_id_cbv.select(node_id) {
+                            // Only include nodes that actually start within our range
+                            if node_start >= start_offset && node_start < end_offset {
                                 path_v.push(make_pos_t(node_id as u64, match_is_rev));
                             }
                         }
                     }
                 }
-                incr_pos(&mut p);
             }
 
             seen_bp += length;
