@@ -41,7 +41,7 @@
 
 use std::ffi::{c_char, CStr, CString};
 use std::ptr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bitvec::prelude::*;
 

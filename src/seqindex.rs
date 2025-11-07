@@ -1,5 +1,5 @@
 use flate2::read::MultiGzDecoder;
-use fm_index::{FMIndexWithLocate, MatchWithLocate, Search, SearchIndex, Text};
+use fm_index::{FMIndexWithLocate, MatchWithLocate, Search, Text};
 use memmap2::Mmap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};

@@ -6,11 +6,10 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use crate::dset64_asm::DisjointSetsAsm;
-use bitvec::prelude::*;
 use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
 use std::sync::atomic::AtomicU64;

@@ -40,6 +40,7 @@ impl AtomicBitVec {
     }
 
     /// Get value of a bit
+    #[allow(dead_code)]
     fn get(&self, index: usize) -> bool {
         self.bits[index]
     }
@@ -66,10 +67,10 @@ impl AtomicBitVec {
 pub fn compact_nodes(
     seqidx: Arc<SeqIndex>,
     graph_size: usize,
-    node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
+    _node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     path_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     seq_id_bv: &mut BitVec<u64, Lsb0>,
-    num_threads: usize,
+    _num_threads: usize,
 ) -> io::Result<()> {
     // Create atomic bitvector for thread-safe marking
     let seq_id_abv = Arc::new(AtomicBitVec::new(seq_id_bv.len()));

@@ -64,6 +64,12 @@ pub struct LinkSet {
     links: Vec<(PosT, PosT)>,
 }
 
+impl Default for LinkSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LinkSet {
     pub fn new() -> Self {
         LinkSet { links: Vec::new() }
@@ -177,7 +183,7 @@ pub fn derive_links(
                         let seq_end = seq_start + seq_len;
 
                         // Only consider cases within sequence boundaries
-                        if end_in_q + 1 <= seq_end {
+                        if end_in_q < seq_end {
                             if let Ok(path_guard) = path_iitree.read() {
                                 path_guard
                                     .overlap(end_in_q, end_in_q + 1, |_idx, ovlp_start_in_q, _ovlp_end_in_q, base_pos_start_in_s| {
