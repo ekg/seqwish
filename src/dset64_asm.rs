@@ -46,13 +46,15 @@ impl DisjointSetsAsm {
     pub fn find(&self, mut id: usize) -> usize {
         unsafe {
             while id != self.parent_unchecked(id) {
-                // Regular load - compiler will use atomic SSE instruction due to alignment
-                let value = (*self.data.add(id)).0;
+                // Use atomic load with RELAXED ordering (matches C++ plain load semantics)
+                // C++ relies on hardware: aligned 128-bit loads are atomic but RELAXED on x86
+                let atomic_ptr = self.data.add(id) as *const AtomicU128;
+                let value = (*atomic_ptr).load(Ordering::Relaxed);
                 let new_parent = self.parent_unchecked((value & PARENT_MASK) as usize);
                 let new_value = (value & RANK_MASK) | (new_parent as u128);
 
                 if value != new_value {
-                    // Use atomic CAS for updates only
+                    // Use atomic CAS with SeqCst (matches __sync_bool_compare_and_swap)
                     self.compare_exchange_u128(self.data.add(id) as *mut u128, value, new_value);
                 }
                 id = new_parent;
@@ -62,14 +64,15 @@ impl DisjointSetsAsm {
     }
 
     /// Atomic CAS using portable_atomic (matches C++ __sync_bool_compare_and_swap)
+    /// Note: __sync_bool_compare_and_swap uses sequentially consistent ordering and strong CAS
     #[inline(always)]
     unsafe fn compare_exchange_u128(&self, ptr: *mut u128, expected: u128, new: u128) -> bool {
         let atomic_ptr = ptr as *const AtomicU128;
-        (*atomic_ptr).compare_exchange_weak(
+        (*atomic_ptr).compare_exchange(
             expected,
             new,
-            Ordering::Release,
-            Ordering::Acquire,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
         ).is_ok()
     }
 
@@ -117,15 +120,17 @@ impl DisjointSetsAsm {
 
     #[inline(always)]
     unsafe fn rank_unchecked(&self, id: usize) -> u64 {
-        // Regular load - compiler uses atomic SSE instruction
-        let value = (*self.data.add(id)).0;
+        // Atomic load with Relaxed ordering (matches C++ plain load)
+        let atomic_ptr = self.data.add(id) as *const AtomicU128;
+        let value = (*atomic_ptr).load(Ordering::Relaxed);
         ((value >> 64) & PARENT_MASK) as u64
     }
 
     #[inline(always)]
     unsafe fn parent_unchecked(&self, id: usize) -> usize {
-        // Regular load - compiler uses atomic SSE instruction
-        let value = (*self.data.add(id)).0;
+        // Atomic load with Relaxed ordering (matches C++ plain load)
+        let atomic_ptr = self.data.add(id) as *const AtomicU128;
+        let value = (*atomic_ptr).load(Ordering::Relaxed);
         (value & PARENT_MASK) as usize
     }
 }

@@ -905,9 +905,18 @@ pub extern "C" fn transclosure_compute(
 
     unsafe {
         let seqidx = Arc::clone(&(*seqidx_handle).seqidx);
-        let aln_iitree = Arc::clone(&(*aln_iitree_handle).iitree);
+        let aln_iitree_mutex = Arc::clone(&(*aln_iitree_handle).iitree);
         let node_iitree = Arc::clone(&(*node_iitree_handle).iitree);
         let path_iitree = Arc::clone(&(*path_iitree_handle).iitree);
+
+        // Unwrap the Mutex - alignment tree is read-only during transclosure
+        let aln_iitree = match Arc::try_unwrap(aln_iitree_mutex) {
+            Ok(mutex) => Arc::new(mutex.into_inner().unwrap()),
+            Err(_) => {
+                eprintln!("[transclosure] Error: Cannot unwrap aln_iitree Arc (multiple references exist)");
+                return 0;
+            }
+        };
 
         let seq_v_file_str = match CStr::from_ptr(seq_v_file).to_str() {
             Ok(s) => s,
