@@ -1,6 +1,6 @@
 [package]
 name = "seqwish"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Erik Garrison <erik.garrison@gmail.com>"]
 description = "A variation graph inducer - build pangenome graphs from pairwise alignments"
@@ -14,14 +14,23 @@ exclude = [
     "test/*",
     "data/*",
     "cpp/*",
-    "deps/*",
+    "deps/**/*",        # Exclude all C++ dependencies
+    "scripts/*",        # Exclude helper scripts
+    "examples/*",       # Exclude examples
     "*.pdf",
     "*.md",
     "!README.md",
     ".github/*",
     ".claude/*",
     "Dockerfile",
+    "*.log",            # Exclude log files
+    "benchmark_*.log",
+    "target/**/*",      # Exclude build artifacts
     "SEQINDEX_ANALYSIS_FINAL_REPORT.txt",
+    ".gitmodules",      # Don't need git submodule info
+    ".gitignore",
+    "default.nix",      # Nix files not needed
+    "seqwish.nix",
 ]
 
 [lib]
