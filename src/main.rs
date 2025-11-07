@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use clap::{Arg, Command};
 use bitvec::prelude::*;
+use rayon;
 
 mod tempfile;
 mod pos;
@@ -126,6 +127,13 @@ fn main() -> io::Result<()> {
     let seq_file = matches.get_one::<String>("seqs").unwrap();
     let gfa_file = matches.get_one::<String>("gfa");
     let num_threads: usize = matches.get_one::<String>("threads").unwrap().parse().unwrap_or(1);
+
+    // Configure Rayon's global thread pool to respect num_threads
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()
+        .unwrap();
+
     let repeat_max: u64 = matches.get_one::<String>("repeat-max").unwrap().parse().unwrap_or(0);
     let min_repeat_dist: u64 = matches.get_one::<String>("min-repeat-distance").unwrap().parse().unwrap_or(0);
     let min_match_len: u64 = matches.get_one::<String>("min-match-len").unwrap().parse().unwrap_or(0);
@@ -193,6 +201,14 @@ fn main() -> io::Result<()> {
         eprintln!("[seqwish::alignments] {:.3} index built", start_time.elapsed().as_secs_f64());
     }
 
+    // Unwrap the Mutex - aln_iitree is now read-only, no need for mutex
+    let aln_iitree_readonly = Arc::new(
+        Arc::try_unwrap(aln_iitree)
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to unwrap Arc"))?
+            .into_inner()
+            .unwrap()
+    );
+
     // 3) Find transitive closures and construct graph sequence
     if show_progress {
         eprintln!("[seqwish::transclosure] {:.3} computing transitive closures",
@@ -220,7 +236,7 @@ fn main() -> io::Result<()> {
 
     let graph_length = compute_transitive_closures(
         Arc::clone(&seqidx),
-        Arc::clone(&aln_iitree),
+        Arc::clone(&aln_iitree_readonly),
         seq_v_file.to_str().unwrap(),
         Arc::clone(&node_iitree),
         Arc::clone(&path_iitree),

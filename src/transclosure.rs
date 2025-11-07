@@ -398,7 +398,7 @@ fn write_graph_chunk(
 /// the variation graph sequence and interval trees.
 pub fn compute_transitive_closures(
     seqidx: Arc<SeqIndex>,
-    aln_iitree: Arc<Mutex<AdaptiveTree<u64, PosT>>>,
+    aln_iitree: Arc<AdaptiveTree<u64, PosT>>,
     seq_v_file: &str,
     node_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
     path_iitree: Arc<RwLock<AdaptiveTree<u64, PosT>>>,
@@ -534,16 +534,14 @@ pub fn compute_transitive_closures(
                             let range_start = n;
                             let range_end = n + match_len;
 
-                            if let Ok(aln_guard) = aln_iitree.lock() {
-                                explore_overlaps(
-                                    &Match::new(range_start, range_end, pos),
-                                    &q_seen_bv_clone,
-                                    &q_curr_bv,
-                                    &aln_guard,
-                                    &ovlp_q,
-                                    &todo_in,
-                                );
-                            }
+                            explore_overlaps(
+                                &Match::new(range_start, range_end, pos),
+                                &q_seen_bv_clone,
+                                &q_curr_bv,
+                                &aln_iitree,
+                                &ovlp_q,
+                                &todo_in,
+                            );
                         } else {
                             exploring_flag.store(false, Ordering::Relaxed);
                             thread::sleep(std::time::Duration::from_nanos(1));
