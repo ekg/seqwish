@@ -14,6 +14,7 @@ use crate::links::RankSelectBitVector;
 use crate::mmap::mmap_open;
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
+use crate::dna::complement;
 
 /// Emit GFA format output for the variation graph
 ///
@@ -138,6 +139,33 @@ pub fn emit_gfa<W: Write>(
 
             let match_is_rev = is_rev(pos_start_in_s);
             let length = ovlp_end_in_q - ovlp_start_in_q;
+
+            // Validate path integrity: check that input sequence matches graph sequence
+            // This is critical for correctness (matches C++ validation)
+            let mut q = j; // position in input sequence
+            let mut p = pos_start_in_s; // position in graph
+            for _ in 0..length {
+                let p_offset = offset(p) as usize;
+                if p_offset < seq_v_slice.len() {
+                    let mut graph_char = seq_v_slice[p_offset];
+                    if is_rev(p) {
+                        graph_char = complement(graph_char);
+                    }
+
+                    if let Some(input_char) = seqidx.at(q) {
+                        if input_char != graph_char as char {
+                            let seq_name = seqidx.nth_name(i).unwrap_or_else(|| "<unknown>".to_string());
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                format!("[gfa] GRAPH BROKEN @ {} pos {} -> graph pos {}: expected {} got {}",
+                                        seq_name, q, p_offset, input_char, graph_char as char)
+                            ));
+                        }
+                    }
+                }
+                incr_pos(&mut p);
+                q += 1;
+            }
 
             // Optimize: iterate through nodes, not individual bases
             // Find the first and last nodes in this range
