@@ -1,10 +1,16 @@
-/// ULTRA-UNSAFE version using inline assembly to match C++ __sync builtins
-/// This should have ZERO overhead - direct cmpxchg16b inline
+/// Hybrid approach matching C++ behavior:
+/// - Use aligned u128 for storage (compiler generates atomic SSE loads)
+/// - Use portable_atomic only for CAS operations
+/// - This matches the C++ dset64-gccAtomic.hpp approach
 
-use std::arch::asm;
+use portable_atomic::{AtomicU128, Ordering};
+
+/// 16-byte aligned u128 - compiler will use atomic SSE loads
+#[repr(C, align(16))]
+struct AlignedU128(u128);
 
 pub struct DisjointSetsAsm {
-    data: *mut u128,
+    data: *mut AlignedU128,
     len: usize,
 }
 
@@ -16,8 +22,8 @@ unsafe impl Sync for DisjointSetsAsm {}
 
 impl DisjointSetsAsm {
     pub fn new(size: usize) -> Self {
-        let layout = std::alloc::Layout::array::<u128>(size).unwrap();
-        let ptr = unsafe { std::alloc::alloc(layout) as *mut u128 };
+        let layout = std::alloc::Layout::array::<AlignedU128>(size).unwrap();
+        let ptr = unsafe { std::alloc::alloc(layout) as *mut AlignedU128 };
 
         if ptr.is_null() {
             std::alloc::handle_alloc_error(layout);
@@ -26,7 +32,7 @@ impl DisjointSetsAsm {
         // Initialize
         for i in 0..size {
             unsafe {
-                ptr.add(i).write(i as u128);
+                ptr.add(i).write(AlignedU128(i as u128));
             }
         }
 
@@ -36,57 +42,35 @@ impl DisjointSetsAsm {
         }
     }
 
-    /// Compare-exchange using inline assembly (like GCC __sync_bool_compare_and_swap)
-    #[inline(always)]
-    unsafe fn compare_exchange_u128(
-        &self,
-        ptr: *mut u128,
-        expected: u128,
-        new: u128,
-    ) -> bool {
-        let success: u8;
-        let mut expected_lo = expected as u64;
-        let mut expected_hi = (expected >> 64) as u64;
-        let new_lo = new as u64;
-        let new_hi = (new >> 64) as u64;
-
-        // cmpxchg16b requires rbx, so we preserve/restore it
-        asm!(
-            "xchg rbx, {new_lo}",
-            "lock cmpxchg16b [{ptr}]",
-            "mov {success}, 0",
-            "sete {success}",
-            "xchg rbx, {new_lo}",
-            ptr = in(reg) ptr,
-            new_lo = inout(reg) new_lo => _,
-            inout("rax") expected_lo,
-            inout("rdx") expected_hi,
-            in("rcx") new_hi,
-            success = out(reg_byte) success,
-        );
-
-        success != 0
-    }
-
     #[inline(always)]
     pub fn find(&self, mut id: usize) -> usize {
         unsafe {
             while id != self.parent_unchecked(id) {
-                let ptr = self.data.add(id);
-                // Use direct read (not volatile) - cmpxchg provides synchronization
-                // This matches C++ behavior and allows compiler optimization
-                let value = ptr.read();
+                // Regular load - compiler will use atomic SSE instruction due to alignment
+                let value = (*self.data.add(id)).0;
                 let new_parent = self.parent_unchecked((value & PARENT_MASK) as usize);
                 let new_value = (value & RANK_MASK) | (new_parent as u128);
 
                 if value != new_value {
-                    // Inline CAS - no function call!
-                    self.compare_exchange_u128(ptr, value, new_value);
+                    // Use atomic CAS for updates only
+                    self.compare_exchange_u128(self.data.add(id) as *mut u128, value, new_value);
                 }
                 id = new_parent;
             }
             id
         }
+    }
+
+    /// Atomic CAS using portable_atomic (matches C++ __sync_bool_compare_and_swap)
+    #[inline(always)]
+    unsafe fn compare_exchange_u128(&self, ptr: *mut u128, expected: u128, new: u128) -> bool {
+        let atomic_ptr = ptr as *const AtomicU128;
+        (*atomic_ptr).compare_exchange_weak(
+            expected,
+            new,
+            Ordering::Release,
+            Ordering::Acquire,
+        ).is_ok()
     }
 
     #[inline(always)]
@@ -111,18 +95,14 @@ impl DisjointSetsAsm {
             let new_entry = ((r1 as u128) << 64) | (id2 as u128);
 
             unsafe {
-                let ptr = self.data.add(id1);
-
-                // Direct inline assembly - ZERO overhead!
-                if !self.compare_exchange_u128(ptr, old_entry, new_entry) {
+                if !self.compare_exchange_u128(self.data.add(id1) as *mut u128, old_entry, new_entry) {
                     continue;
                 }
 
                 if r1 == r2 {
-                    let ptr2 = self.data.add(id2);
                     let old_entry = ((r2 as u128) << 64) | (id2 as u128);
                     let new_entry = (((r2 + 1) as u128) << 64) | (id2 as u128);
-                    self.compare_exchange_u128(ptr2, old_entry, new_entry);
+                    self.compare_exchange_u128(self.data.add(id2) as *mut u128, old_entry, new_entry);
                 }
 
                 return id2;
@@ -137,17 +117,15 @@ impl DisjointSetsAsm {
 
     #[inline(always)]
     unsafe fn rank_unchecked(&self, id: usize) -> u64 {
-        let ptr = self.data.add(id);
-        // Use direct read (not volatile) for better performance
-        let value = ptr.read();
+        // Regular load - compiler uses atomic SSE instruction
+        let value = (*self.data.add(id)).0;
         ((value >> 64) & PARENT_MASK) as u64
     }
 
     #[inline(always)]
     unsafe fn parent_unchecked(&self, id: usize) -> usize {
-        let ptr = self.data.add(id);
-        // Use direct read (not volatile) for better performance
-        let value = ptr.read();
+        // Regular load - compiler uses atomic SSE instruction
+        let value = (*self.data.add(id)).0;
         (value & PARENT_MASK) as usize
     }
 }
@@ -156,7 +134,7 @@ impl Drop for DisjointSetsAsm {
     fn drop(&mut self) {
         if !self.data.is_null() {
             unsafe {
-                let layout = std::alloc::Layout::array::<u128>(self.len).unwrap();
+                let layout = std::alloc::Layout::array::<AlignedU128>(self.len).unwrap();
                 std::alloc::dealloc(self.data as *mut u8, layout);
             }
         }
