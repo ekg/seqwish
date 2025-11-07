@@ -30,6 +30,7 @@ use crate::seqindex::SeqIndex;
 /// * `seqidx` - Sequence index for input sequences
 /// * `links` - Vector of graph edges (from_node, to_node)
 /// * `num_threads` - Number of threads for parallel processing
+#[allow(clippy::too_many_arguments)]
 pub fn emit_gfa<W: Write>(
     out: &mut W,
     _graph_length: usize,
