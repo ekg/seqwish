@@ -21,7 +21,7 @@ pub struct PafRow {
 impl PafRow {
     /// Parse a PAF row from a tab/space-delimited line
     pub fn from_line(line: &str) -> Option<Self> {
-        let fields: Vec<&str> = line.split(|c| c == ' ' || c == '\t').collect();
+        let fields: Vec<&str> = line.split([' ', '\t']).collect();
 
         if fields.len() < 12 {
             return None;
@@ -42,9 +42,9 @@ impl PafRow {
 
         // Find CIGAR in optional fields
         let mut cigar = Vec::new();
-        for i in 12..fields.len() {
-            if fields[i].starts_with("cg:Z:") {
-                cigar = cigar_from_string(&fields[i][5..]);
+        for field in &fields[12..] {
+            if field.starts_with("cg:Z:") {
+                cigar = cigar_from_string(&field[5..]);
                 break;
             }
         }
@@ -67,6 +67,7 @@ impl PafRow {
     }
 
     /// Format PAF row as a tab-delimited string
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\tcg:Z:{}",

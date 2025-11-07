@@ -38,8 +38,7 @@ impl SparseBitVec {
     fn rank1(&self, i: usize) -> usize {
         self.positions
             .binary_search(&i)
-            .map(|idx| idx) // Found at idx, rank = # elements before it = idx
-            .unwrap_or_else(|idx| idx) // Not found, idx is insertion point = rank
+            .unwrap_or_else(|idx| idx) // Found at idx or insertion point = rank
     }
 
     /// Get the size of the bitvector
@@ -165,20 +164,12 @@ impl SeqIndex {
         let mut seq_boundary_positions = Vec::new();
 
         loop {
-            // Parse sequence name
-            let seq_name = if is_fasta {
-                current_line[1..]
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
-            } else {
-                current_line[1..]
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
-            };
+            // Parse sequence name (same for FASTA and FASTQ)
+            let seq_name = current_line[1..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
 
             // Get sequence
             let mut seq = String::new();
@@ -250,10 +241,8 @@ impl SeqIndex {
                     // Reached EOF without finding another header
                     break;
                 }
-            } else {
-                if !current_line.starts_with('@') {
-                    break;
-                }
+            } else if !current_line.starts_with('@') {
+                break;
             }
         }
 
@@ -379,7 +368,7 @@ impl SeqIndex {
 
         // Rank1 gives us the number of 1-bits before (or at) this position
         // This is the 0-based sequence ID, so add 1 for 1-based
-        Some(name_boundaries.rank1(pos as usize) as usize + 1)
+        Some(name_boundaries.rank1(pos as usize) + 1)
     }
 
     /// Get length of nth sequence (1-based)
