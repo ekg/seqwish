@@ -117,8 +117,7 @@ pub fn compact_nodes(
                     .nth_name(i)
                     .unwrap_or_else(|| "<unknown>".to_string());
                 eprintln!(
-                    "[compact] error: found {} overlaps for seq {} idx {} at j={} of {}",
-                    overlap_count, seq_name, i, j, k
+                    "[compact] error: found {overlap_count} overlaps for seq {seq_name} idx {i} at j={j} of {k}"
                 );
                 if let Ok(path_guard) = path_iitree.read() {
                     path_guard

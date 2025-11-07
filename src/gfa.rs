@@ -74,7 +74,7 @@ pub fn emit_gfa<W: Write>(
     // Write node records in order
     for (id, seq) in node_sequences {
         if !seq.is_empty() {
-            writeln!(out, "S\t{}\t{}", id, seq)?;
+            writeln!(out, "S\t{id}\t{seq}")?;
         }
     }
 
@@ -136,8 +136,7 @@ pub fn emit_gfa<W: Write>(
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
                     format!(
-                        "[gfa] error: found {} overlaps for seq {} idx {} at j={} of {}",
-                        overlap_count, seq_name, i, j, k
+                        "[gfa] error: found {overlap_count} overlaps for seq {seq_name} idx {i} at j={j} of {k}"
                     ),
                 ));
             }
@@ -211,15 +210,14 @@ pub fn emit_gfa<W: Write>(
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!(
-                    "[gfa] length mismatch for {}, expected {} but got {}",
-                    seq_name, seq_len, seen_bp
+                    "[gfa] length mismatch for {seq_name}, expected {seq_len} but got {seen_bp}"
                 ),
             ));
         }
 
         // Write path
-        let seq_name = seqidx.nth_name(i).unwrap_or_else(|| format!("seq{}", i));
-        write!(out, "P\t{}\t", seq_name)?;
+        let seq_name = seqidx.nth_name(i).unwrap_or_else(|| format!("seq{i}"));
+        write!(out, "P\t{seq_name}\t")?;
 
         for (idx, p) in path_v.iter().enumerate() {
             if idx > 0 {

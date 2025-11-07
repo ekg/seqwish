@@ -43,8 +43,8 @@ impl PafRow {
         // Find CIGAR in optional fields
         let mut cigar = Vec::new();
         for field in &fields[12..] {
-            if field.starts_with("cg:Z:") {
-                cigar = cigar_from_string(&field[5..]);
+            if let Some(stripped) = field.strip_prefix("cg:Z:") {
+                cigar = cigar_from_string(stripped);
                 break;
             }
         }
