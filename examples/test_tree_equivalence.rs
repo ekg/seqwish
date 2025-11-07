@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 fn main() -> std::io::Result<()> {
     // Create both tree types
-    let mut mem_tree = AdaptiveTree::new_memory();
+    let mut mem_tree = AdaptiveTree::new_memory()?;
     let mut disk_tree = AdaptiveTree::new_disk("/tmp/test_tree.iit")?;
 
     // Add same intervals to both
