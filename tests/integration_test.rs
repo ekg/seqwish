@@ -1,5 +1,6 @@
 // Integration test for seqwish in-memory vs disk mode
 use seqwish::*;
+use seqwish::intervaltree::IntervalTree;
 use std::io::Write;
 use std::fs::File;
 use std::sync::{Arc, Mutex, RwLock};
@@ -121,7 +122,8 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
     }
 
     // Run compaction
-    let mut seq_id_bv = bitvec::bitvec![0; graph_length];
+    use bitvec::prelude::*;
+    let mut seq_id_bv = BitVec::<u64, Lsb0>::repeat(false, graph_length);
     compact::compact_nodes(
         Arc::clone(&seqidx),
         graph_length,
@@ -132,13 +134,14 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
     )?;
 
     // Build rank/select bitvector
-    let seq_id_cbv = links::RankSelectBitVector::from_bitvec(&seq_id_bv)?;
+    let seq_id_cbv = links::RankSelectBitVector::from_bitvec(&seq_id_bv.iter().by_vals().collect::<Vec<bool>>());
 
     // Derive links
     let link_v = links::derive_links(
-        &seq_id_cbv,
+        Arc::clone(&seqidx),
         Arc::clone(&node_iitree),
         Arc::clone(&path_iitree),
+        &seq_id_cbv,
         1,  // num_threads
     )?;
 
@@ -152,7 +155,7 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
         Arc::clone(&path_iitree),
         &seq_id_cbv,
         Arc::clone(&seqidx),
-        &link_v,
+        link_v.links(),
         1,  // num_threads
     )?;
 
