@@ -411,7 +411,6 @@ pub fn compute_transitive_closures(
     use std::fs::File;
     use std::io::Write;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, Ordering};
 
     let start_time = std::time::Instant::now();
     eprintln!("[transclosure] Starting transitive closure computation");
@@ -494,38 +493,27 @@ pub fn compute_transitive_closures(
             },
         );
 
-        // Parallel exploration
-        let work_todo = Arc::new(AtomicBool::new(false)); // Start false, set true after workers created
+        // Parallel exploration using Rayon's work-stealing
+        // This eliminates the manager thread bottleneck and thread oversubscription
         let aln_iitree_clone = Arc::clone(&aln_iitree);
         let q_curr_bv_shared = Arc::new(q_curr_bv);
 
-        // Per-thread exploring flags (like C++)
-        let exploring: Vec<Arc<AtomicBool>> = (0..num_threads)
-            .map(|_| Arc::new(AtomicBool::new(false)))
-            .collect();
-
-        let workers: Vec<_> = (0..num_threads)
-            .map(|tid| {
-                let work_todo = Arc::clone(&work_todo);
+        // Use Rayon's scope for dynamic task spawning with work-stealing
+        rayon::scope(|s| {
+            // Spawn worker tasks (2x threads for better load balancing)
+            for _ in 0..(num_threads * 2) {
                 let todo_out = Arc::clone(&todo_out);
                 let todo_in = Arc::clone(&todo_in);
                 let ovlp_q = Arc::clone(&ovlp_q);
                 let aln_iitree = Arc::clone(&aln_iitree_clone);
                 let q_curr_bv = Arc::clone(&q_curr_bv_shared);
                 let q_seen_bv_clone = q_seen_bv.clone();
-                let exploring_flag = Arc::clone(&exploring[tid]);
 
-                thread::spawn(move || {
-                    // Wait for work_todo to become true (like C++)
-                    while !work_todo.load(Ordering::Relaxed) {
-                        thread::sleep(std::time::Duration::from_nanos(1));
-                    }
-                    exploring_flag.store(true, Ordering::Relaxed);
-
-                    while work_todo.load(Ordering::Relaxed) {
-                        if let Some(item) = todo_out.pop() {
-                            exploring_flag.store(true, Ordering::Relaxed);
-                            let (pos, match_len) = item;
+                s.spawn(move |_s| {
+                    // Process work items until queue is empty
+                    loop {
+                        // Try to get work from todo_out
+                        if let Some((pos, match_len)) = todo_out.pop() {
                             let n = if !is_rev(pos) {
                                 offset(pos)
                             } else {
@@ -543,61 +531,59 @@ pub fn compute_transitive_closures(
                                 &todo_in,
                             );
                         } else {
-                            exploring_flag.store(false, Ordering::Relaxed);
-                            thread::sleep(std::time::Duration::from_nanos(1));
+                            // No work available, check if more work might arrive
+                            // Sleep briefly to avoid spinning
+                            thread::sleep(std::time::Duration::from_micros(10));
+
+                            // If still no work and no work in todo_in, we're likely done
+                            if todo_out.is_empty() && todo_in.is_empty() {
+                                break;
+                            }
                         }
                     }
-                    exploring_flag.store(false, Ordering::Relaxed);
-                })
-            })
-            .collect();
-
-        // Helper to check if any worker is actively exploring
-        let still_exploring = || {
-            exploring.iter().any(|e| e.load(Ordering::Relaxed))
-        };
-
-        // Start workers (like C++ work_todo.store(true))
-        work_todo.store(true, Ordering::Relaxed);
-
-        // Manage work distribution
-        let mut empty_iter_count = 0;
-        while !todo_in.is_empty() || !todo.is_empty() || !todo_out.is_empty() || !ovlp_q.is_empty() || still_exploring() || empty_iter_count < 1000 {
-            thread::sleep(std::time::Duration::from_nanos(10));
-
-            // Transfer from todo_in to todo
-            while let Some(item) = todo_in.pop() {
-                todo.push_back(item);
+                });
             }
 
-            // Transfer from todo to todo_out
-            while let Some(item) = todo.front().copied() {
-                if todo_out.push(item).is_ok() {
-                    todo.pop_front();
-                    empty_iter_count = 0;
-                } else {
-                    break;
+            // Manager task to move work from todo_in -> todo -> todo_out
+            // This runs in parallel with workers on Rayon's thread pool
+            s.spawn(move |_s| {
+                let mut empty_count = 0;
+                loop {
+                    let mut did_work = false;
+
+                    // Transfer from todo_in to todo
+                    while let Some(item) = todo_in.pop() {
+                        todo.push_back(item);
+                        did_work = true;
+                    }
+
+                    // Transfer from todo to todo_out
+                    while let Some(item) = todo.front().copied() {
+                        if todo_out.push(item).is_ok() {
+                            todo.pop_front();
+                            did_work = true;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if did_work {
+                        empty_count = 0;
+                    } else {
+                        thread::sleep(std::time::Duration::from_micros(10));
+                        empty_count += 1;
+                        // If queues have been empty for a while, we're done
+                        if empty_count > 1000 && todo.is_empty() && todo_in.is_empty() && todo_out.is_empty() {
+                            break;
+                        }
+                    }
                 }
-            }
+            });
+        });
 
-            // Collect overlaps
-            while let Some(o) = ovlp_q.pop() {
-                ovlp.push(o);
-            }
-
-            if todo_in.is_empty() && todo.is_empty() && todo_out.is_empty() && ovlp_q.is_empty() {
-                empty_iter_count += 1;
-            } else {
-                empty_iter_count = 0;
-            }
-        }
-
-        work_todo.store(false, Ordering::Relaxed);
-        // Verify all work is complete before joining (like C++ assert)
-        assert!(todo.is_empty() && todo_in.is_empty() && todo_out.is_empty() && ovlp_q.is_empty() && !still_exploring(),
-                "Work queues not empty or workers still exploring at termination!");
-        for worker in workers {
-            worker.join().ok();
+        // Collect all overlaps after workers complete
+        while let Some(o) = ovlp_q.pop() {
+            ovlp.push(o);
         }
 
         if show_progress {
