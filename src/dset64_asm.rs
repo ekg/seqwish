@@ -73,7 +73,9 @@ impl DisjointSetsAsm {
         unsafe {
             while id != self.parent_unchecked(id) {
                 let ptr = self.data.add(id);
-                let value = ptr.read_volatile();
+                // Use direct read (not volatile) - cmpxchg provides synchronization
+                // This matches C++ behavior and allows compiler optimization
+                let value = ptr.read();
                 let new_parent = self.parent_unchecked((value & PARENT_MASK) as usize);
                 let new_value = (value & RANK_MASK) | (new_parent as u128);
 
@@ -136,14 +138,16 @@ impl DisjointSetsAsm {
     #[inline(always)]
     unsafe fn rank_unchecked(&self, id: usize) -> u64 {
         let ptr = self.data.add(id);
-        let value = ptr.read_volatile();
+        // Use direct read (not volatile) for better performance
+        let value = ptr.read();
         ((value >> 64) & PARENT_MASK) as u64
     }
 
     #[inline(always)]
     unsafe fn parent_unchecked(&self, id: usize) -> usize {
         let ptr = self.data.add(id);
-        let value = ptr.read_volatile();
+        // Use direct read (not volatile) for better performance
+        let value = ptr.read();
         (value & PARENT_MASK) as usize
     }
 }
