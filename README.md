@@ -1,6 +1,6 @@
 # seqwish 🦀
 
-[![Build Status](https://github.com/pangenome/seqwish/workflows/build%20and%20test/badge.svg)](https://github.com/pangenome/seqwish/actions)
+[![Build Status](https://github.com/pangenome/seqwish/workflows/build%20and%20test/badge.svg?branch=rust)](https://github.com/pangenome/seqwish/actions?query=branch%3Arust)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **A variation graph inducer** - Build pangenome graphs from pairwise sequence alignments.
