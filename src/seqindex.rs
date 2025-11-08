@@ -115,8 +115,7 @@ impl SeqIndex {
         self.seq_filename = Some(seq_file.clone());
 
         // Open input file (with optional gzip support)
-        let file =
-            File::open(filename).map_err(|e| format!("Failed to open {filename}: {e}"))?;
+        let file = File::open(filename).map_err(|e| format!("Failed to open {filename}: {e}"))?;
 
         let reader: Box<dyn BufRead> = if filename.ends_with(".gz") {
             Box::new(BufReader::new(MultiGzDecoder::new(file)))
