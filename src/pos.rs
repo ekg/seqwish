@@ -79,20 +79,24 @@ pub fn incr_pos_by(pos: &mut PosT, by: usize) {
 }
 
 /// Decrement position (moves backward in sequence orientation)
+/// Note: Uses wrapping subtraction to handle underflow (when pos < 2)
+/// This matches C++ behavior where underflow wraps to a large number
 #[inline]
 pub fn decr_pos(pos: &mut PosT) {
     if !is_rev(*pos) {
-        *pos -= 2;
+        *pos = pos.wrapping_sub(2);
     } else {
         *pos += 2;
     }
 }
 
 /// Decrement position by N bases
+/// Note: Uses wrapping subtraction to handle underflow
+/// This matches C++ behavior where underflow wraps to a large number
 #[inline]
 pub fn decr_pos_by(pos: &mut PosT, by: usize) {
     if !is_rev(*pos) {
-        *pos -= 2 * by as u64;
+        *pos = pos.wrapping_sub(2 * by as u64);
     } else {
         *pos += 2 * by as u64;
     }
