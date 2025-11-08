@@ -175,10 +175,28 @@ fn paf_worker(
                     // Process each base in the match
                     for _ in 0..c.len {
                         let query_base = seqidx.at_pos(q_pos).ok_or_else(|| {
-                            io::Error::new(io::ErrorKind::Other, "Invalid query position")
+                            io::Error::new(
+                                io::ErrorKind::Other,
+                                format!(
+                                    "Invalid query position: q_pos={} (offset={}, is_rev={}), seqidx.seq_length()={}",
+                                    q_pos,
+                                    offset(q_pos),
+                                    is_rev(q_pos),
+                                    seqidx.seq_length()
+                                ),
+                            )
                         })?;
                         let target_base = seqidx.at_pos(t_pos).ok_or_else(|| {
-                            io::Error::new(io::ErrorKind::Other, "Invalid target position")
+                            io::Error::new(
+                                io::ErrorKind::Other,
+                                format!(
+                                    "Invalid target position: t_pos={} (offset={}, is_rev={}), seqidx.seq_length()={}",
+                                    t_pos,
+                                    offset(t_pos),
+                                    is_rev(t_pos),
+                                    seqidx.seq_length()
+                                ),
+                            )
                         })?;
 
                         if query_base == target_base
