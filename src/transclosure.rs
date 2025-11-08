@@ -397,10 +397,7 @@ fn write_graph_chunk(
                     path_iitree,
                 )?;
             } else {
-                todos
-                    .entry(curr_seq_count)
-                    .or_default()
-                    .push(curr_q_pos);
+                todos.entry(curr_seq_count).or_default().push(curr_q_pos);
             }
             last_seq_pos.insert(curr_seq_id, curr_q_pos);
         }
