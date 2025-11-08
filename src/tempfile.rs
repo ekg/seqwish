@@ -78,7 +78,12 @@ pub fn create(base: &str, suffix: &str) -> Result<PathBuf, std::io::Error> {
     let c_template = CString::new(template.clone())
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"))?;
 
-    let fd = unsafe { libc::mkstemps(c_template.as_ptr() as *mut libc::c_char, suffix.len() as i32) };
+    let fd = unsafe {
+        libc::mkstemps(
+            c_template.as_ptr() as *mut libc::c_char,
+            suffix.len() as i32,
+        )
+    };
 
     if fd == -1 {
         return Err(std::io::Error::last_os_error());
