@@ -180,18 +180,14 @@ fn main() -> io::Result<()> {
 
     // Check input files exist
     if !std::path::Path::new(seq_file).exists() {
-        eprintln!(
-            "[seqwish] ERROR: input sequence file {seq_file} does not exist"
-        );
+        eprintln!("[seqwish] ERROR: input sequence file {seq_file} does not exist");
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             "sequence file not found",
         ));
     }
     if !std::path::Path::new(paf_file).exists() {
-        eprintln!(
-            "[seqwish] ERROR: input alignment file {paf_file} does not exist"
-        );
+        eprintln!("[seqwish] ERROR: input alignment file {paf_file} does not exist");
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             "alignment file not found",
