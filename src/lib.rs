@@ -319,7 +319,7 @@ pub struct AlnIITreeHandle {
 }
 
 /// Parse CIGAR string and return handle to CIGAR vector
-/// Returns NULL on error. Must be freed with cigar_free.
+/// Returns NULL on error. Must be freed with seqwish_cigar_free.
 #[no_mangle]
 pub extern "C" fn cigar_from_string(s: *const c_char) -> *mut CigarHandle {
     if s.is_null() {
@@ -391,7 +391,7 @@ pub extern "C" fn cigar_get_op(
 
 /// Free CIGAR handle
 #[no_mangle]
-pub extern "C" fn cigar_free(handle: *mut CigarHandle) {
+pub extern "C" fn seqwish_cigar_free(handle: *mut CigarHandle) {
     if !handle.is_null() {
         unsafe {
             let _ = Box::from_raw(handle);
