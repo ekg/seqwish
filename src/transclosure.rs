@@ -508,6 +508,10 @@ pub fn compute_transitive_closures(
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
         let mut ovlp: Vec<(Match, bool)> = Vec::new();
 
+        // Active workers counter - workers increment when they pop work, decrement when done
+        // This prevents workers/manager from exiting while work is being processed
+        let active_workers = Arc::new(AtomicU64::new(0));
+
         // Seed initial ranges
         for_each_fresh_range(
             &Match::new(chunk_start as u64, chunk_end as u64, 0),
@@ -531,7 +535,7 @@ pub fn compute_transitive_closures(
         // Use Rayon's scope for dynamic task spawning with work-stealing
         rayon::scope(|s| {
             // Spawn worker tasks (2x threads for better load balancing)
-            for _ in 0..(num_threads * 2) {
+            for _worker_idx in 0..(num_threads * 2) {
                 let todo_out = Arc::clone(&todo_out);
                 let todo_in = Arc::clone(&todo_in);
                 let ovlp_q = Arc::clone(&ovlp_q);
@@ -539,11 +543,16 @@ pub fn compute_transitive_closures(
                 let q_curr_bv = Arc::clone(&q_curr_bv_shared);
                 let q_seen_bv_clone = q_seen_bv.clone();
 
+                let active_workers_clone = Arc::clone(&active_workers);
                 s.spawn(move |_s| {
                     // Process work items until queue is empty
+                    let mut empty_count = 0u64;
                     loop {
                         // Try to get work from todo_out
                         if let Some((pos, match_len)) = todo_out.pop() {
+                            empty_count = 0;
+                            // Mark this worker as active BEFORE processing
+                            active_workers_clone.fetch_add(1, Ordering::SeqCst);
                             let n = if !is_rev(pos) {
                                 offset(pos)
                             } else {
@@ -560,13 +569,26 @@ pub fn compute_transitive_closures(
                                 &ovlp_q,
                                 &todo_in,
                             );
+                            // Mark this worker as done AFTER processing
+                            active_workers_clone.fetch_sub(1, Ordering::SeqCst);
                         } else {
                             // No work available, yield to scheduler (like C++ 1ns sleep)
                             std::thread::yield_now();
+                            empty_count += 1;
 
-                            // If still no work and no work in todo_in, we're likely done
-                            if todo_out.is_empty() && todo_in.is_empty() {
-                                break;
+                            // Only exit when: queues empty AND no active workers
+                            let to_empty = todo_out.is_empty();
+                            let ti_empty = todo_in.is_empty();
+                            let no_active = active_workers_clone.load(Ordering::SeqCst) == 0;
+                            if to_empty && ti_empty && no_active {
+                                if empty_count > 1000 {
+                                    break;
+                                }
+                            } else {
+                                // Reset empty_count if workers are still active
+                                if !no_active {
+                                    empty_count = 0;
+                                }
                             }
                         }
                     }
@@ -575,6 +597,7 @@ pub fn compute_transitive_closures(
 
             // Manager task to move work from todo_in -> todo -> todo_out
             // This runs in parallel with workers on Rayon's thread pool
+            let active_workers_mgr = Arc::clone(&active_workers);
             s.spawn(move |_s| {
                 let mut empty_count = 0;
                 loop {
@@ -601,13 +624,19 @@ pub fn compute_transitive_closures(
                     } else {
                         std::thread::yield_now();
                         empty_count += 1;
-                        // If queues have been empty for a while, we're done
+                        // Only exit when: queues empty AND no active workers
+                        let no_active = active_workers_mgr.load(Ordering::SeqCst) == 0;
                         if empty_count > 1000
                             && todo.is_empty()
                             && todo_in.is_empty()
                             && todo_out.is_empty()
+                            && no_active
                         {
                             break;
+                        }
+                        // Reset empty_count if workers are still active
+                        if !no_active {
+                            empty_count = 0;
                         }
                     }
                 }
