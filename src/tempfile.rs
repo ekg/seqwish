@@ -131,7 +131,20 @@ fn get_dir_internal(state: &TempFileState) -> PathBuf {
         return dir.clone();
     }
 
-    // Use current working directory (matches C++ behavior)
+    // Priority: TMPDIR env var > /dev/shm (if available) > current directory
+    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+        if !tmpdir.is_empty() && Path::new(&tmpdir).is_dir() {
+            return PathBuf::from(tmpdir);
+        }
+    }
+
+    // Prefer /dev/shm for fast in-memory operations
+    let dev_shm = Path::new("/dev/shm");
+    if dev_shm.is_dir() {
+        return PathBuf::from("/dev/shm");
+    }
+
+    // Fallback to current working directory
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
