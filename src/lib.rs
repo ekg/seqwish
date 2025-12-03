@@ -175,6 +175,13 @@ pub extern "C" fn temp_file_set_keep_temp(setting: bool) {
     tempfile::set_keep_temp(setting);
 }
 
+/// Clean up all temp files and parent directory
+/// Call this after each graph build when processing multiple graphs in the same process
+#[no_mangle]
+pub extern "C" fn temp_file_cleanup() {
+    tempfile::cleanup();
+}
+
 /// Free a string returned by temp_file functions
 #[no_mangle]
 pub extern "C" fn temp_file_free_string(s: *mut c_char) {

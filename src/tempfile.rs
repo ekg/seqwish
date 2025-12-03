@@ -141,6 +141,35 @@ pub fn set_keep_temp(setting: bool) {
     state.keep_temp = setting;
 }
 
+/// Explicitly clean up all temp files and the parent directory
+/// Call this after each graph build operation when processing multiple graphs
+pub fn cleanup() {
+    let mut state = TEMP_STATE.lock().unwrap();
+
+    if state.keep_temp {
+        return;
+    }
+
+    // Clean up all tracked files
+    for filename in &state.filenames {
+        let _ = fs::remove_file(filename);
+    }
+    state.filenames.clear();
+
+    // Clean up parent directory
+    if let Some(ref parent_dir) = state.parent_directory {
+        // Remove all remaining files in the directory
+        if let Ok(entries) = fs::read_dir(parent_dir) {
+            for entry in entries.flatten() {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+        // Remove the directory itself
+        let _ = fs::remove_dir(parent_dir);
+    }
+    state.parent_directory = None;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
