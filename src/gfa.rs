@@ -173,30 +173,20 @@ pub fn emit_gfa<W: Write>(
                 q += 1;
             }
 
-            // Optimize: iterate through nodes, not individual bases
-            // Find the first and last nodes in this range
-            let start_offset = offset(pos_start_in_s) as usize;
-            let end_offset = start_offset + length as usize;
-
-            if seq_id_cbv.select(1).is_some() && start_offset < seq_id_cbv.size() {
-                let first_node = seq_id_cbv.rank(start_offset + 1);
-                let last_node = if end_offset < seq_id_cbv.size() {
-                    seq_id_cbv.rank(end_offset)
-                } else {
-                    seq_id_cbv.rank(seq_id_cbv.size() - 1)
-                };
-
-                // Add all nodes in range [first_node, last_node]
-                for node_id in first_node..=last_node {
+            // Match C++ behavior: iterate through each base and add node at boundaries
+            // This is the original seqwish algorithm that adds nodes when crossing
+            // node boundaries (seq_id_cbv has 1s at node starts)
+            let mut p = pos_start_in_s;
+            for _ in 0..length {
+                let p_offset = offset(p) as usize;
+                // Check if this position is a node boundary (start of a new node)
+                if p_offset < seq_id_cbv.size() && seq_id_cbv.access(p_offset) {
+                    let node_id = seq_id_cbv.rank(p_offset + 1);
                     if node_id > 0 {
-                        if let Some(node_start) = seq_id_cbv.select(node_id) {
-                            // Only include nodes that actually start within our range
-                            if node_start >= start_offset && node_start < end_offset {
-                                path_v.push(make_pos_t(node_id as u64, match_is_rev));
-                            }
-                        }
+                        path_v.push(make_pos_t(node_id as u64, match_is_rev));
                     }
                 }
+                incr_pos(&mut p);
             }
 
             seen_bp += length;

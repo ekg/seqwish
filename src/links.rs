@@ -56,6 +56,11 @@ impl RankSelectBitVector {
     pub fn size(&self) -> usize {
         self.size
     }
+
+    /// Access: check if bit at position i is set
+    pub fn access(&self, i: usize) -> bool {
+        self.set_positions.binary_search(&i).is_ok()
+    }
 }
 
 /// A simple set for storing links (pairs of positions)
