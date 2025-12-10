@@ -205,6 +205,41 @@ pub fn emit_gfa<W: Write>(
             ));
         }
 
+        // Validate path step lengths sum to sequence length
+        // This catches bugs in path construction where node visits don't match bp count
+        let mut path_step_len = 0u64;
+        let mut node_lengths: Vec<(usize, usize)> = Vec::new(); // (node_id, length) for debugging
+        for p in path_v.iter() {
+            let node_id = offset(*p) as usize;
+            if node_id > 0 {
+                let node_start = seq_id_cbv.select(node_id).unwrap_or(0);
+                let node_end = seq_id_cbv.select(node_id + 1).unwrap_or(node_start);
+                let node_len = node_end - node_start;
+                path_step_len += node_len as u64;
+                node_lengths.push((node_id, node_len));
+            }
+        }
+        if path_step_len != seq_len {
+            let seq_name = seqidx
+                .nth_name(i)
+                .unwrap_or_else(|| "<unknown>".to_string());
+            // Debug: show first/last few nodes to understand the discrepancy
+            let debug_nodes: String = if node_lengths.len() <= 10 {
+                node_lengths.iter().map(|(id, len)| format!("{}:{}", id, len)).collect::<Vec<_>>().join(",")
+            } else {
+                let first: String = node_lengths[..3].iter().map(|(id, len)| format!("{}:{}", id, len)).collect::<Vec<_>>().join(",");
+                let last: String = node_lengths[node_lengths.len()-3..].iter().map(|(id, len)| format!("{}:{}", id, len)).collect::<Vec<_>>().join(",");
+                format!("{}...{}", first, last)
+            };
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "[gfa] path step length mismatch for {seq_name}: expected {seq_len} bp but path steps sum to {path_step_len} bp ({} nodes, seen_bp={}, nodes: {})",
+                    path_v.len(), seen_bp, debug_nodes
+                ),
+            ));
+        }
+
         // Write path
         let seq_name = seqidx.nth_name(i).unwrap_or_else(|| format!("seq{i}"));
         write!(out, "P\t{seq_name}\t")?;
