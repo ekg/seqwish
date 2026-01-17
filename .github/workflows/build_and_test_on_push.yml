@@ -79,38 +79,6 @@ jobs:
           name: seqwish-${{ matrix.target }}
           path: target/release/seqwish
 
-  cpp_legacy_build:
-    name: C++ Legacy Build (Reference)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'recursive'
-
-      - name: Install required packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            make \
-            g++ \
-            libatomic-ops-dev \
-            autoconf \
-            libgsl-dev \
-            zlib1g-dev \
-            libzstd-dev \
-            libjemalloc-dev
-
-      - name: Build C++ version
-        run: |
-          cd cpp
-          cmake -H. -DCMAKE_BUILD_TYPE=Release -Bbuild
-          cmake --build build -- -j 2
-
-      - name: Test C++ version
-        run: |
-          cd test && make test
-
   format_and_lint:
     name: Format and Lint
     runs-on: ubuntu-latest
