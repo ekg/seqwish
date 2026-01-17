@@ -55,6 +55,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && !matrix.cross
         run: |
           # Test with smallest HLA dataset
+          mkdir -p /tmp/seqwish-test
           ./target/release/seqwish \
             -s test/HLA/V-352962.fa.gz \
             -p test/HLA/V-352962.paf.gz \
