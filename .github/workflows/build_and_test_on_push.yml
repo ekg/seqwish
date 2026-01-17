@@ -60,7 +60,8 @@ jobs:
             -s test/HLA/V-352962.fa.gz \
             -p test/HLA/V-352962.paf.gz \
             -g /tmp/test.gfa \
-            -b /tmp/seqwish-test
+            -b /tmp/seqwish-test \
+            -t 4
 
           # Verify checksum
           EXPECTED=$(cat test/HLA/V-352962.fa.gz.gfa.md5)
