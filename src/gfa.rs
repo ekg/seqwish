@@ -225,10 +225,22 @@ pub fn emit_gfa<W: Write>(
                 .unwrap_or_else(|| "<unknown>".to_string());
             // Debug: show first/last few nodes to understand the discrepancy
             let debug_nodes: String = if node_lengths.len() <= 10 {
-                node_lengths.iter().map(|(id, len)| format!("{}:{}", id, len)).collect::<Vec<_>>().join(",")
+                node_lengths
+                    .iter()
+                    .map(|(id, len)| format!("{}:{}", id, len))
+                    .collect::<Vec<_>>()
+                    .join(",")
             } else {
-                let first: String = node_lengths[..3].iter().map(|(id, len)| format!("{}:{}", id, len)).collect::<Vec<_>>().join(",");
-                let last: String = node_lengths[node_lengths.len()-3..].iter().map(|(id, len)| format!("{}:{}", id, len)).collect::<Vec<_>>().join(",");
+                let first: String = node_lengths[..3]
+                    .iter()
+                    .map(|(id, len)| format!("{}:{}", id, len))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let last: String = node_lengths[node_lengths.len() - 3..]
+                    .iter()
+                    .map(|(id, len)| format!("{}:{}", id, len))
+                    .collect::<Vec<_>>()
+                    .join(",");
                 format!("{}...{}", first, last)
             };
             return Err(io::Error::new(
