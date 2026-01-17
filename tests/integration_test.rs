@@ -124,7 +124,7 @@ fn run_pipeline(in_memory: bool) -> Result<String, Box<dyn std::error::Error>> {
 
     // Run compaction
     use bitvec::prelude::*;
-    let mut seq_id_bv = BitVec::<u64, Lsb0>::repeat(false, graph_length);
+    let mut seq_id_bv = BitVec::<u64, Lsb0>::repeat(false, graph_length + 1);
     compact::compact_nodes(
         Arc::clone(&seqidx),
         graph_length,

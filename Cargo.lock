@@ -838,7 +838,6 @@ dependencies = [
  "rdst",
  "sucds",
  "uf_rush",
- "vers-vecs",
 ]
 
 [[package]]
