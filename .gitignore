@@ -4,4 +4,5 @@ build/
 experiments/
 *#*
 include
+target/
 seqwish-rs/target/
