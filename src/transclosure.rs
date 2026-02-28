@@ -720,13 +720,16 @@ pub fn compute_transitive_closures(
         // Build direct position-to-rank lookup table (O(1) per lookup vs Rank9Sel popcount).
         // Indexed by input sequence position, value is the rank (index into q_curr_positions).
         let rank_table = vec![0u32; input_seq_length];
-        q_curr_positions.par_iter().enumerate().for_each(|(rank, &pos)| {
-            // Safe: each position is unique, so no data race
-            unsafe {
-                let ptr = rank_table.as_ptr() as *mut u32;
-                *ptr.add(pos as usize) = rank as u32;
-            }
-        });
+        q_curr_positions
+            .par_iter()
+            .enumerate()
+            .for_each(|(rank, &pos)| {
+                // Safe: each position is unique, so no data race
+                unsafe {
+                    let ptr = rank_table.as_ptr() as *mut u32;
+                    *ptr.add(pos as usize) = rank as u32;
+                }
+            });
 
         if show_progress {
             eprintln!(
@@ -745,7 +748,10 @@ pub fn compute_transitive_closures(
                 "[transclosure] {:.3}s {:.2}% {}-{} union_find_start ({} overlaps, {} bases)",
                 start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
-                chunk_start, chunk_end, ovlp.len(), total_bases,
+                chunk_start,
+                chunk_end,
+                ovlp.len(),
+                total_bases,
             );
         }
         let dsets = DisjointSetsAsm::new(q_curr_bv_count);
