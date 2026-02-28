@@ -6,14 +6,14 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
 use crate::dset64_asm::DisjointSetsAsm;
 use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
 use std::sync::atomic::AtomicU64;
-use sucds::bit_vectors::{BitVector as SucdsBitVector, Rank, Rank9Sel};
+// Rank9Sel no longer needed — replaced by direct rank_table lookup
 
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
@@ -267,10 +267,16 @@ fn handle_range(
         all_set_there = all_set_there && was_set;
         incr_pos(&mut n);
     }
-    let _ = ovlp_q.push((s, is_rev(s.data)));
+    // Spin until push succeeds — the manager drains the queue continuously
+    // so space becomes available quickly. Never silently drop overlaps.
+    while ovlp_q.push((s, is_rev(s.data))).is_err() {
+        std::thread::yield_now();
+    }
     if !all_set_there {
         let item = (make_pos_t(offset(s.data), is_rev(s.data)), s.end - s.start);
-        let _ = todo_in.push(item);
+        while todo_in.push(item).is_err() {
+            std::thread::yield_now();
+        }
     }
 }
 
@@ -500,13 +506,14 @@ pub fn compute_transitive_closures(
         // Atomic bitvector for positions seen in this chunk
         let q_curr_bv = AtomicBitVec::new(input_seq_length);
 
-        // Work queues
-        let todo_in = Arc::new(ArrayQueue::new(100000));
-        let todo_out = Arc::new(ArrayQueue::new(100000));
-        let ovlp_q = Arc::new(ArrayQueue::new(100000));
+        // Work queues — sized to match C++ (2 << 16 = 131072)
+        let todo_in = Arc::new(ArrayQueue::new(131072));
+        let todo_out = Arc::new(ArrayQueue::new(131072));
+        let ovlp_q = Arc::new(ArrayQueue::new(131072));
 
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
-        let mut ovlp: Vec<(Match, bool)> = Vec::new();
+        // Manager collects overlaps here (shared via Mutex for handoff, not hot-path)
+        let ovlp_collected: Arc<Mutex<Vec<(Match, bool)>>> = Arc::new(Mutex::new(Vec::new()));
 
         // Active workers counter - workers increment when they pop work, decrement when done
         // This prevents workers/manager from exiting while work is being processed
@@ -595,10 +602,14 @@ pub fn compute_transitive_closures(
                 });
             }
 
-            // Manager task to move work from todo_in -> todo -> todo_out
-            // This runs in parallel with workers on Rayon's thread pool
+            // Manager task: shuttle todo_in -> todo -> todo_out AND
+            // drain ovlp_q into a local Vec (matching C++ manager thread pattern).
+            // Draining ovlp_q keeps space available so workers never block long.
             let active_workers_mgr = Arc::clone(&active_workers);
+            let ovlp_q_mgr = Arc::clone(&ovlp_q);
+            let ovlp_out = Arc::clone(&ovlp_collected);
             s.spawn(move |_s| {
+                let mut local_ovlp = Vec::new();
                 let mut empty_count = 0;
                 loop {
                     let mut did_work = false;
@@ -619,6 +630,12 @@ pub fn compute_transitive_closures(
                         }
                     }
 
+                    // Drain overlaps — keeps ovlp_q from filling up
+                    while let Some(o) = ovlp_q_mgr.pop() {
+                        local_ovlp.push(o);
+                        did_work = true;
+                    }
+
                     if did_work {
                         empty_count = 0;
                     } else {
@@ -630,6 +647,7 @@ pub fn compute_transitive_closures(
                             && todo.is_empty()
                             && todo_in.is_empty()
                             && todo_out.is_empty()
+                            && ovlp_q_mgr.is_empty()
                             && no_active
                         {
                             break;
@@ -640,13 +658,13 @@ pub fn compute_transitive_closures(
                         }
                     }
                 }
+                // Hand collected overlaps back (single lock, not on hot path)
+                *ovlp_out.lock().unwrap() = local_ovlp;
             });
         });
 
-        // Collect all overlaps after workers complete
-        while let Some(o) = ovlp_q.pop() {
-            ovlp.push(o);
-        }
+        // Retrieve overlaps collected by the manager task
+        let ovlp = std::mem::take(&mut *ovlp_collected.lock().unwrap());
 
         if show_progress {
             eprintln!(
@@ -699,11 +717,16 @@ pub fn compute_transitive_closures(
             continue;
         }
 
-        // Build Rank9Sel directly from iterator (avoids intermediate Vec<bool> allocation)
-        let sucds_bv = SucdsBitVector::from_bits(
-            (0..input_seq_length).map(|pos| q_curr_bv_final.get(pos, Ordering::Acquire)),
-        );
-        let q_curr_rank = Rank9Sel::new(sucds_bv);
+        // Build direct position-to-rank lookup table (O(1) per lookup vs Rank9Sel popcount).
+        // Indexed by input sequence position, value is the rank (index into q_curr_positions).
+        let rank_table = vec![0u32; input_seq_length];
+        q_curr_positions.par_iter().enumerate().for_each(|(rank, &pos)| {
+            // Safe: each position is unique, so no data race
+            unsafe {
+                let ptr = rank_table.as_ptr() as *mut u32;
+                *ptr.add(pos as usize) = rank as u32;
+            }
+        });
 
         if show_progress {
             eprintln!(
@@ -715,19 +738,26 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // Union-find with O(1) rank lookups (using INLINE ASM to match C++ perf)
+        // Union-find with direct array rank lookups
+        if show_progress {
+            let total_bases: u64 = ovlp.iter().map(|(m, _)| m.end - m.start).sum();
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} union_find_start ({} overlaps, {} bases)",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start, chunk_end, ovlp.len(), total_bases,
+            );
+        }
         let dsets = DisjointSetsAsm::new(q_curr_bv_count);
 
         // Use chunked iteration with grain size 10000 (like C++ paryfor grain size)
-        // This reduces contention on the lock-free union-find structure
         ovlp.par_chunks(10000).for_each(|chunk| {
             for s in chunk {
                 let r = &s.0;
                 let mut p = r.data;
                 for j in r.start..r.end {
-                    // O(1) rank lookups: rank1(pos) counts 1-bits in [0..pos), giving 0-indexed rank
-                    let j_rank = q_curr_rank.rank1(j as usize).unwrap();
-                    let p_rank = q_curr_rank.rank1(offset(p) as usize).unwrap();
+                    let j_rank = rank_table[j as usize] as usize;
+                    let p_rank = rank_table[offset(p) as usize] as usize;
                     dsets.unite(j_rank, p_rank);
                     incr_pos(&mut p);
                 }
