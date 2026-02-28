@@ -74,6 +74,12 @@ char *temp_file_get_dir(void);
 void temp_file_set_keep_temp(bool setting);
 
 /**
+ * Clean up all temp files and parent directory
+ * Call this after each graph build when processing multiple graphs in the same process
+ */
+void temp_file_cleanup(void);
+
+/**
  * Free a string returned by temp_file functions
  */
 void temp_file_free_string(char *s);
@@ -140,7 +146,7 @@ void dna_reverse_complement_in_place(char *seq, uintptr_t len);
 
 /**
  * Parse CIGAR string and return handle to CIGAR vector
- * Returns NULL on error. Must be freed with cigar_free.
+ * Returns NULL on error. Must be freed with seqwish_cigar_free.
  */
 struct CigarHandle *cigar_from_string(const char *s);
 
@@ -167,7 +173,7 @@ bool cigar_get_op(const struct CigarHandle *handle,
 /**
  * Free CIGAR handle
  */
-void cigar_free(struct CigarHandle *handle);
+void seqwish_cigar_free(struct CigarHandle *handle);
 
 /**
  * Open a file and memory-map it
