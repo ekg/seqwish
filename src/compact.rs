@@ -200,4 +200,29 @@ mod tests {
         assert!(!bv.get(0));
         assert!(!bv.get(99));
     }
+
+    #[test]
+    fn test_atomic_bitvec_concurrent_same_word() {
+        // Stress test: many threads setting different bits in the same u64 word.
+        // The old read_volatile/write_volatile implementation would lose bits here.
+        use std::sync::Arc;
+        use std::thread;
+
+        for _ in 0..100 {
+            let bv = Arc::new(AtomicBitVec::new(64));
+            let mut handles = Vec::new();
+            for bit in 0..64 {
+                let bv = Arc::clone(&bv);
+                handles.push(thread::spawn(move || {
+                    bv.set(bit);
+                }));
+            }
+            for h in handles {
+                h.join().unwrap();
+            }
+            for bit in 0..64 {
+                assert!(bv.get(bit), "bit {} was lost due to race condition", bit);
+            }
+        }
+    }
 }
