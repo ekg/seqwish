@@ -53,18 +53,21 @@ pub fn emit_gfa<W: Write>(
     // Get number of nodes
     let n_nodes = seq_id_cbv.rank(seq_id_cbv.size() - 1);
 
-    // Write nodes (S lines) - extract sequences first, then write
+    // Write nodes (S lines) - extract sequences first, then write.
+    // The graph sequence has `seq_v_slice.len()` bytes; use that as the end
+    // sentinel for the last node (the bitvector has size graph_length + 1).
+    let graph_len = seq_v_slice.len();
     let node_sequences: Vec<(usize, String)> = (1..=n_nodes)
         .map(|id| {
             let node_start = match seq_id_cbv.select(id) {
                 Some(pos) => pos,
                 None => return (id, String::new()),
             };
-            let node_end = match seq_id_cbv.select(id + 1) {
-                Some(pos) => pos,
-                None => return (id, String::new()),
-            };
+            let node_end = seq_id_cbv.select(id + 1).unwrap_or(graph_len);
             let node_length = node_end - node_start;
+            if node_start + node_length > graph_len {
+                return (id, String::new());
+            }
             let seq = &seq_v_slice[node_start..node_start + node_length];
             let seq_string = String::from_utf8_lossy(seq).to_string();
             (id, seq_string)
@@ -205,15 +208,15 @@ pub fn emit_gfa<W: Write>(
             ));
         }
 
-        // Validate path step lengths sum to sequence length
-        // This catches bugs in path construction where node visits don't match bp count
+        // Validate path step lengths sum to sequence length.
+        // Use graph_len (same as S-line emission) as sentinel for last node end.
         let mut path_step_len = 0u64;
-        let mut node_lengths: Vec<(usize, usize)> = Vec::new(); // (node_id, length) for debugging
+        let mut node_lengths: Vec<(usize, usize)> = Vec::new();
         for p in path_v.iter() {
             let node_id = offset(*p) as usize;
             if node_id > 0 {
                 let node_start = seq_id_cbv.select(node_id).unwrap_or(0);
-                let node_end = seq_id_cbv.select(node_id + 1).unwrap_or(node_start);
+                let node_end = seq_id_cbv.select(node_id + 1).unwrap_or(graph_len);
                 let node_len = node_end - node_start;
                 path_step_len += node_len as u64;
                 node_lengths.push((node_id, node_len));
@@ -223,7 +226,6 @@ pub fn emit_gfa<W: Write>(
             let seq_name = seqidx
                 .nth_name(i)
                 .unwrap_or_else(|| "<unknown>".to_string());
-            // Debug: show first/last few nodes to understand the discrepancy
             let debug_nodes: String = if node_lengths.len() <= 10 {
                 node_lengths
                     .iter()
