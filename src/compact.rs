@@ -49,18 +49,21 @@ impl AtomicBitVec {
     /// Iterate over set bits
     fn iter_ones(&self) -> impl Iterator<Item = usize> + '_ {
         let len = self.len;
-        self.words.iter().enumerate().flat_map(move |(word_idx, word)| {
-            let w = word.load(Ordering::Relaxed);
-            let base = word_idx * 64;
-            (0..64).filter_map(move |bit| {
-                let idx = base + bit;
-                if idx < len && (w >> bit) & 1 == 1 {
-                    Some(idx)
-                } else {
-                    None
-                }
+        self.words
+            .iter()
+            .enumerate()
+            .flat_map(move |(word_idx, word)| {
+                let w = word.load(Ordering::Relaxed);
+                let base = word_idx * 64;
+                (0..64).filter_map(move |bit| {
+                    let idx = base + bit;
+                    if idx < len && (w >> bit) & 1 == 1 {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                })
             })
-        })
     }
 }
 
