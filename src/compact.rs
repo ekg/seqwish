@@ -9,6 +9,8 @@ use std::sync::{Arc, RwLock};
 use bitvec::prelude::*;
 use rayon::prelude::*;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
 use crate::pos::{incr_pos_by, is_rev, offset, PosT};
@@ -16,38 +18,52 @@ use crate::seqindex::SeqIndex;
 
 /// Atomic bitvector for thread-safe bit marking
 struct AtomicBitVec {
-    bits: BitVec<u64, Lsb0>,
+    words: Vec<AtomicU64>,
+    len: usize,
 }
 
 impl AtomicBitVec {
     fn new(size: usize) -> Self {
-        AtomicBitVec {
-            bits: BitVec::repeat(false, size),
-        }
+        let n_words = (size + 63) / 64;
+        let words = (0..n_words).map(|_| AtomicU64::new(0)).collect();
+        AtomicBitVec { words, len: size }
     }
 
-    /// Atomically set a bit (simplified version - would need true atomics in production)
+    /// Atomically set a bit using fetch_or
     fn set(&self, index: usize) {
-        unsafe {
-            let ptr = self.bits.as_raw_slice().as_ptr() as *mut u64;
-            let word_index = index / 64;
-            let bit_index = index % 64;
-            let mask = 1u64 << bit_index;
-            let word_ptr = ptr.add(word_index);
-            let old_word = std::ptr::read_volatile(word_ptr);
-            std::ptr::write_volatile(word_ptr, old_word | mask);
-        }
+        let word_index = index / 64;
+        let bit_index = index % 64;
+        let mask = 1u64 << bit_index;
+        self.words[word_index].fetch_or(mask, Ordering::Relaxed);
     }
 
     /// Get value of a bit
     #[allow(dead_code)]
     fn get(&self, index: usize) -> bool {
-        self.bits[index]
+        let word_index = index / 64;
+        let bit_index = index % 64;
+        let mask = 1u64 << bit_index;
+        (self.words[word_index].load(Ordering::Relaxed) & mask) != 0
     }
 
     /// Iterate over set bits
     fn iter_ones(&self) -> impl Iterator<Item = usize> + '_ {
-        self.bits.iter_ones()
+        let len = self.len;
+        self.words
+            .iter()
+            .enumerate()
+            .flat_map(move |(word_idx, word)| {
+                let w = word.load(Ordering::Relaxed);
+                let base = word_idx * 64;
+                (0..64).filter_map(move |bit| {
+                    let idx = base + bit;
+                    if idx < len && (w >> bit) & 1 == 1 {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                })
+            })
     }
 }
 
@@ -186,5 +202,30 @@ mod tests {
         assert!(bv.get(50));
         assert!(!bv.get(0));
         assert!(!bv.get(99));
+    }
+
+    #[test]
+    fn test_atomic_bitvec_concurrent_same_word() {
+        // Stress test: many threads setting different bits in the same u64 word.
+        // The old read_volatile/write_volatile implementation would lose bits here.
+        use std::sync::Arc;
+        use std::thread;
+
+        for _ in 0..100 {
+            let bv = Arc::new(AtomicBitVec::new(64));
+            let mut handles = Vec::new();
+            for bit in 0..64 {
+                let bv = Arc::clone(&bv);
+                handles.push(thread::spawn(move || {
+                    bv.set(bit);
+                }));
+            }
+            for h in handles {
+                h.join().unwrap();
+            }
+            for bit in 0..64 {
+                assert!(bv.get(bit), "bit {} was lost due to race condition", bit);
+            }
+        }
     }
 }
