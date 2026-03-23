@@ -6,14 +6,13 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use crate::dset64_asm::DisjointSetsAsm;
 use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
 use std::sync::atomic::AtomicU64;
-// Rank9Sel no longer needed — replaced by direct rank_table lookup
 
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
@@ -67,9 +66,8 @@ impl Match {
     }
 }
 
-/// Type aliases for atomic queues and bitvector
+/// Type alias for BFS work queue
 type RangeAtomicQueue = ArrayQueue<(PosT, u64)>;
-type OverlapAtomicQueue = ArrayQueue<(Match, bool)>;
 
 /// Atomic bitvector wrapper for thread-safe bit operations
 /// Uses Vec<AtomicU64> with fetch_or for truly atomic bit operations
@@ -252,32 +250,75 @@ where
     }
 }
 
-/// Handle a range by marking it in the bitvector and adding to queues
-fn handle_range(
-    s: Match,
-    curr_bv: &AtomicBitVec,
-    ovlp_q: &OverlapAtomicQueue,
-    todo_in: &RangeAtomicQueue,
-) {
-    let mut all_set_there = true;
-    let mut n = s.data;
-    for _i in s.start..s.end {
-        // Set the bit and check if it was already set (using truly atomic fetch_or)
-        let was_set = curr_bv.set(offset(n) as usize, true, Ordering::AcqRel);
-        all_set_there = all_set_there && was_set;
-        incr_pos(&mut n);
-    }
-    // Spin until push succeeds — the manager drains the queue continuously
-    // so space becomes available quickly. Never silently drop overlaps.
-    while ovlp_q.push((s, is_rev(s.data))).is_err() {
-        std::thread::yield_now();
-    }
-    if !all_set_there {
-        let item = (make_pos_t(offset(s.data), is_rev(s.data)), s.end - s.start);
-        while todo_in.push(item).is_err() {
-            std::thread::yield_now();
+/// Find sequences with at least one discovered position in the bitvector.
+fn find_component_sequences(seqidx: &SeqIndex, bv: &AtomicBitVec) -> Vec<usize> {
+    (1..=seqidx.n_seqs())
+        .filter(|&seq_id| {
+            if let Some(off) = seqidx.nth_seq_offset(seq_id) {
+                bv.get(off as usize, Ordering::Relaxed)
+            } else {
+                false
+            }
+        })
+        .collect()
+}
+
+/// Walk all positions in a match block, applying union-find for positions in the component.
+/// Returns true if any unite was performed.
+#[inline]
+fn unite_block(
+    start: u64,
+    end: u64,
+    target_pos: PosT,
+    q_curr_bv: &AtomicBitVec,
+    rank_table: &[u32],
+    dsets: &DisjointSetsAsm,
+    input_seq_length: usize,
+) -> bool {
+    let mut any = false;
+    let mut p = target_pos;
+    for j in start..end {
+        let t = offset(p) as usize;
+        if t < input_seq_length
+            && q_curr_bv.get(j as usize, Ordering::Relaxed)
+            && q_curr_bv.get(t, Ordering::Relaxed)
+        {
+            dsets.unite(rank_table[j as usize] as usize, rank_table[t] as usize);
+            any = true;
         }
+        incr_pos(&mut p);
     }
+    any
+}
+
+/// Check if a block needs processing by checking if any position pair is in different classes.
+/// Returns true if at least one pair has find(source) != find(target).
+#[inline]
+fn block_needs_unite(
+    start: u64,
+    end: u64,
+    target_pos: PosT,
+    q_curr_bv: &AtomicBitVec,
+    rank_table: &[u32],
+    dsets: &DisjointSetsAsm,
+    input_seq_length: usize,
+) -> bool {
+    let mut p = target_pos;
+    for j in start..end {
+        let t = offset(p) as usize;
+        if t < input_seq_length
+            && q_curr_bv.get(j as usize, Ordering::Relaxed)
+            && q_curr_bv.get(t, Ordering::Relaxed)
+        {
+            if dsets.find(rank_table[j as usize] as usize)
+                != dsets.find(rank_table[t] as usize)
+            {
+                return true;
+            }
+        }
+        incr_pos(&mut p);
+    }
+    false
 }
 
 /// Explore overlaps from alignment iitree — discovery only, no ovlp_q collection.
@@ -459,7 +500,6 @@ fn compute_spanning_tree(
     aln_iitree: &AdaptiveTree<u64, PosT>,
     seqidx: &SeqIndex,
 ) -> std::collections::HashSet<(usize, usize)> {
-    use std::collections::HashMap;
 
     let n_seqs = seqidx.n_seqs();
 
@@ -515,7 +555,7 @@ fn compute_spanning_tree(
     let mut spanning_pairs = std::collections::HashSet::new();
     let mut tree_edges = 0;
 
-    for ((s1, s2), weight) in &edges {
+    for ((s1, s2), _weight) in &edges {
         if unite(&mut parent, &mut rank, *s1, *s2) {
             // Add both directions for easy lookup
             spanning_pairs.insert((*s1, *s2));
@@ -770,20 +810,11 @@ pub fn compute_transitive_closures(
         // edges. Query the iitree per-sequence (only sequences with discovered
         // positions) to find and mark orphans. Converges when no new positions found.
         {
-            let n_seqs = seqidx.n_seqs();
             let mut recovery_round = 0u32;
             loop {
                 let new_positions = AtomicU64::new(0);
                 // Find sequences with discovered positions
-                let component_seqs: Vec<usize> = (1..=n_seqs)
-                    .filter(|&seq_id| {
-                        if let Some(off) = seqidx.nth_seq_offset(seq_id) {
-                            q_curr_bv_final.get(off as usize, Ordering::Relaxed)
-                        } else {
-                            false
-                        }
-                    })
-                    .collect();
+                let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
 
                 component_seqs.par_iter().for_each(|&seq_id| {
                     let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
@@ -904,16 +935,7 @@ pub fn compute_transitive_closures(
         }
 
         // Identify sequences in the current component
-        let n_seqs = seqidx.n_seqs();
-        let component_seqs: Vec<usize> = (1..=n_seqs)
-            .filter(|&seq_id| {
-                if let Some(off) = seqidx.nth_seq_offset(seq_id) {
-                    q_curr_bv_ref.get(off as usize, Ordering::Relaxed)
-                } else {
-                    false
-                }
-            })
-            .collect();
+        let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
 
         let phase2_processed = AtomicU64::new(0);
         let phase2_skipped = AtomicU64::new(0);
@@ -973,20 +995,7 @@ pub fn compute_transitive_closures(
                         phase2_skipped.fetch_add(1, Ordering::Relaxed);
                     } else {
                         phase2_processed.fetch_add(1, Ordering::Relaxed);
-                        let mut p = target_pos;
-                        for j in start..end {
-                            let t = offset(p) as usize;
-                            if t < input_seq_length
-                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                            {
-                                dsets.unite(
-                                    rank_table[j as usize] as usize,
-                                    rank_table[t] as usize,
-                                );
-                            }
-                            incr_pos(&mut p);
-                        }
+                        unite_block(start, end, target_pos, q_curr_bv_ref, &rank_table, &dsets, input_seq_length);
                     }
                 })
                 .ok();
@@ -1006,40 +1015,9 @@ pub fn compute_transitive_closures(
                         if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
                             return;
                         }
-                        // Check ALL positions exhaustively
-                        let mut needs_processing = false;
-                        let mut p = target_pos;
-                        for j in start..end {
-                            let t = offset(p) as usize;
-                            if t < input_seq_length
-                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                            {
-                                if dsets.find(rank_table[j as usize] as usize)
-                                    != dsets.find(rank_table[t] as usize)
-                                {
-                                    needs_processing = true;
-                                    break;
-                                }
-                            }
-                            incr_pos(&mut p);
-                        }
-                        if needs_processing {
+                        if block_needs_unite(start, end, target_pos, q_curr_bv_ref, &rank_table, &dsets, input_seq_length) {
                             round_recovered.fetch_add(1, Ordering::Relaxed);
-                            let mut p = target_pos;
-                            for j in start..end {
-                                let t = offset(p) as usize;
-                                if t < input_seq_length
-                                    && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                    && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                                {
-                                    dsets.unite(
-                                        rank_table[j as usize] as usize,
-                                        rank_table[t] as usize,
-                                    );
-                                }
-                                incr_pos(&mut p);
-                            }
+                            unite_block(start, end, target_pos, q_curr_bv_ref, &rank_table, &dsets, input_seq_length);
                         }
                     })
                     .ok();
