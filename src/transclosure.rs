@@ -564,17 +564,6 @@ pub fn compute_transitive_closures(
     // Compute spanning tree for fast BFS discovery
     let spanning_pairs = compute_spanning_tree(&aln_iitree, &seqidx);
 
-    // Pre-collect all intervals for orphan recovery + phase 2 union-find scan
-    let mut all_intervals: Vec<(u64, u64, PosT)> = Vec::with_capacity(aln_iitree.len());
-    aln_iitree.for_each_interval(|start, end, value| {
-        all_intervals.push((start, end, value));
-    })?;
-    eprintln!(
-        "[transclosure] {:.3}s Collected {} intervals for phase 2",
-        start_time.elapsed().as_secs_f64(),
-        all_intervals.len()
-    );
-
     // Open iitree writers (need write access)
     node_iitree.write().unwrap().open_writer()?;
     path_iitree.write().unwrap().open_writer()?;
@@ -775,39 +764,51 @@ pub fn compute_transitive_closures(
         let q_curr_bv_final = Arc::try_unwrap(q_curr_bv_shared).unwrap();
 
         // ================================================================
-        // PHASE 1b: Orphan recovery — flood-fill from spanning tree result
+        // PHASE 1b: Orphan recovery — flood-fill using per-sequence queries
         // ================================================================
         // The spanning tree BFS may miss positions only reachable via non-tree
-        // edges (due to indel gaps in tree alignments). Repeatedly scan all
-        // intervals: if source is discovered but target isn't, discover target.
-        // Converges when no new positions are found.
+        // edges. Query the iitree per-sequence (only sequences with discovered
+        // positions) to find and mark orphans. Converges when no new positions found.
         {
+            let n_seqs = seqidx.n_seqs();
             let mut recovery_round = 0u32;
             loop {
                 let new_positions = AtomicU64::new(0);
-                // Parallel scan: check source, discover target
-                all_intervals.par_chunks(50000).for_each(|chunk| {
-                    for &(iv_start, iv_end, target_pos) in chunk {
-                        // Source in component?
-                        if !q_curr_bv_final.get(iv_start as usize, Ordering::Relaxed) {
-                            continue;
+                // Find sequences with discovered positions
+                let component_seqs: Vec<usize> = (1..=n_seqs)
+                    .filter(|&seq_id| {
+                        if let Some(off) = seqidx.nth_seq_offset(seq_id) {
+                            q_curr_bv_final.get(off as usize, Ordering::Relaxed)
+                        } else {
+                            false
                         }
-                        // Mark target positions not yet discovered
-                        let mut p = target_pos;
-                        for _ in iv_start..iv_end {
-                            let t = offset(p) as usize;
-                            if t < input_seq_length
-                                && !q_curr_bv_final.get(t, Ordering::Relaxed)
-                            {
-                                let was_set =
-                                    q_curr_bv_final.set(t, true, Ordering::AcqRel);
-                                if !was_set {
-                                    new_positions.fetch_add(1, Ordering::Relaxed);
-                                }
+                    })
+                    .collect();
+
+                component_seqs.par_iter().for_each(|&seq_id| {
+                    let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+                    let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+                    aln_iitree
+                        .overlap(seq_off, seq_off + seq_len, |_idx, iv_start, iv_end, target_pos| {
+                            if !q_curr_bv_final.get(iv_start as usize, Ordering::Relaxed) {
+                                return;
                             }
-                            incr_pos(&mut p);
-                        }
-                    }
+                            let mut p = target_pos;
+                            for _ in iv_start..iv_end {
+                                let t = offset(p) as usize;
+                                if t < input_seq_length
+                                    && !q_curr_bv_final.get(t, Ordering::Relaxed)
+                                {
+                                    let was_set =
+                                        q_curr_bv_final.set(t, true, Ordering::AcqRel);
+                                    if !was_set {
+                                        new_positions.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                                incr_pos(&mut p);
+                            }
+                        })
+                        .ok();
                 });
                 let found = new_positions.load(Ordering::Relaxed);
                 if found == 0 {
@@ -815,10 +816,11 @@ pub fn compute_transitive_closures(
                 }
                 recovery_round += 1;
                 eprintln!(
-                    "[transclosure] {:.3}s orphan_recovery round {}: {} new positions",
+                    "[transclosure] {:.3}s orphan_recovery round {}: {} new positions ({} seqs in component)",
                     start_time.elapsed().as_secs_f64(),
                     recovery_round,
-                    found
+                    found,
+                    component_seqs.len(),
                 );
             }
             if recovery_round > 0 {
@@ -883,15 +885,12 @@ pub fn compute_transitive_closures(
         }
 
         // ================================================================
-        // PHASE 2: Union-find via linear scan of ALL iitree intervals
+        // PHASE 2: Union-find via per-sequence iitree queries
         // ================================================================
-        // Instead of using BFS-collected overlaps (which had 99.97% redundancy),
-        // scan all intervals in the iitree directly. For each interval that overlaps
-        // the discovered component, sample endpoints to check if the union-find
-        // already connects them. Skip blocks that are entirely redundant.
+        // Instead of scanning ALL 58M intervals (93% irrelevant), query the
+        // iitree only for sequences in the current component. This yields
+        // only the relevant intervals (~4M instead of 58M).
         let dsets = DisjointSetsAsm::new(q_curr_bv_count);
-
-        // q_curr_bv_final was already unwrapped above for rank building
         let q_curr_bv_ref = &q_curr_bv_final;
 
         if show_progress {
@@ -904,133 +903,146 @@ pub fn compute_transitive_closures(
             );
         }
 
+        // Identify sequences in the current component
+        let n_seqs = seqidx.n_seqs();
+        let component_seqs: Vec<usize> = (1..=n_seqs)
+            .filter(|&seq_id| {
+                if let Some(off) = seqidx.nth_seq_offset(seq_id) {
+                    q_curr_bv_ref.get(off as usize, Ordering::Relaxed)
+                } else {
+                    false
+                }
+            })
+            .collect();
+
         let phase2_processed = AtomicU64::new(0);
         let phase2_skipped = AtomicU64::new(0);
-        let phase2_irrelevant = AtomicU64::new(0);
+        let phase2_checked = AtomicU64::new(0);
 
-        // Process all pre-collected intervals in parallel
-        all_intervals.par_chunks(10000).for_each(|chunk| {
-            for &(start, end, target_pos) in chunk {
-                // Quick relevance check: is the source range in the current component?
-                // Check first position of source range
-                if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
-                    phase2_irrelevant.fetch_add(1, Ordering::Relaxed);
-                    continue;
-                }
+        // Pass 1: per-sequence queries with block-level sampling
+        component_seqs.par_iter().for_each(|&seq_id| {
+            let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+            let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
 
-                let block_len = end - start;
+            aln_iitree
+                .overlap(seq_off, seq_off + seq_len, |_idx, start, end, target_pos| {
+                    if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                        return;
+                    }
+                    phase2_checked.fetch_add(1, Ordering::Relaxed);
 
-                // Sample endpoints: check if source and target already in same class
-                let can_skip = if block_len >= 3 && q_curr_bv_count > 0 {
-                    let mid = start + block_len / 2;
-                    let last = end - 1;
-                    let p_first = target_pos;
-                    let mut p_mid = target_pos;
-                    incr_pos_by(&mut p_mid, (mid - start) as usize);
-                    let mut p_last = target_pos;
-                    incr_pos_by(&mut p_last, (last - start) as usize);
+                    let block_len = end - start;
 
-                    // Check that target positions are also in the component
-                    let t_first = offset(p_first) as usize;
-                    let t_mid = offset(p_mid) as usize;
-                    let t_last = offset(p_last) as usize;
+                    // Sample 3 positions to check if block is redundant
+                    let can_skip = if block_len >= 3 {
+                        let mid = start + block_len / 2;
+                        let last = end - 1;
+                        let p_first = target_pos;
+                        let mut p_mid = target_pos;
+                        incr_pos_by(&mut p_mid, (mid - start) as usize);
+                        let mut p_last = target_pos;
+                        incr_pos_by(&mut p_last, (last - start) as usize);
 
-                    if !q_curr_bv_ref.get(t_first, Ordering::Relaxed)
-                        || !q_curr_bv_ref.get(t_mid, Ordering::Relaxed)
-                        || !q_curr_bv_ref.get(t_last, Ordering::Relaxed)
-                    {
-                        // Target not fully in component — skip (orphan handling later)
-                        false // don't skip, might need processing
-                    } else {
-                        dsets.find(rank_table[start as usize] as usize)
-                            == dsets.find(rank_table[t_first] as usize)
+                        let t_first = offset(p_first) as usize;
+                        let t_mid = offset(p_mid) as usize;
+                        let t_last = offset(p_last) as usize;
+
+                        t_first < input_seq_length
+                            && t_mid < input_seq_length
+                            && t_last < input_seq_length
+                            && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                            && q_curr_bv_ref.get(t_mid, Ordering::Relaxed)
+                            && q_curr_bv_ref.get(t_last, Ordering::Relaxed)
+                            && dsets.find(rank_table[start as usize] as usize)
+                                == dsets.find(rank_table[t_first] as usize)
                             && dsets.find(rank_table[mid as usize] as usize)
                                 == dsets.find(rank_table[t_mid] as usize)
                             && dsets.find(rank_table[last as usize] as usize)
                                 == dsets.find(rank_table[t_last] as usize)
-                    }
-                } else if block_len >= 1 {
-                    let t_first = offset(target_pos) as usize;
-                    if !q_curr_bv_ref.get(t_first, Ordering::Relaxed) {
-                        false
+                    } else if block_len >= 1 {
+                        let t_first = offset(target_pos) as usize;
+                        t_first < input_seq_length
+                            && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                            && dsets.find(rank_table[start as usize] as usize)
+                                == dsets.find(rank_table[t_first] as usize)
                     } else {
-                        dsets.find(rank_table[start as usize] as usize)
-                            == dsets.find(rank_table[t_first] as usize)
-                    }
-                } else {
-                    true
-                };
+                        true
+                    };
 
-                if can_skip {
-                    phase2_skipped.fetch_add(1, Ordering::Relaxed);
-                } else {
-                    // Process this block: unite all source-target position pairs
-                    let mut p = target_pos;
-                    let mut any_processed = false;
-                    for j in start..end {
-                        let t = offset(p) as usize;
-                        if q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                            && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                        {
-                            let j_rank = rank_table[j as usize] as usize;
-                            let p_rank = rank_table[t] as usize;
-                            dsets.unite(j_rank, p_rank);
-                            any_processed = true;
-                        }
-                        incr_pos(&mut p);
-                    }
-                    if any_processed {
+                    if can_skip {
+                        phase2_skipped.fetch_add(1, Ordering::Relaxed);
+                    } else {
                         phase2_processed.fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        phase2_irrelevant.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-        });
-
-        // Verification passes: iterate until convergence (no new merges found)
-        let mut total_recovered = 0u64;
-        let mut verify_round = 0u32;
-        loop {
-            let round_recovered = AtomicU64::new(0);
-            all_intervals.par_chunks(10000).for_each(|chunk| {
-                for &(start, end, target_pos) in chunk {
-                    if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
-                        continue;
-                    }
-                    // Check ALL positions exhaustively
-                    let mut needs_processing = false;
-                    let mut p = target_pos;
-                    for j in start..end {
-                        let t = offset(p) as usize;
-                        if q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                            && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                        {
-                            let j_rank = rank_table[j as usize] as usize;
-                            let p_rank = rank_table[t] as usize;
-                            if dsets.find(j_rank) != dsets.find(p_rank) {
-                                needs_processing = true;
-                                break;
-                            }
-                        }
-                        incr_pos(&mut p);
-                    }
-                    if needs_processing {
-                        round_recovered.fetch_add(1, Ordering::Relaxed);
                         let mut p = target_pos;
                         for j in start..end {
                             let t = offset(p) as usize;
-                            if q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                            if t < input_seq_length
+                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
                                 && q_curr_bv_ref.get(t, Ordering::Relaxed)
                             {
-                                let j_rank = rank_table[j as usize] as usize;
-                                let p_rank = rank_table[t] as usize;
-                                dsets.unite(j_rank, p_rank);
+                                dsets.unite(
+                                    rank_table[j as usize] as usize,
+                                    rank_table[t] as usize,
+                                );
                             }
                             incr_pos(&mut p);
                         }
                     }
-                }
+                })
+                .ok();
+        });
+
+        // Verification passes: per-sequence queries, iterate until convergence
+        let mut total_recovered = 0u64;
+        let mut verify_round = 0u32;
+        loop {
+            let round_recovered = AtomicU64::new(0);
+            component_seqs.par_iter().for_each(|&seq_id| {
+                let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+                let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+
+                aln_iitree
+                    .overlap(seq_off, seq_off + seq_len, |_idx, start, end, target_pos| {
+                        if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                            return;
+                        }
+                        // Check ALL positions exhaustively
+                        let mut needs_processing = false;
+                        let mut p = target_pos;
+                        for j in start..end {
+                            let t = offset(p) as usize;
+                            if t < input_seq_length
+                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                            {
+                                if dsets.find(rank_table[j as usize] as usize)
+                                    != dsets.find(rank_table[t] as usize)
+                                {
+                                    needs_processing = true;
+                                    break;
+                                }
+                            }
+                            incr_pos(&mut p);
+                        }
+                        if needs_processing {
+                            round_recovered.fetch_add(1, Ordering::Relaxed);
+                            let mut p = target_pos;
+                            for j in start..end {
+                                let t = offset(p) as usize;
+                                if t < input_seq_length
+                                    && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                    && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                                {
+                                    dsets.unite(
+                                        rank_table[j as usize] as usize,
+                                        rank_table[t] as usize,
+                                    );
+                                }
+                                incr_pos(&mut p);
+                            }
+                        }
+                    })
+                    .ok();
             });
             let recovered = round_recovered.load(Ordering::Relaxed);
             total_recovered += recovered;
@@ -1047,12 +1059,12 @@ pub fn compute_transitive_closures(
         }
 
         eprintln!(
-            "[transclosure] {:.3}s phase2: {} intervals, {} processed, {} skipped, {} irrelevant, {} recovered ({} verify rounds)",
+            "[transclosure] {:.3}s phase2: {} seqs, {} checked, {} processed, {} skipped, {} recovered ({} verify rounds)",
             start_time.elapsed().as_secs_f64(),
-            all_intervals.len(),
+            component_seqs.len(),
+            phase2_checked.load(Ordering::Relaxed),
             phase2_processed.load(Ordering::Relaxed),
             phase2_skipped.load(Ordering::Relaxed),
-            phase2_irrelevant.load(Ordering::Relaxed),
             total_recovered,
             verify_round,
         );
