@@ -48,6 +48,12 @@ where
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Iterate over all stored intervals, calling func(start, end, value) for each.
+    /// Used for linear scans (e.g., spanning tree computation, union-find pass).
+    fn for_each_interval<F>(&self, func: F) -> io::Result<()>
+    where
+        F: FnMut(K, K, V);
 }
 
 /// Disk-backed interval tree using iitree-rs
@@ -109,6 +115,16 @@ pub mod disk {
 
         fn len(&self) -> usize {
             self.inner.len()
+        }
+
+        fn for_each_interval<F>(&self, _func: F) -> io::Result<()>
+        where
+            F: FnMut(K, K, V),
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "for_each_interval not supported for disk-backed trees",
+            ))
         }
     }
 }
@@ -376,6 +392,16 @@ pub mod memory {
         fn len(&self) -> usize {
             self.intervals.len()
         }
+
+        fn for_each_interval<F>(&self, mut func: F) -> io::Result<()>
+        where
+            F: FnMut(K, K, V),
+        {
+            for iv in &self.intervals {
+                func(iv.start, iv.end, iv.value);
+            }
+            Ok(())
+        }
     }
 
     impl<K, V> Default for InMemoryTree<K, V>
@@ -472,6 +498,16 @@ where
         match self {
             AdaptiveTree::Disk(tree) => tree.len(),
             AdaptiveTree::Memory(tree) => tree.len(),
+        }
+    }
+
+    fn for_each_interval<F>(&self, func: F) -> io::Result<()>
+    where
+        F: FnMut(K, K, V),
+    {
+        match self {
+            AdaptiveTree::Disk(tree) => tree.for_each_interval(func),
+            AdaptiveTree::Memory(tree) => tree.for_each_interval(func),
         }
     }
 }

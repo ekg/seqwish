@@ -280,19 +280,28 @@ fn handle_range(
     }
 }
 
-/// Explore overlaps from alignment iitree and handle them
-fn explore_overlaps(
+/// Explore overlaps from alignment iitree — discovery only, no ovlp_q collection.
+/// Only follows edges in the spanning tree for fast BFS.
+fn explore_overlaps_discovery(
     b: &Match,
     seen_bv: &[bool],
     curr_bv: &AtomicBitVec,
     aln_iitree: &AdaptiveTree<u64, PosT>,
-    ovlp_q: &OverlapAtomicQueue,
     todo_in: &RangeAtomicQueue,
+    seqidx: &SeqIndex,
+    spanning_pairs: &std::collections::HashSet<(usize, usize)>,
 ) {
+    let source_seq = seqidx.seq_id_at(b.start).unwrap_or(0);
+
     aln_iitree
         .overlap(b.start, b.end, |_idx, start, end, pos| {
+            // Filter: only follow spanning tree edges
+            let target_seq = seqidx.seq_id_at(offset(pos)).unwrap_or(0);
+            if !spanning_pairs.contains(&(source_seq, target_seq)) {
+                return;
+            }
+
             let mut r = Match::new(start, end, pos);
-            // Trim the range to fit within b
             if b.start > r.start {
                 let trim_from_start = b.start - r.start;
                 r.start += trim_from_start;
@@ -304,10 +313,24 @@ fn explore_overlaps(
             }
             assert!(r.start < r.end);
             for_each_fresh_range(&r, seen_bv, |s| {
-                handle_range(s, curr_bv, ovlp_q, todo_in);
+                // Discovery only: set curr_bv bits, push to todo_in if new
+                // No ovlp_q push — union-find is handled in phase 2
+                let mut all_set_there = true;
+                let mut n = s.data;
+                for _i in s.start..s.end {
+                    let was_set = curr_bv.set(offset(n) as usize, true, Ordering::AcqRel);
+                    all_set_there = all_set_there && was_set;
+                    incr_pos(&mut n);
+                }
+                if !all_set_there {
+                    let item = (make_pos_t(offset(s.data), is_rev(s.data)), s.end - s.start);
+                    while todo_in.push(item).is_err() {
+                        std::thread::yield_now();
+                    }
+                }
             });
         })
-        .ok(); // Ignore Result
+        .ok();
 }
 
 /// Write a chunk of the graph sequence from disjoint sets
@@ -427,6 +450,93 @@ fn write_graph_chunk(
     Ok(())
 }
 
+/// Compute a maximum-weight spanning tree of sequence pairs from the alignment iitree.
+///
+/// Scans all intervals to compute total aligned bases per (source_seq, target_seq) pair,
+/// then runs Kruskal's algorithm to find the spanning tree that maximizes coverage.
+/// Returns a HashSet of (seq_id, seq_id) pairs (both directions included).
+fn compute_spanning_tree(
+    aln_iitree: &AdaptiveTree<u64, PosT>,
+    seqidx: &SeqIndex,
+) -> std::collections::HashSet<(usize, usize)> {
+    use std::collections::HashMap;
+
+    let n_seqs = seqidx.n_seqs();
+
+    // Collect pair weights: total aligned bases per (seq_i, seq_j) pair
+    let mut pair_weights: HashMap<(usize, usize), u64> = HashMap::new();
+    aln_iitree
+        .for_each_interval(|start, end, target_pos| {
+            let source_seq = seqidx.seq_id_at(start).unwrap_or(0);
+            let target_seq = seqidx.seq_id_at(offset(target_pos)).unwrap_or(0);
+            if source_seq != target_seq && source_seq > 0 && target_seq > 0 {
+                let canonical = if source_seq <= target_seq {
+                    (source_seq, target_seq)
+                } else {
+                    (target_seq, source_seq)
+                };
+                *pair_weights.entry(canonical).or_insert(0) += end - start;
+            }
+        })
+        .ok();
+
+    // Sort pairs by weight descending (max-weight spanning tree)
+    let mut edges: Vec<((usize, usize), u64)> = pair_weights.into_iter().collect();
+    edges.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+
+    // Kruskal's algorithm with simple union-find
+    let mut parent: Vec<usize> = (0..=n_seqs).collect();
+    let mut rank: Vec<usize> = vec![0; n_seqs + 1];
+
+    fn find(parent: &mut Vec<usize>, x: usize) -> usize {
+        if parent[x] != x {
+            parent[x] = find(parent, parent[x]);
+        }
+        parent[x]
+    }
+
+    fn unite(parent: &mut Vec<usize>, rank: &mut Vec<usize>, x: usize, y: usize) -> bool {
+        let rx = find(parent, x);
+        let ry = find(parent, y);
+        if rx == ry {
+            return false;
+        }
+        if rank[rx] < rank[ry] {
+            parent[rx] = ry;
+        } else if rank[rx] > rank[ry] {
+            parent[ry] = rx;
+        } else {
+            parent[ry] = rx;
+            rank[rx] += 1;
+        }
+        true
+    }
+
+    let mut spanning_pairs = std::collections::HashSet::new();
+    let mut tree_edges = 0;
+
+    for ((s1, s2), weight) in &edges {
+        if unite(&mut parent, &mut rank, *s1, *s2) {
+            // Add both directions for easy lookup
+            spanning_pairs.insert((*s1, *s2));
+            spanning_pairs.insert((*s2, *s1));
+            tree_edges += 1;
+            if tree_edges >= n_seqs - 1 {
+                break;
+            }
+        }
+    }
+
+    eprintln!(
+        "[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduction)",
+        tree_edges,
+        edges.len(),
+        if tree_edges > 0 { edges.len() / tree_edges } else { 0 }
+    );
+
+    spanning_pairs
+}
+
 /// Main entry point for transitive closure computation
 ///
 /// Computes connected components of aligned positions and builds
@@ -450,6 +560,20 @@ pub fn compute_transitive_closures(
     let start_time = std::time::Instant::now();
     eprintln!("[transclosure] Starting transitive closure computation");
     eprintln!("[transclosure] Using {num_threads} threads");
+
+    // Compute spanning tree for fast BFS discovery
+    let spanning_pairs = compute_spanning_tree(&aln_iitree, &seqidx);
+
+    // Pre-collect all intervals for orphan recovery + phase 2 union-find scan
+    let mut all_intervals: Vec<(u64, u64, PosT)> = Vec::with_capacity(aln_iitree.len());
+    aln_iitree.for_each_interval(|start, end, value| {
+        all_intervals.push((start, end, value));
+    })?;
+    eprintln!(
+        "[transclosure] {:.3}s Collected {} intervals for phase 2",
+        start_time.elapsed().as_secs_f64(),
+        all_intervals.len()
+    );
 
     // Open iitree writers (need write access)
     node_iitree.write().unwrap().open_writer()?;
@@ -503,20 +627,17 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // Atomic bitvector for positions seen in this chunk
+        // ================================================================
+        // PHASE 1: Fast BFS discovery using spanning tree edges only
+        // ================================================================
+        // Only follows spanning tree edges (N-1 pairs instead of N*(N-1)/2).
+        // No overlap collection (ovlp_q) — just discovers positions in curr_bv.
         let q_curr_bv = AtomicBitVec::new(input_seq_length);
 
-        // Work queues — sized to match C++ (2 << 16 = 131072)
+        // Work queues for BFS (no ovlp_q needed)
         let todo_in = Arc::new(ArrayQueue::new(131072));
         let todo_out = Arc::new(ArrayQueue::new(131072));
-        let ovlp_q = Arc::new(ArrayQueue::new(131072));
-
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
-        // Manager collects overlaps here (shared via Mutex for handoff, not hot-path)
-        let ovlp_collected: Arc<Mutex<Vec<(Match, bool)>>> = Arc::new(Mutex::new(Vec::new()));
-
-        // Active workers counter - workers increment when they pop work, decrement when done
-        // This prevents workers/manager from exiting while work is being processed
         let active_workers = Arc::new(AtomicU64::new(0));
 
         // Seed initial ranges
@@ -534,56 +655,47 @@ pub fn compute_transitive_closures(
             },
         );
 
-        // Parallel exploration using Rayon's work-stealing
-        // This eliminates the manager thread bottleneck and thread oversubscription
+        // Parallel BFS — discovery only, spanning tree edges only
         let aln_iitree_clone = Arc::clone(&aln_iitree);
+        let seqidx_clone = Arc::clone(&seqidx);
         let q_curr_bv_shared = Arc::new(q_curr_bv);
+        let spanning_pairs_ref = &spanning_pairs;
 
-        // Use Rayon's scope for dynamic task spawning with work-stealing
         rayon::scope(|s| {
-            // Spawn worker tasks (2x threads for better load balancing)
             for _worker_idx in 0..(num_threads * 2) {
                 let todo_out = Arc::clone(&todo_out);
                 let todo_in = Arc::clone(&todo_in);
-                let ovlp_q = Arc::clone(&ovlp_q);
                 let aln_iitree = Arc::clone(&aln_iitree_clone);
                 let q_curr_bv = Arc::clone(&q_curr_bv_shared);
                 let q_seen_bv_clone = q_seen_bv.clone();
+                let seqidx = Arc::clone(&seqidx_clone);
 
                 let active_workers_clone = Arc::clone(&active_workers);
                 s.spawn(move |_s| {
-                    // Process work items until queue is empty
                     let mut empty_count = 0u64;
                     loop {
-                        // Try to get work from todo_out
                         if let Some((pos, match_len)) = todo_out.pop() {
                             empty_count = 0;
-                            // Mark this worker as active BEFORE processing
                             active_workers_clone.fetch_add(1, Ordering::SeqCst);
                             let n = if !is_rev(pos) {
                                 offset(pos)
                             } else {
                                 offset(pos) - match_len + 1
                             };
-                            let range_start = n;
-                            let range_end = n + match_len;
 
-                            explore_overlaps(
-                                &Match::new(range_start, range_end, pos),
+                            explore_overlaps_discovery(
+                                &Match::new(n, n + match_len, pos),
                                 &q_seen_bv_clone,
                                 &q_curr_bv,
                                 &aln_iitree,
-                                &ovlp_q,
                                 &todo_in,
+                                &seqidx,
+                                spanning_pairs_ref,
                             );
-                            // Mark this worker as done AFTER processing
                             active_workers_clone.fetch_sub(1, Ordering::SeqCst);
                         } else {
-                            // No work available, yield to scheduler (like C++ 1ns sleep)
                             std::thread::yield_now();
                             empty_count += 1;
-
-                            // Only exit when: queues empty AND no active workers
                             let to_empty = todo_out.is_empty();
                             let ti_empty = todo_in.is_empty();
                             let no_active = active_workers_clone.load(Ordering::SeqCst) == 0;
@@ -591,36 +703,24 @@ pub fn compute_transitive_closures(
                                 if empty_count > 1000 {
                                     break;
                                 }
-                            } else {
-                                // Reset empty_count if workers are still active
-                                if !no_active {
-                                    empty_count = 0;
-                                }
+                            } else if !no_active {
+                                empty_count = 0;
                             }
                         }
                     }
                 });
             }
 
-            // Manager task: shuttle todo_in -> todo -> todo_out AND
-            // drain ovlp_q into a local Vec (matching C++ manager thread pattern).
-            // Draining ovlp_q keeps space available so workers never block long.
+            // Manager task — shuttles todo_in → todo → todo_out (no ovlp_q to drain)
             let active_workers_mgr = Arc::clone(&active_workers);
-            let ovlp_q_mgr = Arc::clone(&ovlp_q);
-            let ovlp_out = Arc::clone(&ovlp_collected);
             s.spawn(move |_s| {
-                let mut local_ovlp = Vec::new();
                 let mut empty_count = 0;
                 loop {
                     let mut did_work = false;
-
-                    // Transfer from todo_in to todo
                     while let Some(item) = todo_in.pop() {
                         todo.push_back(item);
                         did_work = true;
                     }
-
-                    // Transfer from todo to todo_out
                     while let Some(item) = todo.front().copied() {
                         if todo_out.push(item).is_ok() {
                             todo.pop_front();
@@ -629,46 +729,31 @@ pub fn compute_transitive_closures(
                             break;
                         }
                     }
-
-                    // Drain overlaps — keeps ovlp_q from filling up
-                    while let Some(o) = ovlp_q_mgr.pop() {
-                        local_ovlp.push(o);
-                        did_work = true;
-                    }
-
                     if did_work {
                         empty_count = 0;
                     } else {
                         std::thread::yield_now();
                         empty_count += 1;
-                        // Only exit when: queues empty AND no active workers
                         let no_active = active_workers_mgr.load(Ordering::SeqCst) == 0;
                         if empty_count > 1000
                             && todo.is_empty()
                             && todo_in.is_empty()
                             && todo_out.is_empty()
-                            && ovlp_q_mgr.is_empty()
                             && no_active
                         {
                             break;
                         }
-                        // Reset empty_count if workers are still active
                         if !no_active {
                             empty_count = 0;
                         }
                     }
                 }
-                // Hand collected overlaps back (single lock, not on hot path)
-                *ovlp_out.lock().unwrap() = local_ovlp;
             });
         });
 
-        // Retrieve overlaps collected by the manager task
-        let ovlp = std::mem::take(&mut *ovlp_collected.lock().unwrap());
-
         if show_progress {
             eprintln!(
-                "[transclosure] {:.3}s {:.2}% {}-{} union_find",
+                "[transclosure] {:.3}s {:.2}% {}-{} phase1_discovery_done",
                 start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
@@ -688,6 +773,62 @@ pub fn compute_transitive_closures(
         }
 
         let q_curr_bv_final = Arc::try_unwrap(q_curr_bv_shared).unwrap();
+
+        // ================================================================
+        // PHASE 1b: Orphan recovery — flood-fill from spanning tree result
+        // ================================================================
+        // The spanning tree BFS may miss positions only reachable via non-tree
+        // edges (due to indel gaps in tree alignments). Repeatedly scan all
+        // intervals: if source is discovered but target isn't, discover target.
+        // Converges when no new positions are found.
+        {
+            let mut recovery_round = 0u32;
+            loop {
+                let new_positions = AtomicU64::new(0);
+                // Parallel scan: check source, discover target
+                all_intervals.par_chunks(50000).for_each(|chunk| {
+                    for &(iv_start, iv_end, target_pos) in chunk {
+                        // Source in component?
+                        if !q_curr_bv_final.get(iv_start as usize, Ordering::Relaxed) {
+                            continue;
+                        }
+                        // Mark target positions not yet discovered
+                        let mut p = target_pos;
+                        for _ in iv_start..iv_end {
+                            let t = offset(p) as usize;
+                            if t < input_seq_length
+                                && !q_curr_bv_final.get(t, Ordering::Relaxed)
+                            {
+                                let was_set =
+                                    q_curr_bv_final.set(t, true, Ordering::AcqRel);
+                                if !was_set {
+                                    new_positions.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                            incr_pos(&mut p);
+                        }
+                    }
+                });
+                let found = new_positions.load(Ordering::Relaxed);
+                if found == 0 {
+                    break;
+                }
+                recovery_round += 1;
+                eprintln!(
+                    "[transclosure] {:.3}s orphan_recovery round {}: {} new positions",
+                    start_time.elapsed().as_secs_f64(),
+                    recovery_round,
+                    found
+                );
+            }
+            if recovery_round > 0 {
+                eprintln!(
+                    "[transclosure] {:.3}s orphan_recovery complete after {} rounds",
+                    start_time.elapsed().as_secs_f64(),
+                    recovery_round
+                );
+            }
+        }
 
         // Parallelize rank building (like C++ parallel_for for q_curr_bv_vec)
         // Process in parallel chunks of 100000 positions
@@ -741,34 +882,180 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // Union-find with direct array rank lookups
+        // ================================================================
+        // PHASE 2: Union-find via linear scan of ALL iitree intervals
+        // ================================================================
+        // Instead of using BFS-collected overlaps (which had 99.97% redundancy),
+        // scan all intervals in the iitree directly. For each interval that overlaps
+        // the discovered component, sample endpoints to check if the union-find
+        // already connects them. Skip blocks that are entirely redundant.
+        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
+
+        // q_curr_bv_final was already unwrapped above for rank building
+        let q_curr_bv_ref = &q_curr_bv_final;
+
         if show_progress {
-            let total_bases: u64 = ovlp.iter().map(|(m, _)| m.end - m.start).sum();
             eprintln!(
-                "[transclosure] {:.3}s {:.2}% {}-{} union_find_start ({} overlaps, {} bases)",
+                "[transclosure] {:.3}s {:.2}% {}-{} phase2_union_find_start",
                 start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
-                chunk_end,
-                ovlp.len(),
-                total_bases,
+                chunk_end
             );
         }
-        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
 
-        // Use chunked iteration with grain size 10000 (like C++ paryfor grain size)
-        ovlp.par_chunks(10000).for_each(|chunk| {
-            for s in chunk {
-                let r = &s.0;
-                let mut p = r.data;
-                for j in r.start..r.end {
-                    let j_rank = rank_table[j as usize] as usize;
-                    let p_rank = rank_table[offset(p) as usize] as usize;
-                    dsets.unite(j_rank, p_rank);
-                    incr_pos(&mut p);
+        let phase2_processed = AtomicU64::new(0);
+        let phase2_skipped = AtomicU64::new(0);
+        let phase2_irrelevant = AtomicU64::new(0);
+
+        // Process all pre-collected intervals in parallel
+        all_intervals.par_chunks(10000).for_each(|chunk| {
+            for &(start, end, target_pos) in chunk {
+                // Quick relevance check: is the source range in the current component?
+                // Check first position of source range
+                if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                    phase2_irrelevant.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+
+                let block_len = end - start;
+
+                // Sample endpoints: check if source and target already in same class
+                let can_skip = if block_len >= 3 && q_curr_bv_count > 0 {
+                    let mid = start + block_len / 2;
+                    let last = end - 1;
+                    let p_first = target_pos;
+                    let mut p_mid = target_pos;
+                    incr_pos_by(&mut p_mid, (mid - start) as usize);
+                    let mut p_last = target_pos;
+                    incr_pos_by(&mut p_last, (last - start) as usize);
+
+                    // Check that target positions are also in the component
+                    let t_first = offset(p_first) as usize;
+                    let t_mid = offset(p_mid) as usize;
+                    let t_last = offset(p_last) as usize;
+
+                    if !q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                        || !q_curr_bv_ref.get(t_mid, Ordering::Relaxed)
+                        || !q_curr_bv_ref.get(t_last, Ordering::Relaxed)
+                    {
+                        // Target not fully in component — skip (orphan handling later)
+                        false // don't skip, might need processing
+                    } else {
+                        dsets.find(rank_table[start as usize] as usize)
+                            == dsets.find(rank_table[t_first] as usize)
+                            && dsets.find(rank_table[mid as usize] as usize)
+                                == dsets.find(rank_table[t_mid] as usize)
+                            && dsets.find(rank_table[last as usize] as usize)
+                                == dsets.find(rank_table[t_last] as usize)
+                    }
+                } else if block_len >= 1 {
+                    let t_first = offset(target_pos) as usize;
+                    if !q_curr_bv_ref.get(t_first, Ordering::Relaxed) {
+                        false
+                    } else {
+                        dsets.find(rank_table[start as usize] as usize)
+                            == dsets.find(rank_table[t_first] as usize)
+                    }
+                } else {
+                    true
+                };
+
+                if can_skip {
+                    phase2_skipped.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    // Process this block: unite all source-target position pairs
+                    let mut p = target_pos;
+                    let mut any_processed = false;
+                    for j in start..end {
+                        let t = offset(p) as usize;
+                        if q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                            && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                        {
+                            let j_rank = rank_table[j as usize] as usize;
+                            let p_rank = rank_table[t] as usize;
+                            dsets.unite(j_rank, p_rank);
+                            any_processed = true;
+                        }
+                        incr_pos(&mut p);
+                    }
+                    if any_processed {
+                        phase2_processed.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        phase2_irrelevant.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         });
+
+        // Verification passes: iterate until convergence (no new merges found)
+        let mut total_recovered = 0u64;
+        let mut verify_round = 0u32;
+        loop {
+            let round_recovered = AtomicU64::new(0);
+            all_intervals.par_chunks(10000).for_each(|chunk| {
+                for &(start, end, target_pos) in chunk {
+                    if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                        continue;
+                    }
+                    // Check ALL positions exhaustively
+                    let mut needs_processing = false;
+                    let mut p = target_pos;
+                    for j in start..end {
+                        let t = offset(p) as usize;
+                        if q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                            && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                        {
+                            let j_rank = rank_table[j as usize] as usize;
+                            let p_rank = rank_table[t] as usize;
+                            if dsets.find(j_rank) != dsets.find(p_rank) {
+                                needs_processing = true;
+                                break;
+                            }
+                        }
+                        incr_pos(&mut p);
+                    }
+                    if needs_processing {
+                        round_recovered.fetch_add(1, Ordering::Relaxed);
+                        let mut p = target_pos;
+                        for j in start..end {
+                            let t = offset(p) as usize;
+                            if q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                            {
+                                let j_rank = rank_table[j as usize] as usize;
+                                let p_rank = rank_table[t] as usize;
+                                dsets.unite(j_rank, p_rank);
+                            }
+                            incr_pos(&mut p);
+                        }
+                    }
+                }
+            });
+            let recovered = round_recovered.load(Ordering::Relaxed);
+            total_recovered += recovered;
+            verify_round += 1;
+            if recovered == 0 {
+                break;
+            }
+            eprintln!(
+                "[transclosure] {:.3}s phase2 verify round {}: {} blocks recovered",
+                start_time.elapsed().as_secs_f64(),
+                verify_round,
+                recovered
+            );
+        }
+
+        eprintln!(
+            "[transclosure] {:.3}s phase2: {} intervals, {} processed, {} skipped, {} irrelevant, {} recovered ({} verify rounds)",
+            start_time.elapsed().as_secs_f64(),
+            all_intervals.len(),
+            phase2_processed.load(Ordering::Relaxed),
+            phase2_skipped.load(Ordering::Relaxed),
+            phase2_irrelevant.load(Ordering::Relaxed),
+            total_recovered,
+            verify_round,
+        );
 
         if show_progress {
             eprintln!(
