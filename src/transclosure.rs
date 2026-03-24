@@ -321,6 +321,63 @@ fn block_needs_unite(
     false
 }
 
+/// Logarithmic sampling to check if a block is likely redundant (all position pairs
+/// already in the same equivalence class). Samples at binary subdivision points:
+/// offsets 0, L-1, L/2, L/4, 3L/4, L/8, 3L/8, 5L/8, 7L/8, ...
+/// Returns true if all sampled pairs are in the same class (block can be skipped).
+#[inline]
+fn block_can_skip(
+    start: u64,
+    end: u64,
+    target_pos: PosT,
+    q_curr_bv: &AtomicBitVec,
+    rank_table: &[u32],
+    dsets: &DisjointSetsAsm,
+    input_seq_length: usize,
+) -> bool {
+    let block_len = end - start;
+    if block_len == 0 {
+        return true;
+    }
+
+    // Check a position pair at the given offset within the block
+    let check = |off: u64| -> bool {
+        let s = (start + off) as usize;
+        let mut tp = target_pos;
+        incr_pos_by(&mut tp, off as usize);
+        let t = offset(tp) as usize;
+        if t >= input_seq_length
+            || !q_curr_bv.get(s, Ordering::Relaxed)
+            || !q_curr_bv.get(t, Ordering::Relaxed)
+        {
+            return false; // can't confirm skip — must process
+        }
+        dsets.find(rank_table[s] as usize) == dsets.find(rank_table[t] as usize)
+    };
+
+    // Always check endpoints
+    if !check(0) || (block_len > 1 && !check(block_len - 1)) {
+        return false;
+    }
+
+    // Binary subdivision: check midpoints at increasing resolution
+    // Generates: L/2, L/4, 3L/4, L/8, 3L/8, 5L/8, 7L/8
+    // Subdivide until step < 32 (~18 sample points for a 582bp block)
+    let mut step = block_len / 2;
+    while step >= 32 {
+        let mut off = step;
+        while off < block_len {
+            if !check(off) {
+                return false;
+            }
+            off += step * 2;
+        }
+        step /= 2;
+    }
+
+    true
+}
+
 /// Explore overlaps from alignment iitree — discovery only, no ovlp_q collection.
 /// Only follows edges in the spanning tree for fast BFS.
 fn explore_overlaps_discovery(
@@ -953,45 +1010,7 @@ pub fn compute_transitive_closures(
                     }
                     phase2_checked.fetch_add(1, Ordering::Relaxed);
 
-                    let block_len = end - start;
-
-                    // Sample 3 positions to check if block is redundant
-                    let can_skip = if block_len >= 3 {
-                        let mid = start + block_len / 2;
-                        let last = end - 1;
-                        let p_first = target_pos;
-                        let mut p_mid = target_pos;
-                        incr_pos_by(&mut p_mid, (mid - start) as usize);
-                        let mut p_last = target_pos;
-                        incr_pos_by(&mut p_last, (last - start) as usize);
-
-                        let t_first = offset(p_first) as usize;
-                        let t_mid = offset(p_mid) as usize;
-                        let t_last = offset(p_last) as usize;
-
-                        t_first < input_seq_length
-                            && t_mid < input_seq_length
-                            && t_last < input_seq_length
-                            && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
-                            && q_curr_bv_ref.get(t_mid, Ordering::Relaxed)
-                            && q_curr_bv_ref.get(t_last, Ordering::Relaxed)
-                            && dsets.find(rank_table[start as usize] as usize)
-                                == dsets.find(rank_table[t_first] as usize)
-                            && dsets.find(rank_table[mid as usize] as usize)
-                                == dsets.find(rank_table[t_mid] as usize)
-                            && dsets.find(rank_table[last as usize] as usize)
-                                == dsets.find(rank_table[t_last] as usize)
-                    } else if block_len >= 1 {
-                        let t_first = offset(target_pos) as usize;
-                        t_first < input_seq_length
-                            && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
-                            && dsets.find(rank_table[start as usize] as usize)
-                                == dsets.find(rank_table[t_first] as usize)
-                    } else {
-                        true
-                    };
-
-                    if can_skip {
+                    if block_can_skip(start, end, target_pos, q_curr_bv_ref, &rank_table, &dsets, input_seq_length) {
                         phase2_skipped.fetch_add(1, Ordering::Relaxed);
                     } else {
                         phase2_processed.fetch_add(1, Ordering::Relaxed);
