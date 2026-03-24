@@ -474,7 +474,7 @@ fn explore_overlaps_discovery(
     aln_iitree: &AdaptiveTree<u64, PosT>,
     todo_in: &RangeAtomicQueue,
     seqidx: &SeqIndex,
-    spanning_pairs: &std::collections::HashSet<(usize, usize)>,
+    spanning_adj: &SpanningTreeAdj,
 ) {
     let source_seq = seqidx.seq_id_at(b.start).unwrap_or(0);
 
@@ -482,7 +482,7 @@ fn explore_overlaps_discovery(
         .overlap(b.start, b.end, |_idx, start, end, pos| {
             // Filter: only follow spanning tree edges
             let target_seq = seqidx.seq_id_at(offset(pos)).unwrap_or(0);
-            if !spanning_pairs.contains(&(source_seq, target_seq)) {
+            if !spanning_adj.contains(source_seq, target_seq) {
                 return;
             }
 
@@ -635,15 +635,40 @@ fn write_graph_chunk(
     Ok(())
 }
 
+/// Adjacency list for spanning tree: adj[seq_id] contains the neighbor seq_ids.
+/// Supports O(degree) lookup — much faster than HashSet for small degree (~2-3).
+struct SpanningTreeAdj {
+    adj: Vec<Vec<usize>>,
+}
+
+impl SpanningTreeAdj {
+    fn new(n_seqs: usize) -> Self {
+        SpanningTreeAdj {
+            adj: vec![Vec::new(); n_seqs + 1],
+        }
+    }
+
+    fn add_edge(&mut self, a: usize, b: usize) {
+        self.adj[a].push(b);
+        self.adj[b].push(a);
+    }
+
+    #[inline]
+    fn contains(&self, source: usize, target: usize) -> bool {
+        // Degree is ~2-3 for a tree, so linear scan is faster than hashing
+        self.adj[source].contains(&target)
+    }
+}
+
 /// Compute a maximum-weight spanning tree of sequence pairs from the alignment iitree.
 ///
 /// Scans all intervals to compute total aligned bases per (source_seq, target_seq) pair,
 /// then runs Kruskal's algorithm to find the spanning tree that maximizes coverage.
-/// Returns a HashSet of (seq_id, seq_id) pairs (both directions included).
+/// Returns an adjacency list for O(1) lookup by source sequence.
 fn compute_spanning_tree(
     aln_iitree: &AdaptiveTree<u64, PosT>,
     seqidx: &SeqIndex,
-) -> std::collections::HashSet<(usize, usize)> {
+) -> SpanningTreeAdj {
 
     let n_seqs = seqidx.n_seqs();
 
@@ -696,14 +721,12 @@ fn compute_spanning_tree(
         true
     }
 
-    let mut spanning_pairs = std::collections::HashSet::new();
+    let mut spanning_adj = SpanningTreeAdj::new(n_seqs);
     let mut tree_edges = 0;
 
     for ((s1, s2), _weight) in &edges {
         if unite(&mut parent, &mut rank, *s1, *s2) {
-            // Add both directions for easy lookup
-            spanning_pairs.insert((*s1, *s2));
-            spanning_pairs.insert((*s2, *s1));
+            spanning_adj.add_edge(*s1, *s2);
             tree_edges += 1;
             if tree_edges >= n_seqs - 1 {
                 break;
@@ -718,7 +741,7 @@ fn compute_spanning_tree(
         if tree_edges > 0 { edges.len() / tree_edges } else { 0 }
     );
 
-    spanning_pairs
+    spanning_adj
 }
 
 /// Main entry point for transitive closure computation
