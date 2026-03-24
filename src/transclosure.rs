@@ -1156,6 +1156,17 @@ pub fn compute_transitive_closures(
             if hooks == 0 {
                 break;
             }
+
+            // Aggressive pointer jumping to fully flatten the label tree.
+            // Makes subsequent rounds converge faster by ensuring all labels
+            // point directly to roots before the next round's skip checks.
+            if hooks < 10_000 {
+                for _ in 0..20 {
+                    if labels.pointer_jump() == 0 {
+                        break;
+                    }
+                }
+            }
         }
 
         eprintln!(
