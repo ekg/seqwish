@@ -75,6 +75,25 @@ impl LabelProp {
         changed.load(Ordering::Relaxed)
     }
 
+    /// Hook a contiguous range: for i in 0..len, hook(a+i, b+i).
+    /// Exploits the fact that ranks within a sequence are consecutive.
+    /// Returns the number of hooks that actually changed a label.
+    fn hook_range(&self, a_start: usize, b_start: usize, len: usize) -> u64 {
+        let mut changed = 0u64;
+        for i in 0..len {
+            let ai = a_start + i;
+            let bi = b_start + i;
+            let la = self.parent[ai].load(Ordering::Relaxed);
+            let lb = self.parent[bi].load(Ordering::Relaxed);
+            if la != lb {
+                let (lo, hi) = if la < lb { (la, lb) } else { (lb, la) };
+                self.parent[hi as usize].store(lo, Ordering::Relaxed);
+                changed += 1;
+            }
+        }
+        changed
+    }
+
     /// Full pointer chase to root (for final readout, not used during rounds)
     fn find(&self, mut i: usize) -> u32 {
         loop {
@@ -1077,23 +1096,42 @@ pub fn compute_transitive_closures(
                             return;
                         }
 
-                        // No block-level skipping: hook is a no-op when labels match
-
-                        // Process all positions in the block
-                        let mut p = target_pos;
-                        for j in start..end {
-                            let t = offset(p) as usize;
-                            if t < input_seq_length
-                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                            {
-                                let s_rank = rank_table[j as usize] as usize;
-                                let t_rank = rank_table[t] as usize;
-                                if labels.hook(s_rank, t_rank) {
-                                    hooks_made.fetch_add(1, Ordering::Relaxed);
-                                }
+                        // Process block using range hook when possible.
+                        // If both source and target first positions are in curr_bv,
+                        // use the fast rank-range path (consecutive ranks within a sequence).
+                        let t_first = offset(target_pos) as usize;
+                        let block_len = end - start;
+                        if t_first < input_seq_length
+                            && q_curr_bv_ref.get(start as usize, Ordering::Relaxed)
+                            && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                        {
+                            let s_rank_start = rank_table[start as usize] as usize;
+                            let t_rank_start = rank_table[t_first] as usize;
+                            let changed = labels.hook_range(
+                                s_rank_start,
+                                t_rank_start,
+                                block_len as usize,
+                            );
+                            if changed > 0 {
+                                hooks_made.fetch_add(changed, Ordering::Relaxed);
                             }
-                            incr_pos(&mut p);
+                        } else {
+                            // Fallback: position-by-position for blocks with gaps
+                            let mut p = target_pos;
+                            for j in start..end {
+                                let t = offset(p) as usize;
+                                if t < input_seq_length
+                                    && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                    && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                                {
+                                    let s_rank = rank_table[j as usize] as usize;
+                                    let t_rank = rank_table[t] as usize;
+                                    if labels.hook(s_rank, t_rank) {
+                                        hooks_made.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                                incr_pos(&mut p);
+                            }
                         }
                     })
                     .ok();
