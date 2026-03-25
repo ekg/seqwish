@@ -9,7 +9,6 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
-use crate::dset64_asm::DisjointSetsAsm;
 use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, AtomicU64};
@@ -350,118 +349,6 @@ fn find_component_sequences(seqidx: &SeqIndex, bv: &AtomicBitVec) -> Vec<usize> 
         .collect()
 }
 
-/// Walk all positions in a match block, applying union-find for positions in the component.
-/// Returns true if any unite was performed.
-#[inline]
-fn unite_block(
-    start: u64,
-    end: u64,
-    target_pos: PosT,
-    q_curr_bv: &AtomicBitVec,
-    rank_table: &[u32],
-    dsets: &DisjointSetsAsm,
-    input_seq_length: usize,
-) -> bool {
-    let mut any = false;
-    let mut p = target_pos;
-    for j in start..end {
-        let t = offset(p) as usize;
-        if t < input_seq_length
-            && q_curr_bv.get(j as usize, Ordering::Relaxed)
-            && q_curr_bv.get(t, Ordering::Relaxed)
-        {
-            dsets.unite(rank_table[j as usize] as usize, rank_table[t] as usize);
-            any = true;
-        }
-        incr_pos(&mut p);
-    }
-    any
-}
-
-/// Check if a block needs processing by checking if any position pair is in different classes.
-/// Returns true if at least one pair has find(source) != find(target).
-#[inline]
-fn block_needs_unite(
-    start: u64,
-    end: u64,
-    target_pos: PosT,
-    q_curr_bv: &AtomicBitVec,
-    rank_table: &[u32],
-    dsets: &DisjointSetsAsm,
-    input_seq_length: usize,
-) -> bool {
-    let mut p = target_pos;
-    for j in start..end {
-        let t = offset(p) as usize;
-        if t < input_seq_length
-            && q_curr_bv.get(j as usize, Ordering::Relaxed)
-            && q_curr_bv.get(t, Ordering::Relaxed)
-            && dsets.find(rank_table[j as usize] as usize) != dsets.find(rank_table[t] as usize)
-        {
-            return true;
-        }
-        incr_pos(&mut p);
-    }
-    false
-}
-
-/// Logarithmic sampling to check if a block is likely redundant (all position pairs
-/// already in the same equivalence class). Samples at binary subdivision points:
-/// offsets 0, L-1, L/2, L/4, 3L/4, L/8, 3L/8, 5L/8, 7L/8, ...
-/// Returns true if all sampled pairs are in the same class (block can be skipped).
-#[inline]
-fn block_can_skip(
-    start: u64,
-    end: u64,
-    target_pos: PosT,
-    q_curr_bv: &AtomicBitVec,
-    rank_table: &[u32],
-    dsets: &DisjointSetsAsm,
-    input_seq_length: usize,
-) -> bool {
-    let block_len = end - start;
-    if block_len == 0 {
-        return true;
-    }
-
-    // Check a position pair at the given offset within the block
-    let check = |off: u64| -> bool {
-        let s = (start + off) as usize;
-        let mut tp = target_pos;
-        incr_pos_by(&mut tp, off as usize);
-        let t = offset(tp) as usize;
-        if t >= input_seq_length
-            || !q_curr_bv.get(s, Ordering::Relaxed)
-            || !q_curr_bv.get(t, Ordering::Relaxed)
-        {
-            return false; // can't confirm skip — must process
-        }
-        dsets.find(rank_table[s] as usize) == dsets.find(rank_table[t] as usize)
-    };
-
-    // Always check endpoints
-    if !check(0) || (block_len > 1 && !check(block_len - 1)) {
-        return false;
-    }
-
-    // Binary subdivision: check midpoints at increasing resolution
-    // Generates: L/2, L/4, 3L/4, L/8, 3L/8, 5L/8, 7L/8
-    // Subdivide until step < 32 (~18 sample points for a 582bp block)
-    let mut step = block_len / 2;
-    while step >= 32 {
-        let mut off = step;
-        while off < block_len {
-            if !check(off) {
-                return false;
-            }
-            off += step * 2;
-        }
-        step /= 2;
-    }
-
-    true
-}
-
 /// Explore overlaps from alignment iitree — discovery only, no ovlp_q collection.
 /// Only follows edges in the spanning tree for fast BFS.
 fn explore_overlaps_discovery(
@@ -667,6 +554,9 @@ fn compute_spanning_tree(
     seqidx: &SeqIndex,
 ) -> SpanningTreeAdj {
     let n_seqs = seqidx.n_seqs();
+    if n_seqs <= 1 {
+        return SpanningTreeAdj::new(n_seqs);
+    }
 
     // Collect pair weights: total aligned bases per (seq_i, seq_j) pair
     let mut pair_weights: HashMap<(usize, usize), u64> = HashMap::new();
