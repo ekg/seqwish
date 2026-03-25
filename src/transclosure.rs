@@ -6,19 +6,104 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
-use crate::dset64_asm::DisjointSetsAsm;
 use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
-use std::sync::atomic::AtomicU64;
-// Rank9Sel no longer needed — replaced by direct rank_table lookup
+use std::sync::atomic::{AtomicU32, AtomicU64};
 
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
 use crate::pos::{decr_pos, decr_pos_by, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
 use crate::seqindex::SeqIndex;
+
+/// Label propagation for connected components (replaces CAS-based union-find).
+///
+/// Uses the Shiloach-Vishkin hook + pointer-jump approach:
+/// - Hook: for each edge (u,v), parent[max(parent[u], parent[v])] = min(parent[u], parent[v])
+/// - Pointer jump: parent[i] = parent[parent[i]]
+/// - Repeat until convergence
+///
+/// Much cheaper per operation than CAS-based union-find: simple array read/write
+/// with Relaxed ordering (free on x86) vs CMPXCHG16B (~100 cycles under contention).
+struct LabelProp {
+    parent: Vec<AtomicU32>,
+}
+
+impl LabelProp {
+    fn new(size: usize) -> Self {
+        LabelProp {
+            parent: (0..size).map(|i| AtomicU32::new(i as u32)).collect(),
+        }
+    }
+
+    /// Get the current label (parent) for element i
+    #[inline]
+    fn label(&self, i: usize) -> u32 {
+        self.parent[i].load(Ordering::Relaxed)
+    }
+
+    /// Hook: if labels differ, point the higher label to the lower one.
+    /// Returns true if a change was made.
+    #[inline]
+    fn hook(&self, i: usize, j: usize) -> bool {
+        let li = self.parent[i].load(Ordering::Relaxed);
+        let lj = self.parent[j].load(Ordering::Relaxed);
+        if li == lj {
+            return false;
+        }
+        let (lo, hi) = if li < lj { (li, lj) } else { (lj, li) };
+        // Point the higher-labeled root toward the lower label
+        self.parent[hi as usize].store(lo, Ordering::Relaxed);
+        true
+    }
+
+    /// Pointer jumping pass: parent[i] = parent[parent[i]] for all elements.
+    /// Returns the number of elements that changed.
+    fn pointer_jump(&self) -> u64 {
+        let changed = AtomicU64::new(0);
+        self.parent.par_iter().for_each(|p| {
+            let cur = p.load(Ordering::Relaxed);
+            let grandparent = self.parent[cur as usize].load(Ordering::Relaxed);
+            if cur != grandparent {
+                p.store(grandparent, Ordering::Relaxed);
+                changed.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        changed.load(Ordering::Relaxed)
+    }
+
+    /// Hook a contiguous range: for i in 0..len, hook(a+i, b+i).
+    /// Exploits the fact that ranks within a sequence are consecutive.
+    /// Returns the number of hooks that actually changed a label.
+    fn hook_range(&self, a_start: usize, b_start: usize, len: usize) -> u64 {
+        let mut changed = 0u64;
+        for i in 0..len {
+            let ai = a_start + i;
+            let bi = b_start + i;
+            let la = self.parent[ai].load(Ordering::Relaxed);
+            let lb = self.parent[bi].load(Ordering::Relaxed);
+            if la != lb {
+                let (lo, hi) = if la < lb { (la, lb) } else { (lb, la) };
+                self.parent[hi as usize].store(lo, Ordering::Relaxed);
+                changed += 1;
+            }
+        }
+        changed
+    }
+
+    /// Full pointer chase to root (for final readout, not used during rounds)
+    fn find(&self, mut i: usize) -> u32 {
+        loop {
+            let p = self.parent[i].load(Ordering::Relaxed);
+            if p as usize == i {
+                return p;
+            }
+            i = p as usize;
+        }
+    }
+}
 
 /// Thomas Wang's 64-bit integer hash function
 ///
@@ -67,9 +152,8 @@ impl Match {
     }
 }
 
-/// Type aliases for atomic queues and bitvector
+/// Type alias for BFS work queue
 type RangeAtomicQueue = ArrayQueue<(PosT, u64)>;
-type OverlapAtomicQueue = ArrayQueue<(Match, bool)>;
 
 /// Atomic bitvector wrapper for thread-safe bit operations
 /// Uses Vec<AtomicU64> with fetch_or for truly atomic bit operations
@@ -252,47 +336,41 @@ where
     }
 }
 
-/// Handle a range by marking it in the bitvector and adding to queues
-fn handle_range(
-    s: Match,
-    curr_bv: &AtomicBitVec,
-    ovlp_q: &OverlapAtomicQueue,
-    todo_in: &RangeAtomicQueue,
-) {
-    let mut all_set_there = true;
-    let mut n = s.data;
-    for _i in s.start..s.end {
-        // Set the bit and check if it was already set (using truly atomic fetch_or)
-        let was_set = curr_bv.set(offset(n) as usize, true, Ordering::AcqRel);
-        all_set_there = all_set_there && was_set;
-        incr_pos(&mut n);
-    }
-    // Spin until push succeeds — the manager drains the queue continuously
-    // so space becomes available quickly. Never silently drop overlaps.
-    while ovlp_q.push((s, is_rev(s.data))).is_err() {
-        std::thread::yield_now();
-    }
-    if !all_set_there {
-        let item = (make_pos_t(offset(s.data), is_rev(s.data)), s.end - s.start);
-        while todo_in.push(item).is_err() {
-            std::thread::yield_now();
-        }
-    }
+/// Find sequences with at least one discovered position in the bitvector.
+fn find_component_sequences(seqidx: &SeqIndex, bv: &AtomicBitVec) -> Vec<usize> {
+    (1..=seqidx.n_seqs())
+        .filter(|&seq_id| {
+            if let Some(off) = seqidx.nth_seq_offset(seq_id) {
+                bv.get(off as usize, Ordering::Relaxed)
+            } else {
+                false
+            }
+        })
+        .collect()
 }
 
-/// Explore overlaps from alignment iitree and handle them
-fn explore_overlaps(
+/// Explore overlaps from alignment iitree — discovery only, no ovlp_q collection.
+/// Only follows edges in the spanning tree for fast BFS.
+fn explore_overlaps_discovery(
     b: &Match,
     seen_bv: &[bool],
     curr_bv: &AtomicBitVec,
     aln_iitree: &AdaptiveTree<u64, PosT>,
-    ovlp_q: &OverlapAtomicQueue,
     todo_in: &RangeAtomicQueue,
+    seqidx: &SeqIndex,
+    spanning_adj: &SpanningTreeAdj,
 ) {
+    let source_seq = seqidx.seq_id_at(b.start).unwrap_or(0);
+
     aln_iitree
         .overlap(b.start, b.end, |_idx, start, end, pos| {
+            // Filter: only follow spanning tree edges
+            let target_seq = seqidx.seq_id_at(offset(pos)).unwrap_or(0);
+            if !spanning_adj.contains(source_seq, target_seq) {
+                return;
+            }
+
             let mut r = Match::new(start, end, pos);
-            // Trim the range to fit within b
             if b.start > r.start {
                 let trim_from_start = b.start - r.start;
                 r.start += trim_from_start;
@@ -304,10 +382,24 @@ fn explore_overlaps(
             }
             assert!(r.start < r.end);
             for_each_fresh_range(&r, seen_bv, |s| {
-                handle_range(s, curr_bv, ovlp_q, todo_in);
+                // Discovery only: set curr_bv bits, push to todo_in if new
+                // No ovlp_q push — union-find is handled in phase 2
+                let mut all_set_there = true;
+                let mut n = s.data;
+                for _i in s.start..s.end {
+                    let was_set = curr_bv.set(offset(n) as usize, true, Ordering::AcqRel);
+                    all_set_there = all_set_there && was_set;
+                    incr_pos(&mut n);
+                }
+                if !all_set_there {
+                    let item = (make_pos_t(offset(s.data), is_rev(s.data)), s.end - s.start);
+                    while todo_in.push(item).is_err() {
+                        std::thread::yield_now();
+                    }
+                }
             });
         })
-        .ok(); // Ignore Result
+        .ok();
 }
 
 /// Write a chunk of the graph sequence from disjoint sets
@@ -427,6 +519,121 @@ fn write_graph_chunk(
     Ok(())
 }
 
+/// Adjacency list for spanning tree: adj[seq_id] contains the neighbor seq_ids.
+/// Supports O(degree) lookup — much faster than HashSet for small degree (~2-3).
+struct SpanningTreeAdj {
+    adj: Vec<Vec<usize>>,
+}
+
+impl SpanningTreeAdj {
+    fn new(n_seqs: usize) -> Self {
+        SpanningTreeAdj {
+            adj: vec![Vec::new(); n_seqs + 1],
+        }
+    }
+
+    fn add_edge(&mut self, a: usize, b: usize) {
+        self.adj[a].push(b);
+        self.adj[b].push(a);
+    }
+
+    #[inline]
+    fn contains(&self, source: usize, target: usize) -> bool {
+        // Degree is ~2-3 for a tree, so linear scan is faster than hashing
+        self.adj[source].contains(&target)
+    }
+}
+
+/// Compute a maximum-weight spanning tree of sequence pairs from the alignment iitree.
+///
+/// Scans all intervals to compute total aligned bases per (source_seq, target_seq) pair,
+/// then runs Kruskal's algorithm to find the spanning tree that maximizes coverage.
+/// Returns an adjacency list for O(1) lookup by source sequence.
+fn compute_spanning_tree(
+    aln_iitree: &AdaptiveTree<u64, PosT>,
+    seqidx: &SeqIndex,
+) -> SpanningTreeAdj {
+    let n_seqs = seqidx.n_seqs();
+    if n_seqs <= 1 {
+        return SpanningTreeAdj::new(n_seqs);
+    }
+
+    // Collect pair weights: total aligned bases per (seq_i, seq_j) pair
+    let mut pair_weights: HashMap<(usize, usize), u64> = HashMap::new();
+    aln_iitree
+        .for_each_interval(|start, end, target_pos| {
+            let source_seq = seqidx.seq_id_at(start).unwrap_or(0);
+            let target_seq = seqidx.seq_id_at(offset(target_pos)).unwrap_or(0);
+            if source_seq != target_seq && source_seq > 0 && target_seq > 0 {
+                let canonical = if source_seq <= target_seq {
+                    (source_seq, target_seq)
+                } else {
+                    (target_seq, source_seq)
+                };
+                *pair_weights.entry(canonical).or_insert(0) += end - start;
+            }
+        })
+        .ok();
+
+    // Sort pairs by weight descending (max-weight spanning tree)
+    let mut edges: Vec<((usize, usize), u64)> = pair_weights.into_iter().collect();
+    edges.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+
+    // Kruskal's algorithm with simple union-find
+    let mut parent: Vec<usize> = (0..=n_seqs).collect();
+    let mut rank: Vec<usize> = vec![0; n_seqs + 1];
+
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        if parent[x] != x {
+            parent[x] = find(parent, parent[x]);
+        }
+        parent[x]
+    }
+
+    fn unite(parent: &mut [usize], rank: &mut [usize], x: usize, y: usize) -> bool {
+        let rx = find(parent, x);
+        let ry = find(parent, y);
+        if rx == ry {
+            return false;
+        }
+        if rank[rx] < rank[ry] {
+            parent[rx] = ry;
+        } else if rank[rx] > rank[ry] {
+            parent[ry] = rx;
+        } else {
+            parent[ry] = rx;
+            rank[rx] += 1;
+        }
+        true
+    }
+
+    let mut spanning_adj = SpanningTreeAdj::new(n_seqs);
+    let mut tree_edges = 0;
+
+    for ((s1, s2), _weight) in &edges {
+        if unite(&mut parent, &mut rank, *s1, *s2) {
+            spanning_adj.add_edge(*s1, *s2);
+            tree_edges += 1;
+            if tree_edges >= n_seqs - 1 {
+                break;
+            }
+        }
+    }
+
+    eprintln!(
+        "[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduction)",
+        tree_edges,
+        edges.len(),
+        if tree_edges > 0 {
+            edges.len() / tree_edges
+        } else {
+            0
+        }
+    );
+
+    spanning_adj
+}
+
 /// Main entry point for transitive closure computation
 ///
 /// Computes connected components of aligned positions and builds
@@ -450,6 +657,9 @@ pub fn compute_transitive_closures(
     let start_time = std::time::Instant::now();
     eprintln!("[transclosure] Starting transitive closure computation");
     eprintln!("[transclosure] Using {num_threads} threads");
+
+    // Compute spanning tree for fast BFS discovery
+    let spanning_pairs = compute_spanning_tree(&aln_iitree, &seqidx);
 
     // Open iitree writers (need write access)
     node_iitree.write().unwrap().open_writer()?;
@@ -503,20 +713,17 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // Atomic bitvector for positions seen in this chunk
+        // ================================================================
+        // PHASE 1: Fast BFS discovery using spanning tree edges only
+        // ================================================================
+        // Only follows spanning tree edges (N-1 pairs instead of N*(N-1)/2).
+        // No overlap collection (ovlp_q) — just discovers positions in curr_bv.
         let q_curr_bv = AtomicBitVec::new(input_seq_length);
 
-        // Work queues — sized to match C++ (2 << 16 = 131072)
+        // Work queues for BFS (no ovlp_q needed)
         let todo_in = Arc::new(ArrayQueue::new(131072));
         let todo_out = Arc::new(ArrayQueue::new(131072));
-        let ovlp_q = Arc::new(ArrayQueue::new(131072));
-
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
-        // Manager collects overlaps here (shared via Mutex for handoff, not hot-path)
-        let ovlp_collected: Arc<Mutex<Vec<(Match, bool)>>> = Arc::new(Mutex::new(Vec::new()));
-
-        // Active workers counter - workers increment when they pop work, decrement when done
-        // This prevents workers/manager from exiting while work is being processed
         let active_workers = Arc::new(AtomicU64::new(0));
 
         // Seed initial ranges
@@ -534,56 +741,47 @@ pub fn compute_transitive_closures(
             },
         );
 
-        // Parallel exploration using Rayon's work-stealing
-        // This eliminates the manager thread bottleneck and thread oversubscription
+        // Parallel BFS — discovery only, spanning tree edges only
         let aln_iitree_clone = Arc::clone(&aln_iitree);
+        let seqidx_clone = Arc::clone(&seqidx);
         let q_curr_bv_shared = Arc::new(q_curr_bv);
+        let spanning_pairs_ref = &spanning_pairs;
 
-        // Use Rayon's scope for dynamic task spawning with work-stealing
         rayon::scope(|s| {
-            // Spawn worker tasks (2x threads for better load balancing)
             for _worker_idx in 0..(num_threads * 2) {
                 let todo_out = Arc::clone(&todo_out);
                 let todo_in = Arc::clone(&todo_in);
-                let ovlp_q = Arc::clone(&ovlp_q);
                 let aln_iitree = Arc::clone(&aln_iitree_clone);
                 let q_curr_bv = Arc::clone(&q_curr_bv_shared);
                 let q_seen_bv_clone = q_seen_bv.clone();
+                let seqidx = Arc::clone(&seqidx_clone);
 
                 let active_workers_clone = Arc::clone(&active_workers);
                 s.spawn(move |_s| {
-                    // Process work items until queue is empty
                     let mut empty_count = 0u64;
                     loop {
-                        // Try to get work from todo_out
                         if let Some((pos, match_len)) = todo_out.pop() {
                             empty_count = 0;
-                            // Mark this worker as active BEFORE processing
                             active_workers_clone.fetch_add(1, Ordering::SeqCst);
                             let n = if !is_rev(pos) {
                                 offset(pos)
                             } else {
                                 offset(pos) - match_len + 1
                             };
-                            let range_start = n;
-                            let range_end = n + match_len;
 
-                            explore_overlaps(
-                                &Match::new(range_start, range_end, pos),
+                            explore_overlaps_discovery(
+                                &Match::new(n, n + match_len, pos),
                                 &q_seen_bv_clone,
                                 &q_curr_bv,
                                 &aln_iitree,
-                                &ovlp_q,
                                 &todo_in,
+                                &seqidx,
+                                spanning_pairs_ref,
                             );
-                            // Mark this worker as done AFTER processing
                             active_workers_clone.fetch_sub(1, Ordering::SeqCst);
                         } else {
-                            // No work available, yield to scheduler (like C++ 1ns sleep)
                             std::thread::yield_now();
                             empty_count += 1;
-
-                            // Only exit when: queues empty AND no active workers
                             let to_empty = todo_out.is_empty();
                             let ti_empty = todo_in.is_empty();
                             let no_active = active_workers_clone.load(Ordering::SeqCst) == 0;
@@ -591,36 +789,24 @@ pub fn compute_transitive_closures(
                                 if empty_count > 1000 {
                                     break;
                                 }
-                            } else {
-                                // Reset empty_count if workers are still active
-                                if !no_active {
-                                    empty_count = 0;
-                                }
+                            } else if !no_active {
+                                empty_count = 0;
                             }
                         }
                     }
                 });
             }
 
-            // Manager task: shuttle todo_in -> todo -> todo_out AND
-            // drain ovlp_q into a local Vec (matching C++ manager thread pattern).
-            // Draining ovlp_q keeps space available so workers never block long.
+            // Manager task — shuttles todo_in → todo → todo_out (no ovlp_q to drain)
             let active_workers_mgr = Arc::clone(&active_workers);
-            let ovlp_q_mgr = Arc::clone(&ovlp_q);
-            let ovlp_out = Arc::clone(&ovlp_collected);
             s.spawn(move |_s| {
-                let mut local_ovlp = Vec::new();
                 let mut empty_count = 0;
                 loop {
                     let mut did_work = false;
-
-                    // Transfer from todo_in to todo
                     while let Some(item) = todo_in.pop() {
                         todo.push_back(item);
                         did_work = true;
                     }
-
-                    // Transfer from todo to todo_out
                     while let Some(item) = todo.front().copied() {
                         if todo_out.push(item).is_ok() {
                             todo.pop_front();
@@ -629,46 +815,31 @@ pub fn compute_transitive_closures(
                             break;
                         }
                     }
-
-                    // Drain overlaps — keeps ovlp_q from filling up
-                    while let Some(o) = ovlp_q_mgr.pop() {
-                        local_ovlp.push(o);
-                        did_work = true;
-                    }
-
                     if did_work {
                         empty_count = 0;
                     } else {
                         std::thread::yield_now();
                         empty_count += 1;
-                        // Only exit when: queues empty AND no active workers
                         let no_active = active_workers_mgr.load(Ordering::SeqCst) == 0;
                         if empty_count > 1000
                             && todo.is_empty()
                             && todo_in.is_empty()
                             && todo_out.is_empty()
-                            && ovlp_q_mgr.is_empty()
                             && no_active
                         {
                             break;
                         }
-                        // Reset empty_count if workers are still active
                         if !no_active {
                             empty_count = 0;
                         }
                     }
                 }
-                // Hand collected overlaps back (single lock, not on hot path)
-                *ovlp_out.lock().unwrap() = local_ovlp;
             });
         });
 
-        // Retrieve overlaps collected by the manager task
-        let ovlp = std::mem::take(&mut *ovlp_collected.lock().unwrap());
-
         if show_progress {
             eprintln!(
-                "[transclosure] {:.3}s {:.2}% {}-{} union_find",
+                "[transclosure] {:.3}s {:.2}% {}-{} phase1_discovery_done",
                 start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
@@ -688,6 +859,70 @@ pub fn compute_transitive_closures(
         }
 
         let q_curr_bv_final = Arc::try_unwrap(q_curr_bv_shared).unwrap();
+
+        // ================================================================
+        // PHASE 1b: Orphan recovery — flood-fill using per-sequence queries
+        // ================================================================
+        // The spanning tree BFS may miss positions only reachable via non-tree
+        // edges. Query the iitree per-sequence (only sequences with discovered
+        // positions) to find and mark orphans. Converges when no new positions found.
+        {
+            let mut recovery_round = 0u32;
+            loop {
+                let new_positions = AtomicU64::new(0);
+                // Find sequences with discovered positions
+                let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
+
+                component_seqs.par_iter().for_each(|&seq_id| {
+                    let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+                    let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+                    aln_iitree
+                        .overlap(
+                            seq_off,
+                            seq_off + seq_len,
+                            |_idx, iv_start, iv_end, target_pos| {
+                                if !q_curr_bv_final.get(iv_start as usize, Ordering::Relaxed) {
+                                    return;
+                                }
+                                let mut p = target_pos;
+                                for _ in iv_start..iv_end {
+                                    let t = offset(p) as usize;
+                                    if t < input_seq_length
+                                        && !q_curr_bv_final.get(t, Ordering::Relaxed)
+                                    {
+                                        let was_set =
+                                            q_curr_bv_final.set(t, true, Ordering::AcqRel);
+                                        if !was_set {
+                                            new_positions.fetch_add(1, Ordering::Relaxed);
+                                        }
+                                    }
+                                    incr_pos(&mut p);
+                                }
+                            },
+                        )
+                        .ok();
+                });
+                let found = new_positions.load(Ordering::Relaxed);
+                if found == 0 {
+                    break;
+                }
+                recovery_round += 1;
+                eprintln!(
+                    "[transclosure] {:.3}s orphan_recovery round {}: {} new positions ({} seqs in component)",
+                    start_time.elapsed().as_secs_f64(),
+                    recovery_round,
+                    found,
+                    component_seqs.len(),
+                );
+            }
+            if recovery_round > 0 {
+                eprintln!(
+                    "[transclosure] {:.3}s orphan_recovery complete after {} rounds",
+                    start_time.elapsed().as_secs_f64(),
+                    recovery_round
+                );
+            }
+        }
 
         // Parallelize rank building (like C++ parallel_for for q_curr_bv_vec)
         // Process in parallel chunks of 100000 positions
@@ -741,34 +976,125 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // Union-find with direct array rank lookups
+        // ================================================================
+        // PHASE 2: Label propagation for equivalence classes
+        // ================================================================
+        // Replaces CAS-based union-find with Shiloach-Vishkin label propagation.
+        // Each round: hook (propagate min label through blocks) + pointer jump.
+        // No atomics contention, sequential access within blocks.
+        let labels = LabelProp::new(q_curr_bv_count);
+        let q_curr_bv_ref = &q_curr_bv_final;
+
         if show_progress {
-            let total_bases: u64 = ovlp.iter().map(|(m, _)| m.end - m.start).sum();
             eprintln!(
-                "[transclosure] {:.3}s {:.2}% {}-{} union_find_start ({} overlaps, {} bases)",
+                "[transclosure] {:.3}s {:.2}% {}-{} phase2_label_prop_start",
                 start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
-                chunk_end,
-                ovlp.len(),
-                total_bases,
+                chunk_end
             );
         }
-        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
 
-        // Use chunked iteration with grain size 10000 (like C++ paryfor grain size)
-        ovlp.par_chunks(10000).for_each(|chunk| {
-            for s in chunk {
-                let r = &s.0;
-                let mut p = r.data;
-                for j in r.start..r.end {
-                    let j_rank = rank_table[j as usize] as usize;
-                    let p_rank = rank_table[offset(p) as usize] as usize;
-                    dsets.unite(j_rank, p_rank);
-                    incr_pos(&mut p);
+        let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
+
+        let mut phase2_round = 0u32;
+        loop {
+            let hooks_made = AtomicU64::new(0);
+            let _blocks_skipped = 0u64; // removed: no block-level skipping
+
+            // Hook step: for each block, propagate minimum labels
+            component_seqs.par_iter().for_each(|&seq_id| {
+                let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+                let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+
+                aln_iitree
+                    .overlap(
+                        seq_off,
+                        seq_off + seq_len,
+                        |_idx, start, end, target_pos| {
+                            if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                                return;
+                            }
+
+                            // Process block using range hook when possible.
+                            // If both source and target first positions are in curr_bv,
+                            // use the fast rank-range path (consecutive ranks within a sequence).
+                            let t_first = offset(target_pos) as usize;
+                            let block_len = end - start;
+                            if t_first < input_seq_length
+                                && q_curr_bv_ref.get(start as usize, Ordering::Relaxed)
+                                && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                            {
+                                let s_rank_start = rank_table[start as usize] as usize;
+                                let t_rank_start = rank_table[t_first] as usize;
+                                let changed = labels.hook_range(
+                                    s_rank_start,
+                                    t_rank_start,
+                                    block_len as usize,
+                                );
+                                if changed > 0 {
+                                    hooks_made.fetch_add(changed, Ordering::Relaxed);
+                                }
+                            } else {
+                                // Fallback: position-by-position for blocks with gaps
+                                let mut p = target_pos;
+                                for j in start..end {
+                                    let t = offset(p) as usize;
+                                    if t < input_seq_length
+                                        && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                        && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                                    {
+                                        let s_rank = rank_table[j as usize] as usize;
+                                        let t_rank = rank_table[t] as usize;
+                                        if labels.hook(s_rank, t_rank) {
+                                            hooks_made.fetch_add(1, Ordering::Relaxed);
+                                        }
+                                    }
+                                    incr_pos(&mut p);
+                                }
+                            }
+                        },
+                    )
+                    .ok();
+            });
+
+            // Pointer jump until stable
+            let mut jump_changes = labels.pointer_jump();
+            while jump_changes > 0 {
+                jump_changes = labels.pointer_jump();
+            }
+
+            let hooks = hooks_made.load(Ordering::Relaxed);
+            phase2_round += 1;
+
+            eprintln!(
+                "[transclosure] {:.3}s phase2 round {}: {} hooks",
+                start_time.elapsed().as_secs_f64(),
+                phase2_round,
+                hooks,
+            );
+
+            if hooks == 0 {
+                break;
+            }
+
+            // Aggressive pointer jumping to fully flatten the label tree.
+            // Makes subsequent rounds converge faster by ensuring all labels
+            // point directly to roots before the next round's skip checks.
+            if hooks < 10_000 {
+                for _ in 0..20 {
+                    if labels.pointer_jump() == 0 {
+                        break;
+                    }
                 }
             }
-        });
+        }
+
+        eprintln!(
+            "[transclosure] {:.3}s phase2 converged in {} rounds",
+            start_time.elapsed().as_secs_f64(),
+            phase2_round,
+        );
 
         if show_progress {
             eprintln!(
@@ -788,7 +1114,7 @@ pub fn compute_transitive_closures(
             .filter_map(|j| {
                 let p = q_curr_positions[j];
                 if !q_seen_bv[p as usize] {
-                    Some((dsets.find(j) as u64, p))
+                    Some((labels.find(j) as u64, p))
                 } else {
                     None
                 }
