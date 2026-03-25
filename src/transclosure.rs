@@ -397,9 +397,7 @@ fn block_needs_unite(
             && q_curr_bv.get(j as usize, Ordering::Relaxed)
             && q_curr_bv.get(t, Ordering::Relaxed)
         {
-            if dsets.find(rank_table[j as usize] as usize)
-                != dsets.find(rank_table[t] as usize)
-            {
+            if dsets.find(rank_table[j as usize] as usize) != dsets.find(rank_table[t] as usize) {
                 return true;
             }
         }
@@ -669,7 +667,6 @@ fn compute_spanning_tree(
     aln_iitree: &AdaptiveTree<u64, PosT>,
     seqidx: &SeqIndex,
 ) -> SpanningTreeAdj {
-
     let n_seqs = seqidx.n_seqs();
 
     // Collect pair weights: total aligned bases per (seq_i, seq_j) pair
@@ -738,7 +735,11 @@ fn compute_spanning_tree(
         "[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduction)",
         tree_edges,
         edges.len(),
-        if tree_edges > 0 { edges.len() / tree_edges } else { 0 }
+        if tree_edges > 0 {
+            edges.len() / tree_edges
+        } else {
+            0
+        }
     );
 
     spanning_adj
@@ -987,25 +988,29 @@ pub fn compute_transitive_closures(
                     let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
                     let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
                     aln_iitree
-                        .overlap(seq_off, seq_off + seq_len, |_idx, iv_start, iv_end, target_pos| {
-                            if !q_curr_bv_final.get(iv_start as usize, Ordering::Relaxed) {
-                                return;
-                            }
-                            let mut p = target_pos;
-                            for _ in iv_start..iv_end {
-                                let t = offset(p) as usize;
-                                if t < input_seq_length
-                                    && !q_curr_bv_final.get(t, Ordering::Relaxed)
-                                {
-                                    let was_set =
-                                        q_curr_bv_final.set(t, true, Ordering::AcqRel);
-                                    if !was_set {
-                                        new_positions.fetch_add(1, Ordering::Relaxed);
-                                    }
+                        .overlap(
+                            seq_off,
+                            seq_off + seq_len,
+                            |_idx, iv_start, iv_end, target_pos| {
+                                if !q_curr_bv_final.get(iv_start as usize, Ordering::Relaxed) {
+                                    return;
                                 }
-                                incr_pos(&mut p);
-                            }
-                        })
+                                let mut p = target_pos;
+                                for _ in iv_start..iv_end {
+                                    let t = offset(p) as usize;
+                                    if t < input_seq_length
+                                        && !q_curr_bv_final.get(t, Ordering::Relaxed)
+                                    {
+                                        let was_set =
+                                            q_curr_bv_final.set(t, true, Ordering::AcqRel);
+                                        if !was_set {
+                                            new_positions.fetch_add(1, Ordering::Relaxed);
+                                        }
+                                    }
+                                    incr_pos(&mut p);
+                                }
+                            },
+                        )
                         .ok();
                 });
                 let found = new_positions.load(Ordering::Relaxed);
@@ -1114,49 +1119,53 @@ pub fn compute_transitive_closures(
                 let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
 
                 aln_iitree
-                    .overlap(seq_off, seq_off + seq_len, |_idx, start, end, target_pos| {
-                        if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
-                            return;
-                        }
+                    .overlap(
+                        seq_off,
+                        seq_off + seq_len,
+                        |_idx, start, end, target_pos| {
+                            if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                                return;
+                            }
 
-                        // Process block using range hook when possible.
-                        // If both source and target first positions are in curr_bv,
-                        // use the fast rank-range path (consecutive ranks within a sequence).
-                        let t_first = offset(target_pos) as usize;
-                        let block_len = end - start;
-                        if t_first < input_seq_length
-                            && q_curr_bv_ref.get(start as usize, Ordering::Relaxed)
-                            && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
-                        {
-                            let s_rank_start = rank_table[start as usize] as usize;
-                            let t_rank_start = rank_table[t_first] as usize;
-                            let changed = labels.hook_range(
-                                s_rank_start,
-                                t_rank_start,
-                                block_len as usize,
-                            );
-                            if changed > 0 {
-                                hooks_made.fetch_add(changed, Ordering::Relaxed);
-                            }
-                        } else {
-                            // Fallback: position-by-position for blocks with gaps
-                            let mut p = target_pos;
-                            for j in start..end {
-                                let t = offset(p) as usize;
-                                if t < input_seq_length
-                                    && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                    && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                                {
-                                    let s_rank = rank_table[j as usize] as usize;
-                                    let t_rank = rank_table[t] as usize;
-                                    if labels.hook(s_rank, t_rank) {
-                                        hooks_made.fetch_add(1, Ordering::Relaxed);
-                                    }
+                            // Process block using range hook when possible.
+                            // If both source and target first positions are in curr_bv,
+                            // use the fast rank-range path (consecutive ranks within a sequence).
+                            let t_first = offset(target_pos) as usize;
+                            let block_len = end - start;
+                            if t_first < input_seq_length
+                                && q_curr_bv_ref.get(start as usize, Ordering::Relaxed)
+                                && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                            {
+                                let s_rank_start = rank_table[start as usize] as usize;
+                                let t_rank_start = rank_table[t_first] as usize;
+                                let changed = labels.hook_range(
+                                    s_rank_start,
+                                    t_rank_start,
+                                    block_len as usize,
+                                );
+                                if changed > 0 {
+                                    hooks_made.fetch_add(changed, Ordering::Relaxed);
                                 }
-                                incr_pos(&mut p);
+                            } else {
+                                // Fallback: position-by-position for blocks with gaps
+                                let mut p = target_pos;
+                                for j in start..end {
+                                    let t = offset(p) as usize;
+                                    if t < input_seq_length
+                                        && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                        && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                                    {
+                                        let s_rank = rank_table[j as usize] as usize;
+                                        let t_rank = rank_table[t] as usize;
+                                        if labels.hook(s_rank, t_rank) {
+                                            hooks_made.fetch_add(1, Ordering::Relaxed);
+                                        }
+                                    }
+                                    incr_pos(&mut p);
+                                }
                             }
-                        }
-                    })
+                        },
+                    )
                     .ok();
             });
 
