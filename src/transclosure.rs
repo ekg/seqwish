@@ -396,10 +396,9 @@ fn block_needs_unite(
         if t < input_seq_length
             && q_curr_bv.get(j as usize, Ordering::Relaxed)
             && q_curr_bv.get(t, Ordering::Relaxed)
+            && dsets.find(rank_table[j as usize] as usize) != dsets.find(rank_table[t] as usize)
         {
-            if dsets.find(rank_table[j as usize] as usize) != dsets.find(rank_table[t] as usize) {
-                return true;
-            }
+            return true;
         }
         incr_pos(&mut p);
     }
@@ -694,14 +693,14 @@ fn compute_spanning_tree(
     let mut parent: Vec<usize> = (0..=n_seqs).collect();
     let mut rank: Vec<usize> = vec![0; n_seqs + 1];
 
-    fn find(parent: &mut Vec<usize>, x: usize) -> usize {
+    fn find(parent: &mut [usize], x: usize) -> usize {
         if parent[x] != x {
             parent[x] = find(parent, parent[x]);
         }
         parent[x]
     }
 
-    fn unite(parent: &mut Vec<usize>, rank: &mut Vec<usize>, x: usize, y: usize) -> bool {
+    fn unite(parent: &mut [usize], rank: &mut [usize], x: usize, y: usize) -> bool {
         let rx = find(parent, x);
         let ry = find(parent, y);
         if rx == ry {
