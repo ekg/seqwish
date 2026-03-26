@@ -93,6 +93,23 @@ impl LabelProp {
         changed
     }
 
+    /// Pointer jumping pass that tracks which positions changed.
+    /// Sets changed_bv[i] for any position whose label changed.
+    /// Returns the total number of changes.
+    fn pointer_jump_tracking(&self, changed_bv: &AtomicBitVec) -> u64 {
+        let changed = AtomicU64::new(0);
+        self.parent.par_iter().enumerate().for_each(|(i, p)| {
+            let cur = p.load(Ordering::Relaxed);
+            let grandparent = self.parent[cur as usize].load(Ordering::Relaxed);
+            if cur != grandparent {
+                p.store(grandparent, Ordering::Relaxed);
+                changed_bv.set(i, true, Ordering::Relaxed);
+                changed.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        changed.load(Ordering::Relaxed)
+    }
+
     /// Full pointer chase to root (for final readout, not used during rounds)
     fn find(&self, mut i: usize) -> u32 {
         loop {
@@ -998,11 +1015,15 @@ pub fn compute_transitive_closures(
         let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
 
         let mut phase2_round = 0u32;
+        let mut active_positions: Option<AtomicBitVec> = None;
         loop {
             let hooks_made = AtomicU64::new(0);
-            let _blocks_skipped = 0u64; // removed: no block-level skipping
+            let blocks_skipped = AtomicU64::new(0);
+            let active_ref = &active_positions;
 
-            // Hook step: for each block, propagate minimum labels
+            // Hook step: for each block, propagate minimum labels.
+            // After round 1, skip blocks where no source or target position
+            // changed in the previous round (tracked by active_positions bitmap).
             component_seqs.par_iter().for_each(|&seq_id| {
                 let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
                 let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
@@ -1014,6 +1035,40 @@ pub fn compute_transitive_closures(
                         |_idx, start, end, target_pos| {
                             if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
                                 return;
+                            }
+
+                            // Skip blocks with no changed positions (rounds 2+)
+                            if let Some(active) = active_ref {
+                                let t_first = offset(target_pos) as usize;
+                                if t_first < input_seq_length
+                                    && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+                                {
+                                    let s_rank = rank_table[start as usize] as usize;
+                                    let t_rank = rank_table[t_first] as usize;
+                                    // Check if any endpoint was active
+                                    let block_len = end - start;
+                                    let s_last_rank = rank_table[(end - 1) as usize] as usize;
+                                    let mut t_last_p = target_pos;
+                                    incr_pos_by(&mut t_last_p, (block_len - 1) as usize);
+                                    let t_last_off = offset(t_last_p) as usize;
+                                    let t_last_rank = if t_last_off < input_seq_length
+                                        && q_curr_bv_ref.get(t_last_off, Ordering::Relaxed)
+                                    {
+                                        rank_table[t_last_off] as usize
+                                    } else {
+                                        s_rank // force active if target out of bounds
+                                    };
+
+                                    // Skip if no endpoint or its neighbors changed
+                                    if !active.get(s_rank, Ordering::Relaxed)
+                                        && !active.get(t_rank, Ordering::Relaxed)
+                                        && !active.get(s_last_rank, Ordering::Relaxed)
+                                        && !active.get(t_last_rank, Ordering::Relaxed)
+                                    {
+                                        blocks_skipped.fetch_add(1, Ordering::Relaxed);
+                                        return;
+                                    }
+                                }
                             }
 
                             // Process block using range hook when possible.
@@ -1058,36 +1113,37 @@ pub fn compute_transitive_closures(
                     .ok();
             });
 
-            // Pointer jump until stable
-            let mut jump_changes = labels.pointer_jump();
-            while jump_changes > 0 {
-                jump_changes = labels.pointer_jump();
+            // Pointer jump until stable, tracking which positions changed
+            // so the next round can skip blocks with no changed positions.
+            let changed_bv = AtomicBitVec::new(q_curr_bv_count);
+            loop {
+                let jump_changes = labels.pointer_jump_tracking(&changed_bv);
+                if jump_changes == 0 {
+                    break;
+                }
             }
 
             let hooks = hooks_made.load(Ordering::Relaxed);
             phase2_round += 1;
 
+            let skipped = blocks_skipped.load(Ordering::Relaxed);
             eprintln!(
-                "[transclosure] {:.3}s phase2 round {}: {} hooks",
+                "[transclosure] {:.3}s phase2 round {}: {} hooks, {} blocks skipped",
                 start_time.elapsed().as_secs_f64(),
                 phase2_round,
                 hooks,
+                skipped,
             );
 
             if hooks == 0 {
                 break;
             }
 
-            // Aggressive pointer jumping to fully flatten the label tree.
-            // Makes subsequent rounds converge faster by ensuring all labels
-            // point directly to roots before the next round's skip checks.
-            if hooks < 10_000 {
-                for _ in 0..20 {
-                    if labels.pointer_jump() == 0 {
-                        break;
-                    }
-                }
-            }
+            // Update active_positions: only positions that changed labels
+            // in this round (hooks or pointer jumping) need to be checked
+            // in the next round. A block can be skipped if none of its
+            // source or target positions are in the changed set.
+            active_positions = Some(changed_bv);
         }
 
         eprintln!(
