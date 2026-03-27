@@ -9,101 +9,15 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
+use crate::dset64_asm::DisjointSetsAsm;
 use crossbeam_queue::ArrayQueue;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::atomic::AtomicU64;
 
 use crate::intervaltree::AdaptiveTree;
 use crate::intervaltree::IntervalTree;
 use crate::pos::{decr_pos, decr_pos_by, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
 use crate::seqindex::SeqIndex;
-
-/// Label propagation for connected components (replaces CAS-based union-find).
-///
-/// Uses the Shiloach-Vishkin hook + pointer-jump approach:
-/// - Hook: for each edge (u,v), parent[max(parent[u], parent[v])] = min(parent[u], parent[v])
-/// - Pointer jump: parent[i] = parent[parent[i]]
-/// - Repeat until convergence
-///
-/// Much cheaper per operation than CAS-based union-find: simple array read/write
-/// with Relaxed ordering (free on x86) vs CMPXCHG16B (~100 cycles under contention).
-struct LabelProp {
-    parent: Vec<AtomicU32>,
-}
-
-impl LabelProp {
-    fn new(size: usize) -> Self {
-        LabelProp {
-            parent: (0..size).map(|i| AtomicU32::new(i as u32)).collect(),
-        }
-    }
-
-    /// Get the current label (parent) for element i
-    #[inline]
-    fn label(&self, i: usize) -> u32 {
-        self.parent[i].load(Ordering::Relaxed)
-    }
-
-    /// Hook: if labels differ, point the higher label to the lower one.
-    /// Returns true if a change was made.
-    #[inline]
-    fn hook(&self, i: usize, j: usize) -> bool {
-        let li = self.parent[i].load(Ordering::Relaxed);
-        let lj = self.parent[j].load(Ordering::Relaxed);
-        if li == lj {
-            return false;
-        }
-        let (lo, hi) = if li < lj { (li, lj) } else { (lj, li) };
-        // Point the higher-labeled root toward the lower label
-        self.parent[hi as usize].store(lo, Ordering::Relaxed);
-        true
-    }
-
-    /// Pointer jumping pass: parent[i] = parent[parent[i]] for all elements.
-    /// Returns the number of elements that changed.
-    fn pointer_jump(&self) -> u64 {
-        let changed = AtomicU64::new(0);
-        self.parent.par_iter().for_each(|p| {
-            let cur = p.load(Ordering::Relaxed);
-            let grandparent = self.parent[cur as usize].load(Ordering::Relaxed);
-            if cur != grandparent {
-                p.store(grandparent, Ordering::Relaxed);
-                changed.fetch_add(1, Ordering::Relaxed);
-            }
-        });
-        changed.load(Ordering::Relaxed)
-    }
-
-    /// Hook a contiguous range: for i in 0..len, hook(a+i, b+i).
-    /// Exploits the fact that ranks within a sequence are consecutive.
-    /// Returns the number of hooks that actually changed a label.
-    fn hook_range(&self, a_start: usize, b_start: usize, len: usize) -> u64 {
-        let mut changed = 0u64;
-        for i in 0..len {
-            let ai = a_start + i;
-            let bi = b_start + i;
-            let la = self.parent[ai].load(Ordering::Relaxed);
-            let lb = self.parent[bi].load(Ordering::Relaxed);
-            if la != lb {
-                let (lo, hi) = if la < lb { (la, lb) } else { (lb, la) };
-                self.parent[hi as usize].store(lo, Ordering::Relaxed);
-                changed += 1;
-            }
-        }
-        changed
-    }
-
-    /// Full pointer chase to root (for final readout, not used during rounds)
-    fn find(&self, mut i: usize) -> u32 {
-        loop {
-            let p = self.parent[i].load(Ordering::Relaxed);
-            if p as usize == i {
-                return p;
-            }
-            i = p as usize;
-        }
-    }
-}
 
 /// Thomas Wang's 64-bit integer hash function
 ///
@@ -977,17 +891,16 @@ pub fn compute_transitive_closures(
         }
 
         // ================================================================
-        // PHASE 2: Label propagation for equivalence classes
+        // PHASE 2: Union-find via per-sequence iitree queries
         // ================================================================
-        // Replaces CAS-based union-find with Shiloach-Vishkin label propagation.
-        // Each round: hook (propagate min label through blocks) + pointer jump.
-        // No atomics contention, sequential access within blocks.
-        let labels = LabelProp::new(q_curr_bv_count);
+        // Uses DisjointSetsAsm (lock-free CAS-based union-find) for correctness.
+        // Per-sequence iitree queries avoid scanning irrelevant intervals.
+        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
         let q_curr_bv_ref = &q_curr_bv_final;
 
         if show_progress {
             eprintln!(
-                "[transclosure] {:.3}s {:.2}% {}-{} phase2_label_prop_start",
+                "[transclosure] {:.3}s {:.2}% {}-{} phase2_union_find_start",
                 start_time.elapsed().as_secs_f64(),
                 (bases_seen as f64 / input_seq_length as f64) * 100.0,
                 chunk_start,
@@ -997,103 +910,41 @@ pub fn compute_transitive_closures(
 
         let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
 
-        let mut phase2_round = 0u32;
-        loop {
-            let hooks_made = AtomicU64::new(0);
-            let _blocks_skipped = 0u64; // removed: no block-level skipping
+        // Single pass: process all intervals via per-sequence iitree queries
+        component_seqs.par_iter().for_each(|&seq_id| {
+            let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+            let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
 
-            // Hook step: for each block, propagate minimum labels
-            component_seqs.par_iter().for_each(|&seq_id| {
-                let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
-                let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
-
-                aln_iitree
-                    .overlap(
-                        seq_off,
-                        seq_off + seq_len,
-                        |_idx, start, end, target_pos| {
-                            if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
-                                return;
-                            }
-
-                            // Process block using range hook when possible.
-                            // If both source and target first positions are in curr_bv,
-                            // use the fast rank-range path (consecutive ranks within a sequence).
-                            let t_first = offset(target_pos) as usize;
-                            let block_len = end - start;
-                            if t_first < input_seq_length
-                                && q_curr_bv_ref.get(start as usize, Ordering::Relaxed)
-                                && q_curr_bv_ref.get(t_first, Ordering::Relaxed)
+            aln_iitree
+                .overlap(
+                    seq_off,
+                    seq_off + seq_len,
+                    |_idx, start, end, target_pos| {
+                        if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                            return;
+                        }
+                        let mut p = target_pos;
+                        for j in start..end {
+                            let t = offset(p) as usize;
+                            if t < input_seq_length
+                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
                             {
-                                let s_rank_start = rank_table[start as usize] as usize;
-                                let t_rank_start = rank_table[t_first] as usize;
-                                let changed = labels.hook_range(
-                                    s_rank_start,
-                                    t_rank_start,
-                                    block_len as usize,
-                                );
-                                if changed > 0 {
-                                    hooks_made.fetch_add(changed, Ordering::Relaxed);
-                                }
-                            } else {
-                                // Fallback: position-by-position for blocks with gaps
-                                let mut p = target_pos;
-                                for j in start..end {
-                                    let t = offset(p) as usize;
-                                    if t < input_seq_length
-                                        && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                        && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                                    {
-                                        let s_rank = rank_table[j as usize] as usize;
-                                        let t_rank = rank_table[t] as usize;
-                                        if labels.hook(s_rank, t_rank) {
-                                            hooks_made.fetch_add(1, Ordering::Relaxed);
-                                        }
-                                    }
-                                    incr_pos(&mut p);
-                                }
+                                let j_rank = rank_table[j as usize] as usize;
+                                let p_rank = rank_table[t] as usize;
+                                dsets.unite(j_rank, p_rank);
                             }
-                        },
-                    )
-                    .ok();
-            });
-
-            // Pointer jump until stable
-            let mut jump_changes = labels.pointer_jump();
-            while jump_changes > 0 {
-                jump_changes = labels.pointer_jump();
-            }
-
-            let hooks = hooks_made.load(Ordering::Relaxed);
-            phase2_round += 1;
-
-            eprintln!(
-                "[transclosure] {:.3}s phase2 round {}: {} hooks",
-                start_time.elapsed().as_secs_f64(),
-                phase2_round,
-                hooks,
-            );
-
-            if hooks == 0 {
-                break;
-            }
-
-            // Aggressive pointer jumping to fully flatten the label tree.
-            // Makes subsequent rounds converge faster by ensuring all labels
-            // point directly to roots before the next round's skip checks.
-            if hooks < 10_000 {
-                for _ in 0..20 {
-                    if labels.pointer_jump() == 0 {
-                        break;
-                    }
-                }
-            }
-        }
+                            incr_pos(&mut p);
+                        }
+                    },
+                )
+                .ok();
+        });
 
         eprintln!(
-            "[transclosure] {:.3}s phase2 converged in {} rounds",
+            "[transclosure] {:.3}s phase2 union-find complete ({} seqs queried)",
             start_time.elapsed().as_secs_f64(),
-            phase2_round,
+            component_seqs.len(),
         );
 
         if show_progress {
@@ -1114,7 +965,7 @@ pub fn compute_transitive_closures(
             .filter_map(|j| {
                 let p = q_curr_positions[j];
                 if !q_seen_bv[p as usize] {
-                    Some((labels.find(j) as u64, p))
+                    Some((dsets.find(j) as u64, p))
                 } else {
                     None
                 }
