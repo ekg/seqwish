@@ -110,9 +110,11 @@ impl SeqIndex {
     /// Time complexity: O(n log n) for suffix array construction
     /// Space complexity: O(n log σ) bits for CSA + O(m log(N/m)) bits for boundaries
     pub fn build_index(&mut self, filename: &str) -> Result<(), String> {
-        // Create temp file for sequences
-        let seq_file =
-            crate::tempfile::get_dir().join(format!("seqwish-{}.sqq", std::process::id()));
+        // Create a unique temp file for sequences using mkstemps so concurrent calls
+        // (e.g. parallel tests or multi-partition builds) never share the same path.
+        // This also honours the configured temp directory (seqwish::tempfile::set_dir or TMPDIR).
+        let seq_file = crate::tempfile::create("seqwish", ".sqq")
+            .map_err(|e| format!("Failed to create sequence temp file: {e}"))?;
         self.seq_filename = Some(seq_file.clone());
 
         // Open input file (with optional gzip support)
