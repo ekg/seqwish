@@ -111,7 +111,8 @@ impl SeqIndex {
     /// Space complexity: O(n log σ) bits for CSA + O(m log(N/m)) bits for boundaries
     pub fn build_index(&mut self, filename: &str) -> Result<(), String> {
         // Create temp file for sequences
-        let seq_file = crate::tempfile::get_dir().join(format!("seqwish-{}.sqq", std::process::id()));
+        let seq_file =
+            crate::tempfile::get_dir().join(format!("seqwish-{}.sqq", std::process::id()));
         self.seq_filename = Some(seq_file.clone());
 
         // Open input file (with optional gzip support)
