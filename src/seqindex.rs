@@ -111,7 +111,7 @@ impl SeqIndex {
     /// Space complexity: O(n log σ) bits for CSA + O(m log(N/m)) bits for boundaries
     pub fn build_index(&mut self, filename: &str) -> Result<(), String> {
         // Create temp file for sequences
-        let seq_file = std::env::temp_dir().join(format!("seqwish-{}.sqq", std::process::id()));
+        let seq_file = crate::tempfile::get_dir().join(format!("seqwish-{}.sqq", std::process::id()));
         self.seq_filename = Some(seq_file.clone());
 
         // Open input file (with optional gzip support)
@@ -530,7 +530,12 @@ impl Default for SeqIndex {
 
 impl Drop for SeqIndex {
     fn drop(&mut self) {
+        // Drop the mmap before deleting the underlying file so the OS can reclaim it.
         self.seq_mmap = None;
+        // Clean up the .sqq temp file created by build_index.
+        if let Some(ref path) = self.seq_filename {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
