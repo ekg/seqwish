@@ -149,9 +149,8 @@ pub fn emit_gfa<W: Write>(
 
             // Validate path integrity: check that input sequence matches graph sequence
             // This is critical for correctness (matches C++ validation)
-            let mut q = j; // position in input sequence
             let mut p = pos_start_in_s; // position in graph
-            for _ in 0..length {
+            for q in j..j + length {
                 let p_offset = offset(p) as usize;
                 if p_offset < seq_v_slice.len() {
                     let mut graph_char = seq_v_slice[p_offset];
@@ -173,7 +172,6 @@ pub fn emit_gfa<W: Write>(
                     }
                 }
                 incr_pos(&mut p);
-                q += 1;
             }
 
             // Match C++ behavior: iterate through each base and add node at boundaries

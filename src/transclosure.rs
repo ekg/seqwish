@@ -491,7 +491,7 @@ fn compute_spanning_tree(
 
     // Sort pairs by weight descending (max-weight spanning tree)
     let mut edges: Vec<((usize, usize), u64)> = pair_weights.into_iter().collect();
-    edges.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    edges.sort_unstable_by_key(|edge| std::cmp::Reverse(edge.1));
 
     // Kruskal's algorithm with simple union-find
     let mut parent: Vec<usize> = (0..=n_seqs).collect();
@@ -538,11 +538,7 @@ fn compute_spanning_tree(
         "[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduction)",
         tree_edges,
         edges.len(),
-        if tree_edges > 0 {
-            edges.len() / tree_edges
-        } else {
-            0
-        }
+        edges.len().checked_div(tree_edges).unwrap_or(0)
     );
 
     spanning_adj
