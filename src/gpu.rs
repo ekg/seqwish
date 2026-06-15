@@ -42,13 +42,17 @@ pub fn gpu_union_find(
     let dur_init = t_init.elapsed();
 
     let t_h2d = std::time::Instant::now();
-    let mut parents_gpu = stream.alloc_zeros::<i32>(num_elements).ok()?;
-    let n = num_elements as i32;
-    let edge_data: Vec<[i32; 2]> = edges
-        .iter()
-        .map(|&(u, v)| [u as i32, v as i32])
-        .collect();
-    let edges_gpu = stream.clone_htod(&edge_data).ok()?;
+    let mut parents_gpu = stream.alloc_zeros::<u32>(num_elements).ok()?;
+    let n = num_elements as u32;
+    let num_edges = edges.len();
+    let edges_gpu = if num_edges > 0 {
+        let edge_slice: &[[u32; 2]] = unsafe {
+            std::slice::from_raw_parts(edges.as_ptr() as *const [u32; 2], num_edges)
+        };
+        Some(stream.clone_htod(edge_slice).ok()?)
+    } else {
+        None
+    };
     let dur_h2d = t_h2d.elapsed();
 
     let t_kernel = std::time::Instant::now();
@@ -66,7 +70,6 @@ pub fn gpu_union_find(
     init_builder.arg(&n);
     unsafe { init_builder.launch(cfg_n).ok()? };
 
-    let num_edges = edges.len();
     if num_edges > 0 {
         let ne = num_edges as i32;
         let blocks_e =
@@ -78,7 +81,7 @@ pub fn gpu_union_find(
         };
         let mut union_builder = stream.launch_builder(&union_step);
         union_builder.arg(&mut parents_gpu);
-        union_builder.arg(&edges_gpu);
+        union_builder.arg(edges_gpu.as_ref().unwrap());
         union_builder.arg(&ne);
         unsafe { union_builder.launch(cfg_e).ok()? };
     }
@@ -108,7 +111,7 @@ pub fn gpu_union_find(
     let dur_kernel = t_kernel.elapsed();
 
     let t_d2h = std::time::Instant::now();
-    let mut parents_host = vec![0i32; num_elements];
+    let mut parents_host = vec![0u32; num_elements];
     stream.memcpy_dtoh(&parents_gpu, &mut parents_host).ok()?;
     stream.synchronize().ok()?;
     let dur_d2h = t_d2h.elapsed();
@@ -123,7 +126,7 @@ pub fn gpu_union_find(
         eprintln!("[gpu] total (excluding startup): {:?}", dur_excl_init);
     }
 
-    Some(parents_host.into_iter().map(|p| p as u32).collect())
+    Some(parents_host)
 }
 
 #[cfg(test)]
