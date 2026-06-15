@@ -62,6 +62,7 @@ pub mod dset64;
 pub mod dset64_asm;
 pub mod dset64_unsafe;
 pub mod gfa;
+pub mod gpu;
 pub mod intervaltree;
 pub mod links;
 pub mod mmap;

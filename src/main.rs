@@ -25,6 +25,7 @@ mod dset64;
 mod dset64_asm;
 mod dset64_unsafe;
 mod gfa;
+mod gpu;
 mod intervaltree;
 mod links;
 mod mmap;

@@ -47,6 +47,8 @@ memmap2 = "0.9"
 flate2 = "1.0"  # For gzip support
 fm-index = "0.3"  # FM-index / CSA for sequence name lookup (pulls in vers-vecs)
 iitree-rs = "0.1.1"  # Interval tree with disk-backed storage
+libloading = "0.8"
+cudarc = { version = "0.19.7", features = ["nvrtc", "cuda-12020"] }
 
 # Transclosure dependencies
 rayon = "1.11"                  # Parallel iteration & sorting
@@ -63,3 +65,7 @@ clap = { version = "4.5", features = ["derive"] }  # Command-line argument parsi
 
 [build-dependencies]
 cbindgen = "0.27"
+
+[[bench]]
+name = "bench_gpu"
+harness = false

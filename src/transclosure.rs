@@ -889,9 +889,7 @@ pub fn compute_transitive_closures(
         // ================================================================
         // PHASE 2: Union-find via per-sequence iitree queries
         // ================================================================
-        // Uses DisjointSetsAsm (lock-free CAS-based union-find) for correctness.
-        // Per-sequence iitree queries avoid scanning irrelevant intervals.
-        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
+        // Collect edges to process on GPU or fallback on CPU
         let q_curr_bv_ref = &q_curr_bv_final;
 
         if show_progress {
@@ -906,41 +904,57 @@ pub fn compute_transitive_closures(
 
         let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
 
-        // Single pass: process all intervals via per-sequence iitree queries
-        component_seqs.par_iter().for_each(|&seq_id| {
+        // Single pass: collect all intervals via per-sequence iitree queries in parallel
+        let edges: Vec<(u32, u32)> = component_seqs.par_iter().flat_map(|&seq_id| {
             let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
             let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+            let mut local_edges = Vec::new();
 
-            aln_iitree
-                .overlap(
-                    seq_off,
-                    seq_off + seq_len,
-                    |_idx, start, end, target_pos| {
-                        if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
-                            return;
+            let _ = aln_iitree.overlap(
+                seq_off,
+                seq_off + seq_len,
+                |_idx, start, end, target_pos| {
+                    if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                        return;
+                    }
+                    let mut p = target_pos;
+                    for j in start..end {
+                        let t = offset(p) as usize;
+                        if t < input_seq_length
+                            && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                            && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                        {
+                            let j_rank = rank_table[j as usize] as u32;
+                            let p_rank = rank_table[t] as u32;
+                            local_edges.push((j_rank, p_rank));
                         }
-                        let mut p = target_pos;
-                        for j in start..end {
-                            let t = offset(p) as usize;
-                            if t < input_seq_length
-                                && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
-                                && q_curr_bv_ref.get(t, Ordering::Relaxed)
-                            {
-                                let j_rank = rank_table[j as usize] as usize;
-                                let p_rank = rank_table[t] as usize;
-                                dsets.unite(j_rank, p_rank);
-                            }
-                            incr_pos(&mut p);
-                        }
-                    },
-                )
-                .ok();
-        });
+                        incr_pos(&mut p);
+                    }
+                },
+            );
+            local_edges
+        }).collect();
+
+        // Run union-find on GPU or fallback to CPU
+        let mut dsets_roots = None;
+        let mut dsets = None;
+
+        if let Some(roots) = crate::gpu::gpu_union_find(q_curr_bv_count, &edges) {
+            dsets_roots = Some(roots);
+        } else {
+            // CPU Fallback: initialize DisjointSetsAsm and run CPU union-find in parallel
+            let cpu_dsets = DisjointSetsAsm::new(q_curr_bv_count);
+            edges.par_iter().for_each(|&(u, v)| {
+                cpu_dsets.unite(u as usize, v as usize);
+            });
+            dsets = Some(cpu_dsets);
+        }
 
         eprintln!(
-            "[transclosure] {:.3}s phase2 union-find complete ({} seqs queried)",
+            "[transclosure] {:.3}s phase2 union-find complete ({} seqs queried, {} edges processed)",
             start_time.elapsed().as_secs_f64(),
             component_seqs.len(),
+            edges.len()
         );
 
         if show_progress {
@@ -961,7 +975,12 @@ pub fn compute_transitive_closures(
             .filter_map(|j| {
                 let p = q_curr_positions[j];
                 if !q_seen_bv[p as usize] {
-                    Some((dsets.find(j) as u64, p))
+                    let root = if let Some(ref roots) = dsets_roots {
+                        roots[j] as u64
+                    } else {
+                        dsets.as_ref().unwrap().find(j) as u64
+                    };
+                    Some((root, p))
                 } else {
                     None
                 }
