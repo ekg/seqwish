@@ -229,7 +229,7 @@ fn test_pipeline_memory_mode_basic() -> Result<(), Box<dyn std::error::Error>> {
     let path_lines: Vec<&str> = lines
         .iter()
         .filter(|l| l.starts_with("P\t"))
-        .map(|&s| s)
+        .copied()
         .collect();
     let path_str = path_lines.join("\n");
     assert!(path_str.contains("seq1"), "Should have path for seq1");

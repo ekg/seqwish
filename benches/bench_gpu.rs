@@ -41,7 +41,7 @@ fn bench_size(num_elements: usize, num_edges: usize) {
 
     // GPU bench
     let start_gpu = Instant::now();
-    if let Some(gpu_roots) = gpu_union_find(num_elements, &edges) {
+    if let Some(gpu_roots) = gpu_union_find(num_elements, &edges, false) {
         let duration_gpu = start_gpu.elapsed();
         println!("GPU (gpu_union_find): {:?}", duration_gpu);
         println!("GPU Speedup: {:.2}x", duration_cpu.as_secs_f64() / duration_gpu.as_secs_f64());

@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn test_handy_parameter_plain_number() {
         assert_eq!(handy_parameter("42", 0.0), 42.0);
-        assert_eq!(handy_parameter("3.14", 0.0), 3.14);
+        assert_eq!(handy_parameter("3.15", 0.0), 3.15);
     }
 
     #[test]
