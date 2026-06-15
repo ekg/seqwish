@@ -3,129 +3,125 @@ use cudarc::nvrtc::compile_ptx;
 
 const CUDA_SRC: &str = include_str!("union_find.cu");
 
-/// Check if the CUDA driver and NVRTC libraries are dynamically loadable.
+// Threads per block for all kernels. 256 is safe across all SM architectures.
+const CUDA_THREADS_PER_BLOCK: usize = 256;
+
+/// Returns `true` if both the CUDA driver and NVRTC JIT libraries are loadable.
 pub fn is_cuda_available() -> bool {
-    let mut cuda_ok = false;
-    for candidate in cudarc::get_lib_name_candidates("cuda") {
-        if unsafe { libloading::Library::new(&candidate) }.is_ok() {
-            cuda_ok = true;
-            break;
-        }
-    }
+    let cuda_ok = cudarc::get_lib_name_candidates("cuda")
+        .into_iter()
+        .any(|c| unsafe { libloading::Library::new(&c).is_ok() });
+
     if !cuda_ok {
         return false;
     }
 
-    let mut nvrtc_ok = false;
-    for candidate in cudarc::get_lib_name_candidates("nvrtc") {
-        if unsafe { libloading::Library::new(&candidate) }.is_ok() {
-            nvrtc_ok = true;
-            break;
-        }
-    }
-    nvrtc_ok
+    cudarc::get_lib_name_candidates("nvrtc")
+        .into_iter()
+        .any(|c| unsafe { libloading::Library::new(&c).is_ok() })
 }
 
-/// Run disjoint-set union-find on the GPU using CUDA.
-///
-/// Returns a vector where the `i`-th element represents the representative root of `i`.
-/// If no CUDA device is found, or compilation/execution fails, returns `None`.
-pub fn gpu_union_find(num_elements: usize, edges: &[(u32, u32)]) -> Option<Vec<u32>> {
+/// Run union-find on the GPU via JIT-compiled CUDA kernels.
+pub fn gpu_union_find(
+    num_elements: usize,
+    edges: &[(u32, u32)],
+    verbose: bool,
+) -> Option<Vec<u32>> {
     if num_elements == 0 {
         return Some(Vec::new());
     }
 
-    if !is_cuda_available() {
-        return None;
-    }
-
-    // Initialize CUDA context and stream
+    let t_init = std::time::Instant::now();
     let ctx = CudaContext::new(0).ok()?;
     let stream = ctx.default_stream();
-
-    // Compile the CUDA source string into PTX via NVRTC
     let ptx = compile_ptx(CUDA_SRC).ok()?;
-    
-    // Load module into device context
     let module = ctx.load_module(ptx).ok()?;
-    
     let initialize_parents = module.load_function("initialize_parents").ok()?;
     let union_step = module.load_function("union_step").ok()?;
     let pointer_jump = module.load_function("pointer_jump").ok()?;
+    let dur_init = t_init.elapsed();
 
-    // Allocate parents buffer on GPU
-    let mut parents = stream.alloc_zeros::<i32>(num_elements).ok()?;
-    let num_elements_i32 = num_elements as i32;
-    
-    // Copy edges to GPU device memory
-    let edge_data: Vec<[i32; 2]> = edges.iter().map(|&(u, v)| [u as i32, v as i32]).collect();
+    let t_h2d = std::time::Instant::now();
+    let mut parents_gpu = stream.alloc_zeros::<i32>(num_elements).ok()?;
+    let n = num_elements as i32;
+    let edge_data: Vec<[i32; 2]> = edges
+        .iter()
+        .map(|&(u, v)| [u as i32, v as i32])
+        .collect();
     let edges_gpu = stream.clone_htod(&edge_data).ok()?;
-    
-    // Launch parent initialization
-    let threads_per_block = 256;
-    let blocks_parents = (num_elements + threads_per_block - 1) / threads_per_block;
-    let cfg_parents = LaunchConfig {
-        grid_dim: (blocks_parents as u32, 1, 1),
-        block_dim: (threads_per_block as u32, 1, 1),
+    let dur_h2d = t_h2d.elapsed();
+
+    let t_kernel = std::time::Instant::now();
+
+    let tpb = CUDA_THREADS_PER_BLOCK as u32;
+    let blocks_n = ((num_elements + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
+    let cfg_n = LaunchConfig {
+        grid_dim: (blocks_n, 1, 1),
+        block_dim: (tpb, 1, 1),
         shared_mem_bytes: 0,
     };
-    
-    let mut init_builder = stream.launch_builder(&initialize_parents);
-    init_builder.arg(&mut parents);
-    init_builder.arg(&num_elements_i32);
-    unsafe { init_builder.launch(cfg_parents).ok()? };
 
-    // Launch union operations
+    let mut init_builder = stream.launch_builder(&initialize_parents);
+    init_builder.arg(&mut parents_gpu);
+    init_builder.arg(&n);
+    unsafe { init_builder.launch(cfg_n).ok()? };
+
     let num_edges = edges.len();
     if num_edges > 0 {
-        let num_edges_i32 = num_edges as i32;
-        let blocks_edges = (num_edges + threads_per_block - 1) / threads_per_block;
-        let cfg_edges = LaunchConfig {
-            grid_dim: (blocks_edges as u32, 1, 1),
-            block_dim: (threads_per_block as u32, 1, 1),
+        let ne = num_edges as i32;
+        let blocks_e =
+            ((num_edges + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
+        let cfg_e = LaunchConfig {
+            grid_dim: (blocks_e, 1, 1),
+            block_dim: (tpb, 1, 1),
             shared_mem_bytes: 0,
         };
         let mut union_builder = stream.launch_builder(&union_step);
-        union_builder.arg(&mut parents);
+        union_builder.arg(&mut parents_gpu);
         union_builder.arg(&edges_gpu);
-        union_builder.arg(&num_edges_i32);
-        unsafe { union_builder.launch(cfg_edges).ok()? };
+        union_builder.arg(&ne);
+        unsafe { union_builder.launch(cfg_e).ok()? };
     }
 
-    // Launch pointer-jumping loop to flatten the tree structure
+    // Pointer-jumping to convergence.
     let mut changed_host = vec![0i32];
     let mut changed_gpu = stream.alloc_zeros::<i32>(1).ok()?;
-    
-    let blocks_jump = (num_elements + threads_per_block - 1) / threads_per_block;
     let cfg_jump = LaunchConfig {
-        grid_dim: (blocks_jump as u32, 1, 1),
-        block_dim: (threads_per_block as u32, 1, 1),
+        grid_dim: (blocks_n, 1, 1),
+        block_dim: (tpb, 1, 1),
         shared_mem_bytes: 0,
     };
-
     loop {
-        // Reset GPU flag to 0
         stream.memcpy_htod(&changed_host, &mut changed_gpu).ok()?;
-        
         let mut jump_builder = stream.launch_builder(&pointer_jump);
-        jump_builder.arg(&mut parents);
-        jump_builder.arg(&num_elements_i32);
+        jump_builder.arg(&mut parents_gpu);
+        jump_builder.arg(&n);
         jump_builder.arg(&mut changed_gpu);
         unsafe { jump_builder.launch(cfg_jump).ok()? };
-        
-        // Copy convergence flag back to host
         stream.memcpy_dtoh(&changed_gpu, &mut changed_host).ok()?;
         stream.synchronize().ok()?;
         if changed_host[0] == 0 {
             break;
         }
-        changed_host[0] = 0; // Reset for next iteration
+        changed_host[0] = 0;
     }
+    let dur_kernel = t_kernel.elapsed();
 
-    // Read flat representatives back to host
+    let t_d2h = std::time::Instant::now();
     let mut parents_host = vec![0i32; num_elements];
-    stream.memcpy_dtoh(&parents, &mut parents_host).ok()?;
+    stream.memcpy_dtoh(&parents_gpu, &mut parents_host).ok()?;
     stream.synchronize().ok()?;
+    let dur_d2h = t_d2h.elapsed();
+
+    if verbose {
+        let dur_excl_init = dur_h2d + dur_kernel + dur_d2h;
+        eprintln!("[gpu] profiling breakdown:");
+        eprintln!("[gpu] JIT compile + driver init: {:?}", dur_init);
+        eprintln!("[gpu] host to device copy + alloc: {:?}", dur_h2d);
+        eprintln!("[gpu] pure kernel computation: {:?}", dur_kernel);
+        eprintln!("[gpu] device to host copy: {:?}", dur_d2h);
+        eprintln!("[gpu] total (excluding startup): {:?}", dur_excl_init);
+    }
 
     Some(parents_host.into_iter().map(|p| p as u32).collect())
 }
@@ -136,28 +132,34 @@ mod tests {
 
     #[test]
     fn test_gpu_union_find_or_fallback() {
+        // cudarc 0.19.x panics on missing libnvrtc.so rather than returning Err.
+        if !is_cuda_available() {
+            println!("[gpu] CUDA not available: skipping.");
+            return;
+        }
+
+        // Edges form two chains: 0-1-2-8 and 5-6-7-8 (joined at 8), plus 3-4.
         let num_elements = 10;
-        let edges = vec![(0, 1), (1, 2), (3, 4), (5, 6), (6, 7), (7, 8), (2, 8)];
-        
-        if let Some(representatives) = gpu_union_find(num_elements, &edges) {
-            assert_eq!(representatives.len(), num_elements);
-            
-            // Check that connected components share the same root
-            assert_eq!(representatives[0], representatives[1]);
-            assert_eq!(representatives[1], representatives[2]);
-            assert_eq!(representatives[2], representatives[8]);
-            assert_eq!(representatives[5], representatives[6]);
-            assert_eq!(representatives[6], representatives[7]);
-            assert_eq!(representatives[0], representatives[7]); // Indirectly connected through (2, 8) and (7, 8)
-            
-            // Element 9 should remain in its own set
-            assert_eq!(representatives[9], 9);
-            
-            // Elements 3 and 4 should be connected but distinct from others
-            assert_eq!(representatives[3], representatives[4]);
-            assert_ne!(representatives[3], representatives[0]);
+        let edges: Vec<(u32, u32)> = vec![
+            (0, 1), (1, 2), (3, 4), (5, 6), (6, 7), (7, 8), (2, 8),
+        ];
+
+        if let Some(r) = gpu_union_find(num_elements, &edges, false) {
+            assert_eq!(r.len(), num_elements);
+            // {0,1,2,5,6,7,8} all in one component
+            assert_eq!(r[0], r[1]);
+            assert_eq!(r[1], r[2]);
+            assert_eq!(r[2], r[8]);
+            assert_eq!(r[5], r[6]);
+            assert_eq!(r[6], r[7]);
+            assert_eq!(r[0], r[7]);
+            // {3,4} isolated from the above
+            assert_eq!(r[3], r[4]);
+            assert_ne!(r[3], r[0]);
+            // {9} singleton
+            assert_eq!(r[9], 9);
         } else {
-            println!("CUDA GPU not available; skipped execution check.");
+            println!("GPU execution returned None; skipped.");
         }
     }
 }
