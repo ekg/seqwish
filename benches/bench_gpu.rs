@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 use seqwish::dset64_asm::DisjointSetsAsm;
-use seqwish::gpu::gpu_union_find;
+use seqwish::gpu::{gpu_union_find, GpuRunner};
 use std::time::Instant;
 
 fn generate_mock_edges(num_elements: usize, num_edges: usize) -> Vec<(u32, u32)> {
@@ -22,7 +22,7 @@ fn generate_mock_edges(num_elements: usize, num_edges: usize) -> Vec<(u32, u32)>
     edges
 }
 
-fn bench_size(num_elements: usize, num_edges: usize) {
+fn bench_size(runner: Option<&GpuRunner>, num_elements: usize, num_edges: usize) {
     println!(
         "=== Benchmarking with {} elements and {} edges ===",
         num_elements, num_edges
@@ -46,7 +46,12 @@ fn bench_size(num_elements: usize, num_edges: usize) {
 
     // GPU bench
     let start_gpu = Instant::now();
-    if let Some(gpu_roots) = gpu_union_find(num_elements, &edges, false) {
+    let gpu_roots_opt = if let Some(r) = runner {
+        r.gpu_union_find(num_elements, &edges, true)
+    } else {
+        gpu_union_find(num_elements, &edges, true)
+    };
+    if let Some(gpu_roots) = gpu_roots_opt {
         let duration_gpu = start_gpu.elapsed();
         println!("GPU (gpu_union_find): {:?}", duration_gpu);
         println!(
@@ -96,12 +101,24 @@ fn main() {
     );
     println!();
 
+    let runner = GpuRunner::new();
+    if runner.is_none() {
+        println!("Failed to initialize GPU runner.");
+    }
+
+    // Warmup GPU to exclude driver init from the first benchmark
+    println!("=== Warming up GPU ===");
+    if let Some(r) = &runner {
+        r.gpu_union_find(10, &[(0, 1)], false);
+    }
+    println!();
+
     // Small dataset
-    bench_size(100_000, 200_000);
+    bench_size(runner.as_ref(), 100_000, 200_000);
 
     // Medium dataset
-    bench_size(1_000_000, 2_000_000);
+    bench_size(runner.as_ref(), 1_000_000, 2_000_000);
 
     // Large dataset
-    bench_size(10_000_000, 20_000_000);
+    bench_size(runner.as_ref(), 10_000_000, 20_000_000);
 }

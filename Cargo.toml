@@ -47,8 +47,9 @@ memmap2 = "0.9"
 flate2 = "1.0"  # For gzip support
 fm-index = "0.3"  # FM-index / CSA for sequence name lookup (pulls in vers-vecs)
 iitree-rs = "0.1.1"  # Interval tree with disk-backed storage
-libloading = { version = "0.8", optional = true }
-cudarc = { version = "0.19.7", features = ["nvrtc", "cuda-12020"], optional = true }
+cuda-core = { git = "https://github.com/NVlabs/cuda-oxide.git", optional = true }
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", optional = true }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", optional = true }
 
 # Transclosure dependencies
 rayon = "1.11"                  # Parallel iteration & sorting
@@ -61,7 +62,7 @@ clap = { version = "4.5", features = ["derive"] }  # Command-line argument parsi
 
 [features]
 default = []
-cuda = ["dep:cudarc", "dep:libloading"]
+cuda = ["dep:cuda-core", "dep:cuda-device", "dep:cuda-host"]
 
 [profile.release]
 lto = "off"
@@ -72,6 +73,6 @@ lto = "off"
 [build-dependencies]
 cbindgen = "0.27"
 
-[[bench]]
+[[bin]]
 name = "bench_gpu"
-harness = false
+path = "benches/bench_gpu.rs"

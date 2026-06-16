@@ -1,54 +1,55 @@
-use cudarc::driver::{CudaContext, LaunchConfig, PushKernelArg};
-use cudarc::nvrtc::compile_ptx;
+use cuda_core::{CudaContext, LaunchConfig};
 
-const CUDA_SRC: &str = include_str!("union_find.cu");
+#[path = "kernels.rs"]
+pub mod kernels;
 
 // Threads per block for all kernels. 256 is safe across all SM architectures.
 const CUDA_THREADS_PER_BLOCK: usize = 256;
 
-/// Returns `true` if both the CUDA driver and NVRTC JIT libraries are loadable.
+/// Returns `true` if the CUDA driver library is loadable and a context can be created.
 pub fn is_cuda_available() -> bool {
-    let cuda_ok = cudarc::get_lib_name_candidates("cuda")
-        .into_iter()
-        .any(|c| unsafe { libloading::Library::new(&c).is_ok() });
-
-    if !cuda_ok {
-        return false;
-    }
-
-    cudarc::get_lib_name_candidates("nvrtc")
-        .into_iter()
-        .any(|c| unsafe { libloading::Library::new(&c).is_ok() })
+    CudaContext::new(0).is_ok()
 }
 
-/// Run union-find on the GPU via JIT-compiled CUDA kernels.
-pub fn gpu_union_find(
-    num_elements: usize,
-    edges: &[(u32, u32)],
-    verbose: bool,
-) -> Option<Vec<u32>> {
-    if num_elements == 0 {
-        return Some(Vec::new());
+pub struct GpuRunner {
+    pub ctx: std::sync::Arc<CudaContext>,
+    pub stream: std::sync::Arc<cuda_core::CudaStream>,
+    pub module: kernels::kernels::LoadedModule,
+}
+
+impl GpuRunner {
+    pub fn new() -> Option<Self> {
+        let ctx = CudaContext::new(0).ok()?;
+        let stream = ctx.default_stream();
+        let module = kernels::kernels::load(&ctx).ok()?;
+        Some(Self { ctx, stream, module })
     }
 
-    let t_init = std::time::Instant::now();
-    let ctx = CudaContext::new(0).ok()?;
-    let stream = ctx.default_stream();
-    let ptx = compile_ptx(CUDA_SRC).ok()?;
-    let module = ctx.load_module(ptx).ok()?;
-    let initialize_parents = module.load_function("initialize_parents").ok()?;
-    let union_step = module.load_function("union_step").ok()?;
-    let pointer_jump = module.load_function("pointer_jump").ok()?;
-    let dur_init = t_init.elapsed();
+    /// Run union-find on the GPU via cuda-oxide.
+    pub fn gpu_union_find(
+        &self,
+        num_elements: usize,
+        edges: &[(u32, u32)],
+        verbose: bool,
+    ) -> Option<Vec<u32>> {
+        if num_elements == 0 {
+            return Some(Vec::new());
+        }
+
+        let stream = &self.stream;
+        let module = &self.module;
+        let dur_init = std::time::Duration::from_secs(0);
 
     let t_h2d = std::time::Instant::now();
-    let mut parents_gpu = stream.alloc_zeros::<u32>(num_elements).ok()?;
+    let mut parents_gpu = cuda_core::DeviceBuffer::<u32>::zeroed(&stream, num_elements).ok()?;
     let n = num_elements as u32;
     let num_edges = edges.len();
+
+    // Copy edges into [[u32; 2]] shape
     let edges_gpu = if num_edges > 0 {
         let edge_slice: &[[u32; 2]] =
             unsafe { std::slice::from_raw_parts(edges.as_ptr() as *const [u32; 2], num_edges) };
-        Some(stream.clone_htod(edge_slice).ok()?)
+        Some(cuda_core::DeviceBuffer::from_host(&stream, edge_slice).ok()?)
     } else {
         None
     };
@@ -64,10 +65,9 @@ pub fn gpu_union_find(
         shared_mem_bytes: 0,
     };
 
-    let mut init_builder = stream.launch_builder(&initialize_parents);
-    init_builder.arg(&mut parents_gpu);
-    init_builder.arg(&n);
-    unsafe { init_builder.launch(cfg_n).ok()? };
+    module
+        .initialize_parents(&stream, cfg_n, &mut parents_gpu, n)
+        .ok()?;
 
     if num_edges > 0 {
         let ne = num_edges as i32;
@@ -77,47 +77,53 @@ pub fn gpu_union_find(
             block_dim: (tpb, 1, 1),
             shared_mem_bytes: 0,
         };
-        let mut union_builder = stream.launch_builder(&union_step);
-        union_builder.arg(&mut parents_gpu);
-        union_builder.arg(edges_gpu.as_ref().unwrap());
-        union_builder.arg(&ne);
-        unsafe { union_builder.launch(cfg_e).ok()? };
+        module
+            .union_step(
+                &stream,
+                cfg_e,
+                &mut parents_gpu,
+                edges_gpu.as_ref().unwrap(),
+                ne,
+            )
+            .ok()?;
     }
 
     // Pointer-jumping to convergence.
-    let mut changed_host = vec![0i32];
-    let mut changed_gpu = stream.alloc_zeros::<i32>(1).ok()?;
+    let changed_host = vec![0u32];
+    let mut changed_gpu = cuda_core::DeviceBuffer::from_host(&stream, &changed_host).ok()?;
     let cfg_jump = LaunchConfig {
         grid_dim: (blocks_n, 1, 1),
         block_dim: (tpb, 1, 1),
         shared_mem_bytes: 0,
     };
+
     loop {
-        stream.memcpy_htod(&changed_host, &mut changed_gpu).ok()?;
-        let mut jump_builder = stream.launch_builder(&pointer_jump);
-        jump_builder.arg(&mut parents_gpu);
-        jump_builder.arg(&n);
-        jump_builder.arg(&mut changed_gpu);
-        unsafe { jump_builder.launch(cfg_jump).ok()? };
-        stream.memcpy_dtoh(&changed_gpu, &mut changed_host).ok()?;
+        // Reset changed variable to 0 on device
+        changed_gpu.zero_async(&stream).ok()?;
+
+        module
+            .pointer_jump(&stream, cfg_jump, &mut parents_gpu, n, &mut changed_gpu)
+            .ok()?;
+
+        // Read back whether changes occurred
+        let changed_vec = changed_gpu.to_host_vec(&stream).ok()?;
         stream.synchronize().ok()?;
-        if changed_host[0] == 0 {
+
+        if changed_vec[0] == 0 {
             break;
         }
-        changed_host[0] = 0;
     }
     let dur_kernel = t_kernel.elapsed();
 
     let t_d2h = std::time::Instant::now();
-    let mut parents_host = vec![0u32; num_elements];
-    stream.memcpy_dtoh(&parents_gpu, &mut parents_host).ok()?;
+    let parents_host = parents_gpu.to_host_vec(&stream).ok()?;
     stream.synchronize().ok()?;
     let dur_d2h = t_d2h.elapsed();
 
     if verbose {
         let dur_excl_init = dur_h2d + dur_kernel + dur_d2h;
         eprintln!("[gpu] profiling breakdown:");
-        eprintln!("[gpu] JIT compile + driver init: {:?}", dur_init);
+        eprintln!("[gpu] module load + driver init: {:?}", dur_init);
         eprintln!("[gpu] host to device copy + alloc: {:?}", dur_h2d);
         eprintln!("[gpu] pure kernel computation: {:?}", dur_kernel);
         eprintln!("[gpu] device to host copy: {:?}", dur_d2h);
@@ -125,6 +131,12 @@ pub fn gpu_union_find(
     }
 
     Some(parents_host)
+    }
+}
+
+pub fn gpu_union_find(num_elements: usize, edges: &[(u32, u32)], verbose: bool) -> Option<Vec<u32>> {
+    let runner = GpuRunner::new()?;
+    runner.gpu_union_find(num_elements, edges, verbose)
 }
 
 #[cfg(test)]
@@ -133,7 +145,6 @@ mod tests {
 
     #[test]
     fn test_gpu_union_find_or_fallback() {
-        // cudarc 0.19.x panics on missing libnvrtc.so rather than returning Err.
         if !is_cuda_available() {
             println!("[gpu] CUDA not available: skipping.");
             return;

@@ -9,3 +9,5 @@ target_cpu/
 target_gpu/
 benches/target/
 *.sbatch
+*.ptx
+*.ll
