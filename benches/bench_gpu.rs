@@ -29,20 +29,33 @@ fn bench_size(runner: Option<&GpuRunner>, num_elements: usize, num_edges: usize)
     );
     let edges = generate_mock_edges(num_elements, num_edges);
 
-    // CPU bench
-    let start_cpu = Instant::now();
-    let cpu_dsets = DisjointSetsAsm::new(num_elements);
+    // CPU bench (Parallel)
+    let start_cpu_par = Instant::now();
+    let cpu_dsets_par = DisjointSetsAsm::new(num_elements);
     edges.par_iter().for_each(|&(u, v)| {
-        cpu_dsets.unite(u as usize, v as usize);
+        cpu_dsets_par.unite(u as usize, v as usize);
     });
 
-    // Flatten / find all roots to complete CPU disjoint-set work
-    let cpu_roots: Vec<usize> = (0..num_elements)
+    let cpu_roots_par: Vec<usize> = (0..num_elements)
         .into_par_iter()
-        .map(|i| cpu_dsets.find(i))
+        .map(|i| cpu_dsets_par.find(i))
         .collect();
-    let duration_cpu = start_cpu.elapsed();
-    println!("CPU (DisjointSetsAsm): {:?}", duration_cpu);
+    let duration_cpu_par = start_cpu_par.elapsed();
+    println!("CPU Parallel (DisjointSetsAsm): {:?}", duration_cpu_par);
+
+    // CPU bench (Sequential)
+    let start_cpu_seq = Instant::now();
+    let cpu_dsets_seq = DisjointSetsAsm::new(num_elements);
+    for &(u, v) in &edges {
+        cpu_dsets_seq.unite(u as usize, v as usize);
+    }
+    
+    let mut cpu_roots: Vec<usize> = Vec::with_capacity(num_elements);
+    for i in 0..num_elements {
+        cpu_roots.push(cpu_dsets_seq.find(i));
+    }
+    let duration_cpu_seq = start_cpu_seq.elapsed();
+    println!("CPU Sequential (DisjointSetsAsm): {:?}", duration_cpu_seq);
 
     // GPU bench
     let start_gpu = Instant::now();
@@ -55,8 +68,12 @@ fn bench_size(runner: Option<&GpuRunner>, num_elements: usize, num_edges: usize)
         let duration_gpu = start_gpu.elapsed();
         println!("GPU (gpu_union_find): {:?}", duration_gpu);
         println!(
-            "GPU Speedup: {:.2}x",
-            duration_cpu.as_secs_f64() / duration_gpu.as_secs_f64()
+            "GPU Speedup (vs Sequential): {:.2}x",
+            duration_cpu_seq.as_secs_f64() / duration_gpu.as_secs_f64()
+        );
+        println!(
+            "GPU Speedup (vs Parallel): {:.2}x",
+            duration_cpu_par.as_secs_f64() / duration_gpu.as_secs_f64()
         );
 
         // Correctness verification
@@ -64,7 +81,7 @@ fn bench_size(runner: Option<&GpuRunner>, num_elements: usize, num_edges: usize)
         for i in 0..num_elements {
             let cpu_root = cpu_roots[i];
             let gpu_root = gpu_roots[i] as usize;
-            if cpu_dsets.find(cpu_root) != cpu_dsets.find(gpu_root) {
+            if cpu_dsets_seq.find(cpu_root) != cpu_dsets_seq.find(gpu_root) {
                 mismatch_count += 1;
             }
         }
