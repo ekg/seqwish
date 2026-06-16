@@ -466,7 +466,7 @@ impl SpanningTreeAdj {
     }
 }
 
-/// Compute a maximum-weight spanning tree over sequence pairs from the alignment iitree.
+/// Compute a maximum-weight spanning tree of sequence pairs from the alignment iitree.
 ///
 /// Returns `(adj, tree_edges, total_pairs)` for use in progress logging.
 fn compute_spanning_tree(
