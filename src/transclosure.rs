@@ -900,7 +900,10 @@ pub fn compute_transitive_closures(
         // CUDA availability is stable for the process lifetime; check once.
         use std::sync::OnceLock;
         static CUDA_AVAILABLE: OnceLock<bool> = OnceLock::new();
-        let use_gpu = *CUDA_AVAILABLE.get_or_init(crate::gpu::is_cuda_available);
+        // Dynamic crossover threshold (3M elements) based on benchmarks where GPU outperforms CPU
+        const GPU_MIN_ELEMENTS_THRESHOLD: usize = 3_000_000;
+        let use_gpu = *CUDA_AVAILABLE.get_or_init(crate::gpu::is_cuda_available)
+            && q_curr_bv_count >= GPU_MIN_ELEMENTS_THRESHOLD;
 
         let uf_result: UnionFindResult = if use_gpu {
             let edges: Vec<(u32, u32)> = component_seqs
