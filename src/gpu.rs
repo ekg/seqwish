@@ -46,9 +46,8 @@ pub fn gpu_union_find(
     let n = num_elements as u32;
     let num_edges = edges.len();
     let edges_gpu = if num_edges > 0 {
-        let edge_slice: &[[u32; 2]] = unsafe {
-            std::slice::from_raw_parts(edges.as_ptr() as *const [u32; 2], num_edges)
-        };
+        let edge_slice: &[[u32; 2]] =
+            unsafe { std::slice::from_raw_parts(edges.as_ptr() as *const [u32; 2], num_edges) };
         Some(stream.clone_htod(edge_slice).ok()?)
     } else {
         None
@@ -72,8 +71,7 @@ pub fn gpu_union_find(
 
     if num_edges > 0 {
         let ne = num_edges as i32;
-        let blocks_e =
-            ((num_edges + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
+        let blocks_e = ((num_edges + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
         let cfg_e = LaunchConfig {
             grid_dim: (blocks_e, 1, 1),
             block_dim: (tpb, 1, 1),
@@ -143,9 +141,7 @@ mod tests {
 
         // Edges form two chains: 0-1-2-8 and 5-6-7-8 (joined at 8), plus 3-4.
         let num_elements = 10;
-        let edges: Vec<(u32, u32)> = vec![
-            (0, 1), (1, 2), (3, 4), (5, 6), (6, 7), (7, 8), (2, 8),
-        ];
+        let edges: Vec<(u32, u32)> = vec![(0, 1), (1, 2), (3, 4), (5, 6), (6, 7), (7, 8), (2, 8)];
 
         if let Some(r) = gpu_union_find(num_elements, &edges, false) {
             assert_eq!(r.len(), num_elements);

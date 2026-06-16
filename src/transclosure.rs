@@ -570,8 +570,7 @@ pub fn compute_transitive_closures(
     }
 
     // Compute spanning tree for fast BFS discovery
-    let (spanning_pairs, st_edges, st_pairs) =
-        compute_spanning_tree(&aln_iitree, &seqidx);
+    let (spanning_pairs, st_edges, st_pairs) = compute_spanning_tree(&aln_iitree, &seqidx);
     if show_progress {
         eprintln!(
             "[transclosure] Spanning tree: {st_edges} edges from {st_pairs} total pairs ({}x reduction)",
@@ -639,7 +638,7 @@ pub fn compute_transitive_closures(
         let q_curr_bv = AtomicBitVec::new(input_seq_length);
 
         // Work queues for BFS (no ovlp_q needed)
-        let todo_in  = Arc::new(ArrayQueue::new(BFS_QUEUE_CAPACITY));
+        let todo_in = Arc::new(ArrayQueue::new(BFS_QUEUE_CAPACITY));
         let todo_out = Arc::new(ArrayQueue::new(BFS_QUEUE_CAPACITY));
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
         let active_workers = Arc::new(AtomicU64::new(0));
@@ -927,10 +926,7 @@ pub fn compute_transitive_closures(
                                     && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
                                     && q_curr_bv_ref.get(t, Ordering::Relaxed)
                                 {
-                                    local_edges.push((
-                                        rank_table[j as usize],
-                                        rank_table[t],
-                                    ));
+                                    local_edges.push((rank_table[j as usize], rank_table[t]));
                                 }
                                 incr_pos(&mut p);
                             }
@@ -1012,7 +1008,7 @@ pub fn compute_transitive_closures(
                 }
                 let root = match &uf_result {
                     UnionFindResult::Gpu(roots) => roots[j] as u64,
-                    UnionFindResult::Cpu(cpu)   => cpu.find(j) as u64,
+                    UnionFindResult::Cpu(cpu) => cpu.find(j) as u64,
                 };
                 Some((root, p))
             })
