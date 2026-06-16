@@ -599,6 +599,14 @@ pub fn compute_transitive_closures(
     let mut writer_thread: Option<thread::JoinHandle<io::Result<(Vec<u8>, HashMap<PosT, Range>)>>> =
         None;
 
+    // Initialise the GPU runner once here. Reused across all batches so
+    // the CUDA context, PTX module, and pinnded/device buffers are just allocated once. Falls back to CPU if CUDA is not available.
+    #[cfg(feature = "cuda")]
+    let mut gpu_runner: Option<crate::gpu::GpuRunner> = crate::gpu::GpuRunner::new();
+    #[cfg(not(feature = "cuda"))]
+    let mut gpu_runner: Option<()> = None;
+    let _ = &mut gpu_runner; // suppress unused-mut warning when cuda feature is off
+
     // Main loop: process input sequence in chunks
     let mut i = 0;
     while i < input_seq_length {
@@ -905,6 +913,10 @@ pub fn compute_transitive_closures(
         let use_gpu = *CUDA_AVAILABLE.get_or_init(crate::gpu::is_cuda_available)
             && (force_gpu || q_curr_bv_count >= GPU_MIN_ELEMENTS_THRESHOLD);
 
+        // `gpu_runner` is initialised once before the main loop (below) and
+        // reused across batches so the CUDA context, PTX module, and device
+        // buffers are not re-created on every chunk.
+
         let uf_result: UnionFindResult = if use_gpu {
             let edges: Vec<(u32, u32)> = component_seqs
                 .par_iter()
@@ -936,7 +948,10 @@ pub fn compute_transitive_closures(
                 })
                 .collect();
 
-            match crate::gpu::gpu_union_find(q_curr_bv_count, &edges, show_progress) {
+            match gpu_runner
+                .as_mut()
+                .and_then(|r| r.gpu_union_find(q_curr_bv_count, &edges, show_progress))
+            {
                 Some(roots) => UnionFindResult::Gpu(roots),
                 None => {
                     // check succeeded but context creation failed (no device or OOM).

@@ -1,4 +1,4 @@
-use cuda_core::{CudaContext, LaunchConfig};
+use cuda_core::{CudaContext, LaunchConfig, PinnedHostBuffer};
 
 #[path = "kernels.rs"]
 pub mod kernels;
@@ -11,10 +11,25 @@ pub fn is_cuda_available() -> bool {
     CudaContext::new(0).is_ok()
 }
 
+/// Cached GPU state. incl context, stream, module, and reusable device/host buffers.
+///
+/// Creating a GpuRunner is expensive (driver init + PTX load). So ideally keep one alive
+/// and reuse it across calls to reduce that cost.
 pub struct GpuRunner {
     pub ctx: std::sync::Arc<CudaContext>,
     pub stream: std::sync::Arc<cuda_core::CudaStream>,
     pub module: kernels::kernels::LoadedModule,
+
+    /// Pinned staging buffer for the edge list
+    edges_pinned: Option<PinnedHostBuffer<[u32; 2]>>,
+    edges_capacity: usize,
+
+    /// Cached parents array on the device, will be reallocated only when needed.
+    parents_gpu: Option<cuda_core::DeviceBuffer<u32>>,
+    parents_capacity: usize,
+
+    /// Single-element convergence flag
+    changed_gpu: Option<cuda_core::DeviceBuffer<u32>>,
 }
 
 impl GpuRunner {
@@ -22,12 +37,22 @@ impl GpuRunner {
         let ctx = CudaContext::new(0).ok()?;
         let stream = ctx.default_stream();
         let module = kernels::kernels::load(&ctx).ok()?;
-        Some(Self { ctx, stream, module })
+        let changed_gpu = cuda_core::DeviceBuffer::<u32>::zeroed(&stream, 1).ok()?;
+        Some(Self {
+            ctx,
+            stream,
+            module,
+            edges_pinned: None,
+            edges_capacity: 0,
+            parents_gpu: None,
+            parents_capacity: 0,
+            changed_gpu: Some(changed_gpu),
+        })
     }
 
     /// Run union-find on the GPU via cuda-oxide.
     pub fn gpu_union_find(
-        &self,
+        &mut self,
         num_elements: usize,
         edges: &[(u32, u32)],
         verbose: bool,
@@ -36,106 +61,125 @@ impl GpuRunner {
             return Some(Vec::new());
         }
 
-        let stream = &self.stream;
+        let stream = &self.stream.clone();
         let module = &self.module;
         let dur_init = std::time::Duration::from_secs(0);
+        let num_edges = edges.len();
+        let n = num_elements as u32;
 
-    let t_h2d = std::time::Instant::now();
-    let mut parents_gpu = cuda_core::DeviceBuffer::<u32>::zeroed(&stream, num_elements).ok()?;
-    let n = num_elements as u32;
-    let num_edges = edges.len();
+        let t_h2d = std::time::Instant::now();
 
-    // Copy edges into [[u32; 2]] shape
-    let edges_gpu = if num_edges > 0 {
-        let edge_slice: &[[u32; 2]] =
-            unsafe { std::slice::from_raw_parts(edges.as_ptr() as *const [u32; 2], num_edges) };
-        Some(cuda_core::DeviceBuffer::from_host(&stream, edge_slice).ok()?)
-    } else {
-        None
-    };
-    let dur_h2d = t_h2d.elapsed();
+        // We receive edges as &[(u32, u32)] but the kernel expects &[[u32; 2]].
+        // We maintain a pinned staging buffer in the runner to maximise PCIe throughput
+        let edges_gpu = if num_edges > 0 {
+            // Grow the pinned staging buffer if needed.
+            if num_edges > self.edges_capacity {
+                self.edges_pinned =
+                    Some(PinnedHostBuffer::<[u32; 2]>::zeroed(&self.ctx, num_edges).ok()?);
+                self.edges_capacity = num_edges;
+            }
+            let pinned = self.edges_pinned.as_mut()?;
+            // Fill: convert (u32, u32) -> [u32; 2] into the pinned buffer.
+            for (slot, &(u, v)) in pinned.iter_mut().zip(edges.iter()) {
+                *slot = [u, v];
+            }
+            // Transfer from pinned staging -> device.
+            // SAFETY: pinned lives for the duration of this function and we
+            // call stream.synchronize() before returning, so the DMA
+            // completes before pinned is accessible again.
+            let buf = unsafe { cuda_core::DeviceBuffer::from_pinned_host(stream, pinned).ok()? };
+            Some(buf)
+        } else {
+            None
+        };
 
-    let t_kernel = std::time::Instant::now();
+        // --- Parents buffer ---
+        if num_elements > self.parents_capacity {
+            self.parents_gpu =
+                Some(cuda_core::DeviceBuffer::<u32>::zeroed(stream, num_elements).ok()?);
+            self.parents_capacity = num_elements;
+        }
+        let parents_gpu = self.parents_gpu.as_mut()?;
+        let dur_h2d = t_h2d.elapsed();
 
-    let tpb = CUDA_THREADS_PER_BLOCK as u32;
-    let blocks_n = ((num_elements + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
-    let cfg_n = LaunchConfig {
-        grid_dim: (blocks_n, 1, 1),
-        block_dim: (tpb, 1, 1),
-        shared_mem_bytes: 0,
-    };
+        // --- Kernel launch ---
+        let t_kernel = std::time::Instant::now();
 
-    module
-        .initialize_parents(&stream, cfg_n, &mut parents_gpu, n)
-        .ok()?;
-
-    if num_edges > 0 {
-        let ne = num_edges as i32;
-        let blocks_e = ((num_edges + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
-        let cfg_e = LaunchConfig {
-            grid_dim: (blocks_e, 1, 1),
+        let tpb = CUDA_THREADS_PER_BLOCK as u32;
+        let blocks_n =
+            ((num_elements + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
+        let cfg_n = LaunchConfig {
+            grid_dim: (blocks_n, 1, 1),
             block_dim: (tpb, 1, 1),
             shared_mem_bytes: 0,
         };
-        module
-            .union_step(
-                &stream,
-                cfg_e,
-                &mut parents_gpu,
-                edges_gpu.as_ref().unwrap(),
-                ne,
-            )
-            .ok()?;
-    }
-
-    // Pointer-jumping to convergence.
-    let changed_host = vec![0u32];
-    let mut changed_gpu = cuda_core::DeviceBuffer::from_host(&stream, &changed_host).ok()?;
-    let cfg_jump = LaunchConfig {
-        grid_dim: (blocks_n, 1, 1),
-        block_dim: (tpb, 1, 1),
-        shared_mem_bytes: 0,
-    };
-
-    loop {
-        // Reset changed variable to 0 on device
-        changed_gpu.zero_async(&stream).ok()?;
 
         module
-            .pointer_jump(&stream, cfg_jump, &mut parents_gpu, n, &mut changed_gpu)
+            .initialize_parents(stream, cfg_n, parents_gpu, n)
             .ok()?;
 
-        // Read back whether changes occurred
-        let changed_vec = changed_gpu.to_host_vec(&stream).ok()?;
-        stream.synchronize().ok()?;
-
-        if changed_vec[0] == 0 {
-            break;
+        if num_edges > 0 {
+            let ne = num_edges as i32;
+            let blocks_e =
+                ((num_edges + CUDA_THREADS_PER_BLOCK - 1) / CUDA_THREADS_PER_BLOCK) as u32;
+            let cfg_e = LaunchConfig {
+                grid_dim: (blocks_e, 1, 1),
+                block_dim: (tpb, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            module
+                .union_step(stream, cfg_e, parents_gpu, edges_gpu.as_ref().unwrap(), ne)
+                .ok()?;
         }
-    }
-    let dur_kernel = t_kernel.elapsed();
 
-    let t_d2h = std::time::Instant::now();
-    let parents_host = parents_gpu.to_host_vec(&stream).ok()?;
-    stream.synchronize().ok()?;
-    let dur_d2h = t_d2h.elapsed();
+        // --- Pointer-jumping to convergence ---
+        let changed_gpu = self.changed_gpu.as_mut()?;
+        let cfg_jump = LaunchConfig {
+            grid_dim: (blocks_n, 1, 1),
+            block_dim: (tpb, 1, 1),
+            shared_mem_bytes: 0,
+        };
 
-    if verbose {
-        let dur_excl_init = dur_h2d + dur_kernel + dur_d2h;
-        eprintln!("[gpu] profiling breakdown:");
-        eprintln!("[gpu] module load + driver init: {:?}", dur_init);
-        eprintln!("[gpu] host to device copy + alloc: {:?}", dur_h2d);
-        eprintln!("[gpu] pure kernel computation: {:?}", dur_kernel);
-        eprintln!("[gpu] device to host copy: {:?}", dur_d2h);
-        eprintln!("[gpu] total (excluding startup): {:?}", dur_excl_init);
-    }
+        loop {
+            changed_gpu.zero_async(stream).ok()?;
+            module
+                .pointer_jump(stream, cfg_jump, parents_gpu, n, changed_gpu)
+                .ok()?;
+            let changed_vec = changed_gpu.to_host_vec(stream).ok()?;
+            stream.synchronize().ok()?;
+            if changed_vec[0] == 0 {
+                break;
+            }
+        }
+        let dur_kernel = t_kernel.elapsed();
 
-    Some(parents_host)
+        // --- Device-to-host result copy ---
+        let t_d2h = std::time::Instant::now();
+        let mut parents_host = parents_gpu.to_host_vec(stream).ok()?;
+        stream.synchronize().ok()?;
+        let dur_d2h = t_d2h.elapsed();
+
+        if verbose {
+            let dur_excl_init = dur_h2d + dur_kernel + dur_d2h;
+            eprintln!("[gpu] profiling breakdown:");
+            eprintln!("[gpu] module load + driver init: {:?}", dur_init);
+            eprintln!("[gpu] host to device copy + alloc: {:?}", dur_h2d);
+            eprintln!("[gpu] pure kernel computation: {:?}", dur_kernel);
+            eprintln!("[gpu] device to host copy: {:?}", dur_d2h);
+            eprintln!("[gpu] total (excluding startup): {:?}", dur_excl_init);
+        }
+
+        parents_host.truncate(num_elements);
+        Some(parents_host)
     }
 }
 
-pub fn gpu_union_find(num_elements: usize, edges: &[(u32, u32)], verbose: bool) -> Option<Vec<u32>> {
-    let runner = GpuRunner::new()?;
+pub fn gpu_union_find(
+    num_elements: usize,
+    edges: &[(u32, u32)],
+    verbose: bool,
+) -> Option<Vec<u32>> {
+    let mut runner = GpuRunner::new()?;
     runner.gpu_union_find(num_elements, edges, verbose)
 }
 
@@ -150,23 +194,19 @@ mod tests {
             return;
         }
 
-        // Edges form two chains: 0-1-2-8 and 5-6-7-8 (joined at 8), plus 3-4.
         let num_elements = 10;
         let edges: Vec<(u32, u32)> = vec![(0, 1), (1, 2), (3, 4), (5, 6), (6, 7), (7, 8), (2, 8)];
 
         if let Some(r) = gpu_union_find(num_elements, &edges, false) {
             assert_eq!(r.len(), num_elements);
-            // {0,1,2,5,6,7,8} all in one component
             assert_eq!(r[0], r[1]);
             assert_eq!(r[1], r[2]);
             assert_eq!(r[2], r[8]);
             assert_eq!(r[5], r[6]);
             assert_eq!(r[6], r[7]);
             assert_eq!(r[0], r[7]);
-            // {3,4} isolated from the above
             assert_eq!(r[3], r[4]);
             assert_ne!(r[3], r[0]);
-            // {9} singleton
             assert_eq!(r[9], 9);
         } else {
             println!("GPU execution returned None; skipped.");

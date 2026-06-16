@@ -78,6 +78,15 @@ pub mod gpu {
     ) -> Option<Vec<u32>> {
         None
     }
+    pub struct GpuRunner;
+    impl GpuRunner {
+        pub fn new() -> Option<Self> {
+            None
+        }
+        pub fn gpu_union_find(&self, _n: usize, _e: &[(u32, u32)], _v: bool) -> Option<Vec<u32>> {
+            None
+        }
+    }
 }
 
 pub mod intervaltree;
