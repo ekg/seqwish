@@ -902,8 +902,9 @@ pub fn compute_transitive_closures(
         static CUDA_AVAILABLE: OnceLock<bool> = OnceLock::new();
         // Dynamic crossover threshold (3M elements) based on benchmarks where GPU outperforms CPU
         const GPU_MIN_ELEMENTS_THRESHOLD: usize = 3_000_000;
+        let force_gpu = std::env::var("SEQWISH_FORCE_GPU").is_ok();
         let use_gpu = *CUDA_AVAILABLE.get_or_init(crate::gpu::is_cuda_available)
-            && q_curr_bv_count >= GPU_MIN_ELEMENTS_THRESHOLD;
+            && (force_gpu || q_curr_bv_count >= GPU_MIN_ELEMENTS_THRESHOLD);
 
         let uf_result: UnionFindResult = if use_gpu {
             let edges: Vec<(u32, u32)> = component_seqs
