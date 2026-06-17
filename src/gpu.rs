@@ -212,4 +212,50 @@ mod tests {
             println!("GPU execution returned None; skipped.");
         }
     }
+
+    #[test]
+    fn test_gpu_union_find_random() {
+        if !is_cuda_available() {
+            println!("[gpu] CUDA not available: skipping.");
+            return;
+        }
+
+        let num_elements = 1000;
+        // Simple LCG edge generator for test setup without external deps
+        let mut state = 12345u64;
+        let mut next = || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (state >> 33) as u32 % (num_elements as u32)
+        };
+        let edges: Vec<(u32, u32)> = (0..2000).map(|_| (next(), next())).collect();
+
+        // Run CPU union-find
+        let cpu_dsets = crate::dset64::DisjointSets::new(num_elements);
+        for &(u, v) in &edges {
+            cpu_dsets.unite(u as usize, v as usize);
+        }
+        let cpu_roots: Vec<usize> = (0..num_elements).map(|i| cpu_dsets.find(i)).collect();
+
+        // Run GPU union-find
+        if let Some(gpu_roots) = gpu_roots(num_elements, &edges, false) {
+            assert_eq!(gpu_roots.len(), num_elements);
+            
+            // Verify partition equivalence:
+            // For every element i, its CPU representative should map to the same GPU representative.
+            let mut cpu_to_gpu_root = vec![None; num_elements];
+            for i in 0..num_elements {
+                let cpu_r = cpu_roots[i];
+                let gpu_r = gpu_roots[i];
+                if let Some(existing_gpu_r) = cpu_to_gpu_root[cpu_r] {
+                    assert_eq!(
+                        gpu_r, existing_gpu_r,
+                        "Partition mismatch at element {}: CPU root {} mapped to GPU roots {} and {}",
+                        i, cpu_r, gpu_r, existing_gpu_r
+                    );
+                } else {
+                    cpu_to_gpu_root[cpu_r] = Some(gpu_r);
+                }
+            }
+        }
+    }
 }

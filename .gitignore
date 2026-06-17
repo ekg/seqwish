@@ -11,3 +11,4 @@ benches/target/
 *.sbatch
 *.ptx
 *.ll
+libclang_link/
