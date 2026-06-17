@@ -3,68 +3,96 @@ on: [ push, pull_request ]
 name: build and test
 
 jobs:
-  build_and_test:
-    runs-on: ubuntu-latest
+  rust_build_and_test:
+    name: Rust Build and Test
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
           - os: ubuntu-latest
-            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            cross: true
     steps:
       - uses: actions/checkout@v3
-        with: 
-          submodules: 'recursive'
-      - name: Install required packages
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
-        run: sudo apt-get update && sudo apt-get install -y
-          git
-          bash
-          cmake
-          make
-          g++
-          libatomic-ops-dev
-          autoconf
-          libgsl-dev
-          zlib1g-dev
-          libzstd-dev
-          libjemalloc-dev
-          pkg-config
-      - name: Build seqwish for Linux x86_64
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
-        run: cmake -H. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-mcx16" -DCMAKE_CXX_FLAGS="-mcx16" -Bbuild && cmake --build build -- -j 2
-      - name: Execute tests for Linux x86_64
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
-        run: cd test && ASAN_OPTIONS=detect_leaks=1:symbolize=1 LSAN_OPTIONS=verbosity=0:log_threads=1 make test
-
-      - name: Build and test seqwish for Linux ${{ matrix.arch }}
-        if: matrix.os == 'ubuntu-latest' && matrix.arch != 'x86_64'
-        uses: uraimo/run-on-arch-action@v2
         with:
-          arch: ${{ matrix.arch }}
-          distro: ubuntu22.04
-          githubToken: ${{ github.token }}
-          dockerRunArgs: |
-            --volume "${PWD}:/seqwish" 
-          install: |
-            apt-get update -q -y
-            apt-get install -q -y \
-              cmake \
-              make \
-              g++ \
-              git \
-              file \
-              libatomic-ops-dev \
-              autoconf \
-              libgsl-dev \
-              zlib1g-dev \
-              libzstd-dev \
-              libjemalloc-dev \
-              libpthread-stubs0-dev \
-              pkg-config
-          run: |
-            cd /seqwish
-            cmake -H. -DCMAKE_BUILD_TYPE=Release -DEXTRA_FLAGS="-march=armv8-a -pthread" -Bbuild && cmake --build build -- -j 2
-            file bin/seqwish 
-            cd test && make test
+          submodules: 'recursive'
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest' && !matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Run Rust unit tests
+        if: "!matrix.cross"
+        run: cargo test --verbose
+
+      - name: Build Rust binary (native)
+        if: "!matrix.cross"
+        run: cargo build --release --verbose
+
+      - name: Build Rust binary (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Run integration tests
+        if: matrix.os == 'ubuntu-latest' && !matrix.cross
+        run: |
+          # Test with smallest HLA dataset
+          mkdir -p /tmp/seqwish-test
+          ./target/release/seqwish \
+            -s test/HLA/V-352962.fa.gz \
+            -p test/HLA/V-352962.paf.gz \
+            -g /tmp/test.gfa \
+            -b /tmp/seqwish-test \
+            -t 4
+
+          # Verify checksum
+          EXPECTED=$(cat test/HLA/V-352962.fa.gz.gfa.md5)
+          ACTUAL=$(md5sum /tmp/test.gfa | cut -f1 -d' ')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Checksum mismatch! Expected: $EXPECTED, Got: $ACTUAL"
+            exit 1
+          fi
+          echo "✓ Integration test passed"
+
+      - name: Upload binary artifact
+        if: "!matrix.cross"
+        uses: actions/upload-artifact@v4
+        with:
+          name: seqwish-${{ matrix.target }}
+          path: target/release/seqwish
+
+  format_and_lint:
+    name: Format and Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
