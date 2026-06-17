@@ -14,14 +14,14 @@ Memory usage during construction and traversal is limited by the use of sorted d
 
 ## Rust implementation
 
-This version of seqwish has been completely rewritten in Rust. The new implementation:
+seqwish is now maintained as a Rust implementation at the repository root:
 
-- Produces **byte-for-byte identical output** to the original C++ version
+- Produces **byte-for-byte identical output** to the legacy C++ implementation
 - Provides a **library API** for programmatic use (`use seqwish;`)
 - Supports both **disk-backed** and **in-memory** operation modes
 - Is packaged as a standard root Cargo crate for crates.io publication
 
-The original C++ implementation is preserved in `cpp/` for reference.
+The legacy C++ implementation is preserved in `cpp/` for reference and historical comparison. New builds and library use should target the Rust package at the repository root.
 
 ## Citation
 
@@ -72,7 +72,7 @@ Users familiar with concepts in assembly graphs will notice many similarities be
 
 ### from source (Rust)
 
-You'll need Rust installed. Then:
+You'll need Rust 1.70 or newer. Then:
 
 ```bash
 git clone https://github.com/pangenome/seqwish.git
@@ -99,9 +99,11 @@ conda install -c bioconda seqwish
 ## usage
 
 `seqwish` supports PAF format output of several sequence aligners, like [wfmash](https://github.com/ekg/wfmash) and [minimap2](https://github.com/lh3/minimap2).
-It requires the CIGAR string of the alignment to be provided in the `cg:z:` optional field. It uses large temporary files during the construction.
-By default, these are prefixed with the output GFA file name, but this can be changed with the `-b[base], --base=[base]` command line argument. The input sequences can be in FASTA or FASTQ format, either in plain text or gzipped.
-It writes [GFA1](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md#the-gfa-format-specification) on its standard output.
+It requires the CIGAR string of each alignment to be provided in the `cg:z:` optional field.
+The input sequences can be in FASTA or FASTQ format, either in plain text or gzipped. PAF input can also be plain text or gzipped.
+
+By default, `seqwish` uses disk-backed temporary files in the current directory. Use `-b, --temp-dir` to place them elsewhere, `-T, --keep-temp` to keep them after the run, or `-M, --in-memory` to use in-memory interval trees for small datasets.
+It writes [GFA1](https://github.com/GFA-spec/GFA-spec/blob/master/GFA1.md#the-gfa-format-specification) to the file given with `-g, --gfa`, or to standard output when `-g` is omitted.
 
 ### basic usage
 
@@ -113,28 +115,30 @@ seqwish -s sequences.fa -p alignments.paf -g output.gfa
 
 ```bash
 seqwish \
-  -s sequences.fa \      # Input sequences (FASTA/FASTQ)
-  -p alignments.paf \    # Pairwise alignments (PAF format)
-  -g output.gfa \        # Output variation graph (GFA format)
-  -t 16 \                # Use 16 threads
-  -k 19 \                # Filter matches < 19bp
-  -P                     # Show progress
+  -s sequences.fa \
+  -p alignments.paf \
+  -g output.gfa \
+  -t 16 \
+  -k 19 \
+  -P
 ```
 
 ### options
 
 ```
+-p, --paf-alns <FILE>          Input alignments (PAF, optionally gzipped; requires cg:z: CIGAR tags)
 -s, --seqs <FILE>              Input sequences (FASTA/FASTQ, optionally gzipped)
--p, --paf-alns <FILE>          Input alignments (PAF format, optionally gzipped)
--g, --gfa <FILE>               Output graph (GFA v1.0 format)
+-g, --gfa <FILE>               Output graph (GFA v1.0 format; stdout if omitted)
+-b, --temp-dir <PATH>          Directory for temporary files [default: current directory]
 -t, --threads <N>              Number of threads [default: 1]
--k, --min-match-len <N>        Minimum match length [default: 0]
--r, --repeat-max <N>           Maximum repeat copies in transitive closure [default: 0]
+-r, --repeat-max <N>           Maximum copies of a given input base in transitive closure [default: 0]
 -l, --min-repeat-distance <N>  Minimum distance for repeat handling [default: 0]
--B, --transclose-batch <N>     Transitive closure batch size [default: 1000000]
--b, --temp-dir <PATH>          Temporary file directory
--T, --keep-temp                Keep temporary files
--P, --show-progress            Show progress messages
+-k, --min-match-len <N>        Minimum exact match length [default: 0]
+-f, --sparse-factor <N>        Sparsify input matches by hash-minimizing fraction [default: 0.0]
+-B, --transclose-batch <N>     Transitive closure batch size in bp [default: 1000000]
+-T, --keep-temp                Keep intermediate temporary files
+-P, --show-progress            Log progress messages
+-M, --in-memory                Use in-memory interval trees instead of disk-backed trees
 ```
 
 ### wfmash example
