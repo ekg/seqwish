@@ -224,7 +224,9 @@ mod tests {
         // Simple LCG edge generator for test setup without external deps
         let mut state = 12345u64;
         let mut next = || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (state >> 33) as u32 % (num_elements as u32)
         };
         let edges: Vec<(u32, u32)> = (0..2000).map(|_| (next(), next())).collect();
@@ -239,7 +241,7 @@ mod tests {
         // Run GPU union-find
         if let Some(gpu_roots) = gpu_roots(num_elements, &edges, false) {
             assert_eq!(gpu_roots.len(), num_elements);
-            
+
             // Verify partition equivalence:
             // For every element i, its CPU representative should map to the same GPU representative.
             let mut cpu_to_gpu_root = vec![None; num_elements];

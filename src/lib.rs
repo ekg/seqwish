@@ -83,7 +83,12 @@ pub mod gpu {
         pub fn new() -> Option<Self> {
             None
         }
-        pub fn gpu_union_find(&mut self, _n: usize, _e: &[(u32, u32)], _v: bool) -> Option<Vec<u32>> {
+        pub fn gpu_union_find(
+            &mut self,
+            _n: usize,
+            _e: &[(u32, u32)],
+            _v: bool,
+        ) -> Option<Vec<u32>> {
             None
         }
     }
