@@ -5,26 +5,25 @@ use cuda_device::{cuda_module, kernel, thread, DisjointSlice};
 pub mod kernels {
     use super::*;
 
-    /// Sets parents[i] = i for all i < n.
     #[kernel]
     pub fn initialize_parents(mut parents: DisjointSlice<u32>, n: u32) {
-        let idx = thread::index_1d();
-        let idx_usize = idx.get();
+        // Sets parents[i] = i for all i < n.
+        let idx_usize = thread::index_1d().get();
         if idx_usize < n as usize {
-            if let Some(p) = parents.get_mut(idx) {
-                *p = idx_usize as u32;
+            unsafe {
+                *parents.as_mut_ptr().add(idx_usize) = idx_usize as u32;
             }
         }
     }
 
-    /// Shiloach-Vishkin union step with path-halving.
-    ///
-    /// Each unsafe block below is sound because:
-    ///   - root_u, p_u, gp_u, root_v, p_v, gp_v are always
-    ///     values read back from the parents array, so they are in range of n.
-    ///   - The slice was allocated with exactly n elements.
     #[kernel]
     pub fn union_step(mut parents: DisjointSlice<u32>, edges: &[[u32; 2]], num_edges: i32) {
+        // Shiloach-Vishkin union step with path-halving.
+        //
+        // Each unsafe block below is sound because:
+        //   - root_u, p_u, gp_u, root_v, p_v, gp_v are always
+        //     values read back from the parents array, so they are in range of n.
+        //   - The slice was allocated with exactly n elements.
         let edge_idx = thread::index_1d().get();
         if edge_idx >= num_edges as usize {
             return;
@@ -97,12 +96,12 @@ pub mod kernels {
         }
     }
 
-    /// Pointer-jump to flatten the forest in one pass.
-    ///
-    /// SAFETY for each block: idx_usize < n (guarded above), and `p` is a
-    /// value read from the parents array so it is also in [0, n).
     #[kernel]
     pub fn pointer_jump(mut parents: DisjointSlice<u32>, n: u32, mut changed: DisjointSlice<u32>) {
+        // Pointer-jump to flatten the forest in one pass.
+        //
+        // SAFETY for each block: idx_usize < n (guarded above), and `p` is a
+        // value read from the parents array so it is also in [0, n).
         let idx_usize = thread::index_1d().get();
         if idx_usize >= n as usize {
             return;

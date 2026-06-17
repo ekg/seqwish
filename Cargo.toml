@@ -73,6 +73,6 @@ lto = "off"
 [build-dependencies]
 cbindgen = "0.27"
 
-[[bin]]
+[[bench]]
 name = "bench_gpu"
-path = "benches/bench_gpu.rs"
+harness = false

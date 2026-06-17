@@ -600,12 +600,8 @@ pub fn compute_transitive_closures(
         None;
 
     // Initialise the GPU runner once here. Reused across all batches so
-    // the CUDA context, PTX module, and pinnded/device buffers are just allocated once. Falls back to CPU if CUDA is not available.
-    #[cfg(feature = "cuda")]
+    // the CUDA context, PTX module, and pinned/device buffers are just allocated once. Falls back to CPU if CUDA is not available.
     let mut gpu_runner: Option<crate::gpu::GpuRunner> = crate::gpu::GpuRunner::new();
-    #[cfg(not(feature = "cuda"))]
-    let mut gpu_runner: Option<()> = None;
-    let _ = &mut gpu_runner; // suppress unused-mut warning when cuda feature is off
 
     // Main loop: process input sequence in chunks
     let mut i = 0;
