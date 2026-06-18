@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn test_gfa_header() {
         let mut output = Vec::new();
-        write!(&mut output, "H\tVN:Z:1.0\n").unwrap();
+        writeln!(&mut output, "H\tVN:Z:1.0").unwrap();
         let result = String::from_utf8(output).unwrap();
         assert_eq!(result, "H\tVN:Z:1.0\n");
     }

@@ -382,7 +382,7 @@ mod tests {
         assert!((hash_val as f64) < (u64::MAX as f64 * 1.0));
 
         // With f = 0.0, nothing should pass
-        assert!(!((hash_val as f64) < (u64::MAX as f64 * 0.0)));
+        assert!((hash_val as f64) >= (u64::MAX as f64 * 0.0));
 
         // With intermediate values, it depends on the hash
         // Just verify the comparison logic works

@@ -5,3 +5,10 @@ experiments/
 *#*
 include
 target/
+target_cpu/
+target_gpu/
+benches/target/
+*.sbatch
+*.ptx
+*.ll
+libclang_link/

@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(row.query_sequence_length, 1000);
         assert_eq!(row.query_start, 100);
         assert_eq!(row.query_end, 900);
-        assert_eq!(row.query_target_same_strand, true);
+        assert!(row.query_target_same_strand);
         assert_eq!(row.target_sequence_name, "target1");
         assert_eq!(row.target_sequence_length, 2000);
         assert_eq!(row.target_start, 200);
@@ -223,7 +223,7 @@ mod tests {
             "query1\t1000\t100\t900\t-\ttarget1\t2000\t200\t1000\t750\t800\t60\tcg:Z:100M10I50M";
         let row = PafRow::from_line(line).unwrap();
 
-        assert_eq!(row.query_target_same_strand, false);
+        assert!(!row.query_target_same_strand);
         assert_eq!(row.cigar.len(), 3);
         assert_eq!(row.cigar[0].len, 100);
         assert_eq!(row.cigar[0].op, b'M');

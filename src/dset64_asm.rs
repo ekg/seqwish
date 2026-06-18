@@ -21,6 +21,12 @@ unsafe impl Sync for DisjointSetsAsm {}
 
 impl DisjointSetsAsm {
     pub fn new(size: usize) -> Self {
+        if size == 0 {
+            return DisjointSetsAsm {
+                data: std::ptr::null_mut(),
+                len: 0,
+            };
+        }
         let layout = std::alloc::Layout::array::<AlignedU128>(size).unwrap();
         let ptr = unsafe { std::alloc::alloc(layout) as *mut AlignedU128 };
 
@@ -43,6 +49,7 @@ impl DisjointSetsAsm {
 
     #[inline(always)]
     pub fn find(&self, mut id: usize) -> usize {
+        assert!(id < self.len);
         unsafe {
             while id != self.parent_unchecked(id) {
                 // Use atomic load with RELAXED ordering (matches C++ plain load semantics)

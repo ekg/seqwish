@@ -25,6 +25,36 @@ mod dset64;
 mod dset64_asm;
 mod dset64_unsafe;
 mod gfa;
+#[cfg(feature = "cuda")]
+mod gpu;
+
+#[cfg(not(feature = "cuda"))]
+mod gpu {
+    pub fn is_cuda_available() -> bool {
+        false
+    }
+    pub fn gpu_union_find(
+        _num_elements: usize,
+        _edges: &[(u32, u32)],
+        _verbose: bool,
+    ) -> Option<Vec<u32>> {
+        None
+    }
+    pub struct GpuRunner;
+    impl GpuRunner {
+        pub fn new() -> Option<Self> {
+            None
+        }
+        pub fn gpu_union_find(
+            &mut self,
+            _n: usize,
+            _e: &[(u32, u32)],
+            _v: bool,
+        ) -> Option<Vec<u32>> {
+            None
+        }
+    }
+}
 mod intervaltree;
 mod links;
 mod mmap;

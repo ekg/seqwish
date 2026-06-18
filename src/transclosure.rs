@@ -19,6 +19,14 @@ use crate::intervaltree::IntervalTree;
 use crate::pos::{decr_pos, decr_pos_by, incr_pos, incr_pos_by, is_rev, make_pos_t, offset, PosT};
 use crate::seqindex::SeqIndex;
 
+const BFS_QUEUE_CAPACITY: usize = 1 << 17;
+const RANK_CHUNK_SIZE: usize = 1 << 17;
+
+enum UnionFindResult {
+    Gpu(Vec<u32>),
+    Cpu(DisjointSetsAsm),
+}
+
 /// Thomas Wang's 64-bit integer hash function
 ///
 /// In many implementations, std::hash is identity for integers,
@@ -460,16 +468,14 @@ impl SpanningTreeAdj {
 
 /// Compute a maximum-weight spanning tree of sequence pairs from the alignment iitree.
 ///
-/// Scans all intervals to compute total aligned bases per (source_seq, target_seq) pair,
-/// then runs Kruskal's algorithm to find the spanning tree that maximizes coverage.
-/// Returns an adjacency list for O(1) lookup by source sequence.
+/// Returns `(adj, tree_edges, total_pairs)` for use in progress logging.
 fn compute_spanning_tree(
     aln_iitree: &AdaptiveTree<u64, PosT>,
     seqidx: &SeqIndex,
-) -> SpanningTreeAdj {
+) -> (SpanningTreeAdj, usize, usize) {
     let n_seqs = seqidx.n_seqs();
     if n_seqs <= 1 {
-        return SpanningTreeAdj::new(n_seqs);
+        return (SpanningTreeAdj::new(n_seqs), 0, 0);
     }
 
     // Collect pair weights: total aligned bases per (seq_i, seq_j) pair
@@ -534,14 +540,7 @@ fn compute_spanning_tree(
         }
     }
 
-    eprintln!(
-        "[transclosure] Spanning tree: {} edges from {} total pairs ({}x reduction)",
-        tree_edges,
-        edges.len(),
-        edges.len().checked_div(tree_edges).unwrap_or(0)
-    );
-
-    spanning_adj
+    (spanning_adj, tree_edges, edges.len())
 }
 
 /// Main entry point for transitive closure computation
@@ -565,11 +564,19 @@ pub fn compute_transitive_closures(
     use std::io::Write;
 
     let start_time = std::time::Instant::now();
-    eprintln!("[transclosure] Starting transitive closure computation");
-    eprintln!("[transclosure] Using {num_threads} threads");
+    if show_progress {
+        eprintln!("[transclosure] Starting transitive closure computation");
+        eprintln!("[transclosure] Using {num_threads} threads");
+    }
 
     // Compute spanning tree for fast BFS discovery
-    let spanning_pairs = compute_spanning_tree(&aln_iitree, &seqidx);
+    let (spanning_pairs, st_edges, st_pairs) = compute_spanning_tree(&aln_iitree, &seqidx);
+    if show_progress {
+        eprintln!(
+            "[transclosure] Spanning tree: {st_edges} edges from {st_pairs} total pairs ({}x reduction)",
+            st_pairs.checked_div(st_edges).unwrap_or(0)
+        );
+    }
 
     // Open iitree writers (need write access)
     node_iitree.write().unwrap().open_writer()?;
@@ -591,6 +598,10 @@ pub fn compute_transitive_closures(
     // The thread writes while we compute the next batch
     let mut writer_thread: Option<thread::JoinHandle<io::Result<(Vec<u8>, HashMap<PosT, Range>)>>> =
         None;
+
+    // Initialise the GPU runner once here. Reused across all batches so
+    // the CUDA context, PTX module, and pinned/device buffers are just allocated once. Falls back to CPU if CUDA is not available.
+    let mut gpu_runner: Option<crate::gpu::GpuRunner> = crate::gpu::GpuRunner::new();
 
     // Main loop: process input sequence in chunks
     let mut i = 0;
@@ -631,8 +642,8 @@ pub fn compute_transitive_closures(
         let q_curr_bv = AtomicBitVec::new(input_seq_length);
 
         // Work queues for BFS (no ovlp_q needed)
-        let todo_in = Arc::new(ArrayQueue::new(131072));
-        let todo_out = Arc::new(ArrayQueue::new(131072));
+        let todo_in = Arc::new(ArrayQueue::new(BFS_QUEUE_CAPACITY));
+        let todo_out = Arc::new(ArrayQueue::new(BFS_QUEUE_CAPACITY));
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
         let active_workers = Arc::new(AtomicU64::new(0));
 
@@ -834,19 +845,15 @@ pub fn compute_transitive_closures(
             }
         }
 
-        // Parallelize rank building (like C++ parallel_for for q_curr_bv_vec)
-        // Process in parallel chunks of 100000 positions
-        // Collect only the set bit positions in parallel (no need for full Vec<bool>)
-        let chunk_size = 100000;
-        let num_chunks = (input_seq_length + chunk_size - 1) / chunk_size;
+        // Collect set-bit positions in sorted order (flat_map preserves chunk order).
+        let num_chunks = (input_seq_length + RANK_CHUNK_SIZE - 1) / RANK_CHUNK_SIZE;
 
         let q_curr_positions: Vec<u64> = (0..num_chunks)
             .into_par_iter()
             .flat_map(|chunk_idx| {
-                let start = chunk_idx * chunk_size;
-                let end = (start + chunk_size).min(input_seq_length);
+                let start = chunk_idx * RANK_CHUNK_SIZE;
+                let end = (start + RANK_CHUNK_SIZE).min(input_seq_length);
                 let mut local_positions = Vec::new();
-
                 for pos in start..end {
                     if q_curr_bv_final.get(pos, Ordering::Acquire) {
                         local_positions.push(pos as u64);
@@ -862,19 +869,12 @@ pub fn compute_transitive_closures(
             continue;
         }
 
-        // Build direct position-to-rank lookup table (O(1) per lookup vs Rank9Sel popcount).
-        // Indexed by input sequence position, value is the rank (index into q_curr_positions).
-        let rank_table = vec![0u32; input_seq_length];
-        q_curr_positions
-            .par_iter()
-            .enumerate()
-            .for_each(|(rank, &pos)| {
-                // Safe: each position is unique, so no data race
-                unsafe {
-                    let ptr = rank_table.as_ptr() as *mut u32;
-                    *ptr.add(pos as usize) = rank as u32;
-                }
-            });
+        // Position-to-rank scatter. q_curr_positions is sorted, so writes are
+        // sequential and cache-friendly.
+        let mut rank_table = vec![0u32; input_seq_length];
+        for (rank, &pos) in q_curr_positions.iter().enumerate() {
+            rank_table[pos as usize] = rank as u32;
+        }
 
         if show_progress {
             eprintln!(
@@ -886,12 +886,6 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // ================================================================
-        // PHASE 2: Union-find via per-sequence iitree queries
-        // ================================================================
-        // Uses DisjointSetsAsm (lock-free CAS-based union-find) for correctness.
-        // Per-sequence iitree queries avoid scanning irrelevant intervals.
-        let dsets = DisjointSetsAsm::new(q_curr_bv_count);
         let q_curr_bv_ref = &q_curr_bv_final;
 
         if show_progress {
@@ -906,13 +900,70 @@ pub fn compute_transitive_closures(
 
         let component_seqs = find_component_sequences(&seqidx, &q_curr_bv_final);
 
-        // Single pass: process all intervals via per-sequence iitree queries
-        component_seqs.par_iter().for_each(|&seq_id| {
-            let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
-            let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+        // CUDA availability is stable for the process lifetime; check once.
+        use std::sync::OnceLock;
+        static CUDA_AVAILABLE: OnceLock<bool> = OnceLock::new();
+        // Dynamic crossover threshold (3M elements) based on benchmarks where GPU outperforms CPU
+        const GPU_MIN_ELEMENTS_THRESHOLD: usize = 3_000_000;
+        let force_gpu = std::env::var("SEQWISH_FORCE_GPU").is_ok();
+        let use_gpu = *CUDA_AVAILABLE.get_or_init(crate::gpu::is_cuda_available)
+            && (force_gpu || q_curr_bv_count >= GPU_MIN_ELEMENTS_THRESHOLD);
 
-            aln_iitree
-                .overlap(
+        // `gpu_runner` is initialised once before the main loop (below) and
+        // reused across batches so the CUDA context, PTX module, and device
+        // buffers are not re-created on every chunk.
+
+        let uf_result: UnionFindResult = if use_gpu {
+            let edges: Vec<(u32, u32)> = component_seqs
+                .par_iter()
+                .flat_map(|&seq_id| {
+                    let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+                    let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+                    let mut local_edges = Vec::new();
+                    let _ = aln_iitree.overlap(
+                        seq_off,
+                        seq_off + seq_len,
+                        |_idx, start, end, target_pos| {
+                            if !q_curr_bv_ref.get(start as usize, Ordering::Relaxed) {
+                                return;
+                            }
+                            let mut p = target_pos;
+                            for j in start..end {
+                                let t = offset(p) as usize;
+                                if t < input_seq_length
+                                    && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
+                                    && q_curr_bv_ref.get(t, Ordering::Relaxed)
+                                {
+                                    local_edges.push((rank_table[j as usize], rank_table[t]));
+                                }
+                                incr_pos(&mut p);
+                            }
+                        },
+                    );
+                    local_edges
+                })
+                .collect();
+
+            match gpu_runner
+                .as_mut()
+                .and_then(|r| r.gpu_union_find(q_curr_bv_count, &edges, show_progress))
+            {
+                Some(roots) => UnionFindResult::Gpu(roots),
+                None => {
+                    // check succeeded but context creation failed (no device or OOM).
+                    let cpu = DisjointSetsAsm::new(q_curr_bv_count);
+                    edges.par_iter().for_each(|&(u, v)| {
+                        cpu.unite(u as usize, v as usize);
+                    });
+                    UnionFindResult::Cpu(cpu)
+                }
+            }
+        } else {
+            let cpu = DisjointSetsAsm::new(q_curr_bv_count);
+            component_seqs.par_iter().for_each(|&seq_id| {
+                let seq_off = seqidx.nth_seq_offset(seq_id).unwrap();
+                let seq_len = seqidx.nth_seq_length(seq_id).unwrap();
+                let _ = aln_iitree.overlap(
                     seq_off,
                     seq_off + seq_len,
                     |_idx, start, end, target_pos| {
@@ -926,22 +977,26 @@ pub fn compute_transitive_closures(
                                 && q_curr_bv_ref.get(j as usize, Ordering::Relaxed)
                                 && q_curr_bv_ref.get(t, Ordering::Relaxed)
                             {
-                                let j_rank = rank_table[j as usize] as usize;
-                                let p_rank = rank_table[t] as usize;
-                                dsets.unite(j_rank, p_rank);
+                                cpu.unite(rank_table[j as usize] as usize, rank_table[t] as usize);
                             }
                             incr_pos(&mut p);
                         }
                     },
-                )
-                .ok();
-        });
+                );
+            });
+            UnionFindResult::Cpu(cpu)
+        };
 
-        eprintln!(
-            "[transclosure] {:.3}s phase2 union-find complete ({} seqs queried)",
-            start_time.elapsed().as_secs_f64(),
-            component_seqs.len(),
-        );
+        if show_progress {
+            eprintln!(
+                "[transclosure] {:.3}s {:.2}% {}-{} phase2_union_find_done ({} seqs)",
+                start_time.elapsed().as_secs_f64(),
+                (bases_seen as f64 / input_seq_length as f64) * 100.0,
+                chunk_start,
+                chunk_end,
+                component_seqs.len(),
+            );
+        }
 
         if show_progress {
             eprintln!(
@@ -953,18 +1008,20 @@ pub fn compute_transitive_closures(
             );
         }
 
-        // Read out disjoint sets
-        // Use chunked iteration with grain size 10000 to reduce overhead
+        // Map each rank to its root, along with its input position.
         let mut dsets_vec: Vec<(u64, u64)> = (0..q_curr_positions.len())
             .into_par_iter()
-            .with_min_len(10000)
+            .with_min_len(10_000)
             .filter_map(|j| {
                 let p = q_curr_positions[j];
-                if !q_seen_bv[p as usize] {
-                    Some((dsets.find(j) as u64, p))
-                } else {
-                    None
+                if q_seen_bv[p as usize] {
+                    return None;
                 }
+                let root = match &uf_result {
+                    UnionFindResult::Gpu(roots) => roots[j] as u64,
+                    UnionFindResult::Cpu(cpu) => cpu.find(j) as u64,
+                };
+                Some((root, p))
             })
             .collect();
 
@@ -1156,17 +1213,18 @@ pub fn compute_transitive_closures(
         )?;
     }
 
+    // Close writers and build indexes
     if show_progress {
         eprintln!("[transclosure] Building node_iitree and path_iitree indexes");
     }
-
-    // Close writers and build indexes
     node_iitree.write().unwrap().close_writer()?;
     path_iitree.write().unwrap().close_writer()?;
     node_iitree.write().unwrap().index()?;
     path_iitree.write().unwrap().index()?;
 
-    eprintln!("[transclosure] Transitive closure computation complete");
+    if show_progress {
+        eprintln!("[transclosure] Transitive closure computation complete");
+    }
 
     Ok(seq_bytes)
 }
