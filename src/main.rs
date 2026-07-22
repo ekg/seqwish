@@ -178,6 +178,17 @@ fn main() -> io::Result<()> {
     }
     tempfile::set_keep_temp(keep_temp);
 
+    // Remove temp files on every exit path: the global temp state is a static
+    // whose Drop never runs at program exit, so without this seqwish leaks its
+    // scratch directory (issue #22). cleanup() respects --keep-temp.
+    struct TempCleanup;
+    impl Drop for TempCleanup {
+        fn drop(&mut self) {
+            tempfile::cleanup();
+        }
+    }
+    let _temp_cleanup = TempCleanup;
+
     // Check input files exist
     if !std::path::Path::new(seq_file).exists() {
         eprintln!("[seqwish] ERROR: input sequence file {seq_file} does not exist");
