@@ -273,6 +273,7 @@ fn explore_overlaps_discovery(
     todo_in: &RangeAtomicQueue,
     seqidx: &SeqIndex,
     spanning_adj: &SpanningTreeAdj,
+    pending: &AtomicU64,
 ) {
     let source_seq = seqidx.seq_id_at(b.start).unwrap_or(0);
 
@@ -307,6 +308,8 @@ fn explore_overlaps_discovery(
                 }
                 if !all_set_there {
                     let item = (make_pos_t(offset(s.data), is_rev(s.data)), s.end - s.start);
+                    // count before it is visible in todo_in
+                    pending.fetch_add(1, Ordering::SeqCst);
                     while todo_in.push(item).is_err() {
                         std::thread::yield_now();
                     }
@@ -354,7 +357,7 @@ fn write_graph_chunk(
         if curr_dset_id != last_dset_id {
             if repeat_max != 0 || min_repeat_dist != 0 {
                 // Flush todos inline
-                for (_count, positions) in todos.iter() {
+                for positions in todos.values() {
                     seq_v_out.push(current_base);
                     seq_v_length += 1;
                     for pos in positions {
@@ -416,7 +419,7 @@ fn write_graph_chunk(
     }
 
     // Flush remaining todos
-    for (_count, positions) in todos.iter() {
+    for positions in todos.values() {
         seq_v_out.push(current_base);
         seq_v_length += 1;
         for pos in positions {
@@ -634,7 +637,9 @@ pub fn compute_transitive_closures(
         let todo_in = Arc::new(ArrayQueue::new(131072));
         let todo_out = Arc::new(ArrayQueue::new(131072));
         let mut todo: VecDeque<(PosT, u64)> = VecDeque::new();
-        let active_workers = Arc::new(AtomicU64::new(0));
+        // Outstanding BFS items (queued or in-flight). pending == 0 is the race-free
+        // termination signal: an item is counted before it is visible to consumers.
+        let pending = Arc::new(AtomicU64::new(0));
 
         // Seed initial ranges
         for_each_fresh_range(
@@ -645,6 +650,7 @@ pub fn compute_transitive_closures(
                     q_curr_bv.set(j as usize, true, Ordering::Release);
                 }
                 let range = (make_pos_t(b.start, false), b.end - b.start);
+                pending.fetch_add(1, Ordering::SeqCst);
                 if todo_out.push(range).is_err() {
                     todo.push_back(range);
                 }
@@ -657,6 +663,38 @@ pub fn compute_transitive_closures(
         let q_curr_bv_shared = Arc::new(q_curr_bv);
         let spanning_pairs_ref = &spanning_pairs;
 
+        // Manager shuttles todo_in -> todo -> todo_out on a dedicated OS thread, not a
+        // rayon task: busy-spinning workers can saturate a small pool (e.g. -t 1) and
+        // starve a scoped manager, deadlocking PHASE 1.
+        let todo_in_mgr = Arc::clone(&todo_in);
+        let todo_out_mgr = Arc::clone(&todo_out);
+        let pending_mgr = Arc::clone(&pending);
+        let manager = thread::spawn(move || {
+            let mut todo = todo;
+            loop {
+                let mut did_work = false;
+                while let Some(item) = todo_in_mgr.pop() {
+                    todo.push_back(item);
+                    did_work = true;
+                }
+                while let Some(item) = todo.front().copied() {
+                    if todo_out_mgr.push(item).is_ok() {
+                        todo.pop_front();
+                        did_work = true;
+                    } else {
+                        break;
+                    }
+                }
+                if !did_work {
+                    // exit only when the BFS is fully drained
+                    if pending_mgr.load(Ordering::SeqCst) == 0 {
+                        break;
+                    }
+                    std::thread::yield_now();
+                }
+            }
+        });
+
         rayon::scope(|s| {
             for _worker_idx in 0..(num_threads * 2) {
                 let todo_out = Arc::clone(&todo_out);
@@ -666,13 +704,10 @@ pub fn compute_transitive_closures(
                 let q_seen_bv_clone = q_seen_bv.clone();
                 let seqidx = Arc::clone(&seqidx_clone);
 
-                let active_workers_clone = Arc::clone(&active_workers);
+                let pending_clone = Arc::clone(&pending);
                 s.spawn(move |_s| {
-                    let mut empty_count = 0u64;
                     loop {
                         if let Some((pos, match_len)) = todo_out.pop() {
-                            empty_count = 0;
-                            active_workers_clone.fetch_add(1, Ordering::SeqCst);
                             let n = if !is_rev(pos) {
                                 offset(pos)
                             } else {
@@ -687,65 +722,20 @@ pub fn compute_transitive_closures(
                                 &todo_in,
                                 &seqidx,
                                 spanning_pairs_ref,
+                                &pending_clone,
                             );
-                            active_workers_clone.fetch_sub(1, Ordering::SeqCst);
+                            // decrement parent only after explore counted its children
+                            pending_clone.fetch_sub(1, Ordering::SeqCst);
+                        } else if pending_clone.load(Ordering::SeqCst) == 0 {
+                            break;
                         } else {
                             std::thread::yield_now();
-                            empty_count += 1;
-                            let to_empty = todo_out.is_empty();
-                            let ti_empty = todo_in.is_empty();
-                            let no_active = active_workers_clone.load(Ordering::SeqCst) == 0;
-                            if to_empty && ti_empty && no_active {
-                                if empty_count > 1000 {
-                                    break;
-                                }
-                            } else if !no_active {
-                                empty_count = 0;
-                            }
                         }
                     }
                 });
             }
-
-            // Manager task — shuttles todo_in → todo → todo_out (no ovlp_q to drain)
-            let active_workers_mgr = Arc::clone(&active_workers);
-            s.spawn(move |_s| {
-                let mut empty_count = 0;
-                loop {
-                    let mut did_work = false;
-                    while let Some(item) = todo_in.pop() {
-                        todo.push_back(item);
-                        did_work = true;
-                    }
-                    while let Some(item) = todo.front().copied() {
-                        if todo_out.push(item).is_ok() {
-                            todo.pop_front();
-                            did_work = true;
-                        } else {
-                            break;
-                        }
-                    }
-                    if did_work {
-                        empty_count = 0;
-                    } else {
-                        std::thread::yield_now();
-                        empty_count += 1;
-                        let no_active = active_workers_mgr.load(Ordering::SeqCst) == 0;
-                        if empty_count > 1000
-                            && todo.is_empty()
-                            && todo_in.is_empty()
-                            && todo_out.is_empty()
-                            && no_active
-                        {
-                            break;
-                        }
-                        if !no_active {
-                            empty_count = 0;
-                        }
-                    }
-                }
-            });
         });
+        manager.join().unwrap();
 
         if show_progress {
             eprintln!(
