@@ -1,8 +1,8 @@
 [package]
 name = "seqwish"
-version = "0.1.3"
+version = "0.7.12"
 edition = "2021"
-authors = ["Erik Garrison <erik.garrison@gmail.com>"]
+authors = ["Erik Garrison <erik.garrison@gmail.com>", "Andrea Guarracino <aguarracino@tgen.org>"]
 description = "A variation graph inducer - build pangenome graphs from pairwise alignments"
 repository = "https://github.com/pangenome/seqwish"
 license = "MIT"
