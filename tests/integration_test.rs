@@ -240,6 +240,38 @@ fn test_pipeline_memory_mode_basic() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_single_thread_pool_no_deadlock() {
+    // Regression for the -t 1 deadlock: the CLI sizes rayon's global pool to
+    // --threads, so -t 1 ran the BFS on a 1-thread pool and starved the manager.
+    // Other tests miss it by running on rayon's default multi-core pool. Run under
+    // a watchdog so a regression fails fast instead of hanging CI.
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let result = pool.install(|| run_pipeline(true).map_err(|e| e.to_string()));
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(30)) {
+        Ok(Ok(gfa)) => {
+            assert!(gfa.contains("S\t"), "GFA should contain segments");
+            assert!(gfa.contains("P\t"), "GFA should contain paths");
+            handle.join().unwrap();
+        }
+        Ok(Err(e)) => panic!("pipeline errored on a single-thread pool: {e}"),
+        Err(_) => {
+            panic!("transitive closure deadlocked on a single-thread rayon pool (-t 1 regression)")
+        }
+    }
+}
+
+#[test]
 fn test_pipeline_disk_mode_basic() -> Result<(), Box<dyn std::error::Error>> {
     // Run disk-backed pipeline and verify it produces valid output
     let gfa = run_pipeline(false)?;
