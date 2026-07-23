@@ -11,32 +11,21 @@ pub struct CigarOp {
 /// CIGAR format: alternating runs of digits and operation characters
 /// Example: "10M2I5M" -> [(10, 'M'), (2, 'I'), (5, 'M')]
 pub fn cigar_from_string(s: &str) -> Vec<CigarOp> {
-    let mut cigar = Vec::new();
-    let mut number = String::new();
-    let mut op_type: u8 = 0;
+    // Parse directly over ASCII bytes with an integer accumulator: no String
+    // buffer, no per-op reparse. A CIGAR op char follows its digit run, so the
+    // op is pushed exactly when its op byte is seen (no trailing flush needed).
+    let mut cigar = Vec::with_capacity(s.len() / 2);
+    let mut len: u64 = 0;
+    let mut have_digit = false;
 
-    for c in s.chars() {
-        if c.is_ascii_digit() {
-            if op_type == 0 {
-                number.push(c);
-            } else {
-                // We have a complete operation
-                if let Ok(len) = number.parse::<u64>() {
-                    cigar.push(CigarOp { len, op: op_type });
-                }
-                number.clear();
-                op_type = 0;
-                number.push(c);
-            }
-        } else {
-            op_type = c as u8;
-        }
-    }
-
-    // Handle final operation
-    if !number.is_empty() && op_type != 0 {
-        if let Ok(len) = number.parse::<u64>() {
-            cigar.push(CigarOp { len, op: op_type });
+    for &b in s.as_bytes() {
+        if b.is_ascii_digit() {
+            len = len * 10 + (b - b'0') as u64;
+            have_digit = true;
+        } else if have_digit {
+            cigar.push(CigarOp { len, op: b });
+            len = 0;
+            have_digit = false;
         }
     }
 

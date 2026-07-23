@@ -226,13 +226,13 @@ impl SeqIndex {
             // Record sequence boundary
             seq_boundary_positions.push(seq_bytes_written);
 
-            // Write upper-case sequence
-            let seq_upper = seq.to_uppercase();
+            // Write upper-case sequence (ASCII DNA: in-place, no alloc)
+            seq.make_ascii_uppercase();
             seq_out
-                .write_all(seq_upper.as_bytes())
+                .write_all(seq.as_bytes())
                 .map_err(|e| format!("Failed to write sequence: {e}"))?;
 
-            seq_bytes_written += seq_upper.len() as u64;
+            seq_bytes_written += seq.len() as u64;
             self.seq_count += 1;
 
             // Check EOF

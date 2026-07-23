@@ -57,41 +57,45 @@ pub fn emit_gfa<W: Write>(
     // The graph sequence has `seq_v_slice.len()` bytes; use that as the end
     // sentinel for the last node (the bitvector has size graph_length + 1).
     let graph_len = seq_v_slice.len();
-    let node_sequences: Vec<(usize, String)> = (1..=n_nodes)
-        .map(|id| {
-            let node_start = match seq_id_cbv.select(id) {
-                Some(pos) => pos,
-                None => return (id, String::new()),
-            };
-            let node_end = seq_id_cbv.select(id + 1).unwrap_or(graph_len);
-            let node_length = node_end - node_start;
-            if node_start + node_length > graph_len {
-                return (id, String::new());
-            }
-            let seq = &seq_v_slice[node_start..node_start + node_length];
-            let seq_string = String::from_utf8_lossy(seq).to_string();
-            (id, seq_string)
-        })
-        .collect();
 
-    // Write node records in order
-    for (id, seq) in node_sequences {
-        if !seq.is_empty() {
-            writeln!(out, "S\t{id}\t{seq}")?;
+    // Reusable line/int buffers to avoid per-record allocation and fmt dispatch.
+    let mut line: Vec<u8> = Vec::new();
+    let mut ib = itoa::Buffer::new();
+
+    // Write nodes (S lines) by streaming raw sequence bytes (seq_v is uppercased
+    // ASCII DNA, so this is byte-identical to from_utf8_lossy). No per-node String.
+    for id in 1..=n_nodes {
+        let node_start = match seq_id_cbv.select(id) {
+            Some(pos) => pos,
+            None => continue,
+        };
+        let node_end = seq_id_cbv.select(id + 1).unwrap_or(graph_len);
+        let node_length = node_end - node_start;
+        if node_length == 0 || node_start + node_length > graph_len {
+            continue;
         }
+        let seq = &seq_v_slice[node_start..node_start + node_length];
+        out.write_all(b"S\t")?;
+        out.write_all(ib.format(id).as_bytes())?;
+        out.write_all(b"\t")?;
+        out.write_all(seq)?;
+        out.write_all(b"\n")?;
     }
 
     // Write links (L lines)
     for (from, to) in links {
         if *from != 0 && *to != 0 {
-            writeln!(
-                out,
-                "L\t{}\t{}\t{}\t{}\t0M",
-                offset(*from),
-                if is_rev(*from) { "-" } else { "+" },
-                offset(*to),
-                if is_rev(*to) { "-" } else { "+" }
-            )?;
+            line.clear();
+            line.extend_from_slice(b"L\t");
+            line.extend_from_slice(ib.format(offset(*from)).as_bytes());
+            line.extend_from_slice(if is_rev(*from) { b"\t-\t" } else { b"\t+\t" });
+            line.extend_from_slice(ib.format(offset(*to)).as_bytes());
+            line.extend_from_slice(if is_rev(*to) {
+                b"\t-\t0M\n"
+            } else {
+                b"\t+\t0M\n"
+            });
+            out.write_all(&line)?;
         }
     }
 
@@ -254,15 +258,19 @@ pub fn emit_gfa<W: Write>(
 
         // Write path
         let seq_name = seqidx.nth_name(i).unwrap_or_else(|| format!("seq{i}"));
-        write!(out, "P\t{seq_name}\t")?;
-
+        line.clear();
+        line.extend_from_slice(b"P\t");
+        line.extend_from_slice(seq_name.as_bytes());
+        line.push(b'\t');
         for (idx, p) in path_v.iter().enumerate() {
             if idx > 0 {
-                write!(out, ",")?;
+                line.push(b',');
             }
-            write!(out, "{}{}", offset(*p), if is_rev(*p) { "-" } else { "+" })?;
+            line.extend_from_slice(ib.format(offset(*p)).as_bytes());
+            line.push(if is_rev(*p) { b'-' } else { b'+' });
         }
-        writeln!(out, "\t*")?;
+        line.extend_from_slice(b"\t*\n");
+        out.write_all(&line)?;
     }
 
     // Cleanup mmap (automatic via Drop)

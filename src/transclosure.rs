@@ -4,6 +4,8 @@
 // identifying equivalence classes that form nodes in the variation graph.
 
 use std::collections::HashMap;
+
+use rustc_hash::FxHashMap;
 use std::io;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
@@ -113,7 +115,7 @@ impl AtomicBitVec {
 pub fn extend_range(
     s_pos: u64,
     q_pos: PosT,
-    range_buffer: &mut HashMap<PosT, Range>,
+    range_buffer: &mut FxHashMap<PosT, Range>,
     seqidx: &SeqIndex,
     node_iitree: &mut AdaptiveTree<u64, PosT>,
     path_iitree: &mut AdaptiveTree<u64, PosT>,
@@ -205,19 +207,28 @@ fn flush_single_range(
 /// Flush all ranges in the buffer that aren't at s_pos
 pub fn flush_ranges(
     s_pos: u64,
-    range_buffer: &mut HashMap<PosT, Range>,
+    range_buffer: &mut FxHashMap<PosT, Range>,
     node_iitree: &mut AdaptiveTree<u64, PosT>,
     path_iitree: &mut AdaptiveTree<u64, PosT>,
 ) -> io::Result<()> {
-    let to_flush: Vec<_> = range_buffer
-        .iter()
-        .filter(|(_, range)| range.end != s_pos)
-        .map(|(k, v)| (*k, *v))
-        .collect();
-
-    for (key, range) in to_flush {
-        flush_single_range(&range, key, node_iitree, path_iitree)?;
-        range_buffer.remove(&key);
+    // Flush in place: same iteration order and same set of removals as
+    // collect-then-remove, but without the temporary Vec or the extra
+    // per-key hash lookups. Capture the first error and stop flushing.
+    let mut err: Option<io::Error> = None;
+    range_buffer.retain(|&key, range| {
+        if range.end != s_pos {
+            if err.is_none() {
+                if let Err(e) = flush_single_range(range, key, node_iitree, path_iitree) {
+                    err = Some(e);
+                }
+            }
+            false
+        } else {
+            true
+        }
+    });
+    if let Some(e) = err {
+        return Err(e);
     }
 
     Ok(())
@@ -325,7 +336,7 @@ fn write_graph_chunk(
     node_iitree: &mut AdaptiveTree<u64, PosT>,
     path_iitree: &mut AdaptiveTree<u64, PosT>,
     seq_v_out: &mut Vec<u8>,
-    range_buffer: &mut HashMap<PosT, Range>,
+    range_buffer: &mut FxHashMap<PosT, Range>,
     dsets: Vec<(u64, u64)>,
     repeat_max: u64,
     min_repeat_dist: u64,
@@ -414,7 +425,11 @@ fn write_graph_chunk(
             } else {
                 todos.entry(curr_seq_count).or_default().push(curr_q_pos);
             }
-            last_seq_pos.insert(curr_seq_id, curr_q_pos);
+            // last_seq_pos is only read by close_to_prev, which only runs when
+            // min_repeat_dist != 0. Skip the per-base insert otherwise.
+            if min_repeat_dist != 0 {
+                last_seq_pos.insert(curr_seq_id, curr_q_pos);
+            }
         }
     }
 
@@ -586,14 +601,15 @@ pub fn compute_transitive_closures(
     let mut q_seen_bv = vec![false; input_seq_length];
 
     // Range buffer for writing to iitrees
-    let mut range_buffer = Some(HashMap::new());
+    let mut range_buffer = Some(FxHashMap::default());
 
     let mut bases_seen = 0u64;
 
     // Writer thread handle for pipelining (like C++)
     // The thread writes while we compute the next batch
-    let mut writer_thread: Option<thread::JoinHandle<io::Result<(Vec<u8>, HashMap<PosT, Range>)>>> =
-        None;
+    let mut writer_thread: Option<
+        thread::JoinHandle<io::Result<(Vec<u8>, FxHashMap<PosT, Range>)>>,
+    > = None;
 
     // Main loop: process input sequence in chunks
     let mut i = 0;
@@ -695,13 +711,17 @@ pub fn compute_transitive_closures(
             }
         });
 
+        // Workers only read q_seen_bv during the scope (it is mutated after the
+        // scope joins), so share one immutable slice instead of deep-copying the
+        // whole bitvector per worker. At scale the per-worker clone was the
+        // dominant cost (chunks x workers x input_length bytes of memcpy).
+        let q_seen_bv_ref: &[bool] = &q_seen_bv;
         rayon::scope(|s| {
             for _worker_idx in 0..(num_threads * 2) {
                 let todo_out = Arc::clone(&todo_out);
                 let todo_in = Arc::clone(&todo_in);
                 let aln_iitree = Arc::clone(&aln_iitree_clone);
                 let q_curr_bv = Arc::clone(&q_curr_bv_shared);
-                let q_seen_bv_clone = q_seen_bv.clone();
                 let seqidx = Arc::clone(&seqidx_clone);
 
                 let pending_clone = Arc::clone(&pending);
@@ -716,7 +736,7 @@ pub fn compute_transitive_closures(
 
                             explore_overlaps_discovery(
                                 &Match::new(n, n + match_len, pos),
-                                &q_seen_bv_clone,
+                                q_seen_bv_ref,
                                 &q_curr_bv,
                                 &aln_iitree,
                                 &todo_in,
@@ -1096,7 +1116,7 @@ pub fn compute_transitive_closures(
         let seqidx_clone = Arc::clone(&seqidx);
 
         writer_thread = Some(thread::spawn(
-            move || -> io::Result<(Vec<u8>, HashMap<PosT, Range>)> {
+            move || -> io::Result<(Vec<u8>, FxHashMap<PosT, Range>)> {
                 let mut node_guard = node_iitree_clone.write().unwrap();
                 let mut path_guard = path_iitree_clone.write().unwrap();
 
