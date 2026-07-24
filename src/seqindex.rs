@@ -1,9 +1,12 @@
 use flate2::read::MultiGzDecoder;
 use fm_index::{FMIndexWithLocate, MatchWithLocate, Search, Text};
-use memmap2::Mmap;
+use memmap2::{Mmap, MmapMut};
+use ragc_core::{Decompressor, DecompressorConfig};
+use rayon::prelude::*;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 /// Simple sparse bitvector for sequence boundaries
 /// Much faster than RsVec for sparse data (select is O(1) array access vs hierarchical search)
@@ -110,6 +113,11 @@ impl SeqIndex {
     /// Time complexity: O(n log n) for suffix array construction
     /// Space complexity: O(n log σ) bits for CSA + O(m log(N/m)) bits for boundaries
     pub fn build_index(&mut self, filename: &str) -> Result<(), String> {
+        // AGC archives are read through ragc-core rather than the FASTA/FASTQ line parser.
+        if filename.ends_with(".agc") {
+            return self.build_index_agc(filename);
+        }
+
         // Create a unique temp file for sequences using mkstemps so concurrent calls
         // (e.g. parallel tests or multi-partition builds) never share the same path.
         // This also honours the configured temp directory (seqwish::tempfile::set_dir or TMPDIR).
@@ -252,6 +260,229 @@ impl SeqIndex {
         // Close sequence file
         drop(seq_out);
 
+        self.finalize(
+            name_text,
+            name_boundary_positions,
+            seq_boundary_positions,
+            seq_bytes_written,
+        )
+    }
+
+    /// Build the index from an AGC (Assembled Genomes Compressor) archive.
+    ///
+    /// Every contig of every sample in the archive is ingested exactly once (in the
+    /// archive's stored order) into the same concatenated sequence file + FM-index used
+    /// for FASTA/FASTQ input. Each contig is written under its own name verbatim (first
+    /// whitespace token, matching the FASTA header rule), so a PanSN archive reproduces
+    /// the original `sample#haplotype#contig` names 1:1.
+    fn build_index_agc(&mut self, filename: &str) -> Result<(), String> {
+        eprintln!("[seqindex] build_index_agc: opening AGC archive {filename}");
+
+        // Sequence temp file, identical scheme to the FASTA/FASTQ path.
+        let seq_file = crate::tempfile::create("seqwish", ".sqq")
+            .map_err(|e| format!("Failed to create sequence temp file: {e}"))?;
+        self.seq_filename = Some(seq_file.clone());
+
+        // --- Pass 1: enumerate contigs and lengths from AGC metadata only (get_contig_length
+        // reads segment descriptors, it does NOT decompress bases), and build the name text +
+        // boundary tables. This fixes the exact archive order and each contig's byte offset, so
+        // the concatenated sequence file is byte-identical whether we then fill it serially or
+        // in parallel.
+        let mut decompressor = Decompressor::open(filename, DecompressorConfig { verbosity: 0 })
+            .map_err(|e| format!("Failed to open AGC archive {filename}: {e}"))?;
+
+        let samples = decompressor.list_samples();
+        eprintln!(
+            "[seqindex] build_index_agc: {} sample(s) in archive",
+            samples.len()
+        );
+
+        // (sample, contig, offset, len) for every non-empty contig, in archive order.
+        let mut jobs: Vec<(String, String, u64, usize)> = Vec::new();
+        let mut name_text = String::new();
+        let mut name_boundary_positions: Vec<u64> = Vec::new();
+        let mut seq_boundary_positions: Vec<u64> = Vec::new();
+        let mut total_bytes: u64 = 0;
+        let mut notified_empty_seqs = false;
+
+        for sample in &samples {
+            let contigs = decompressor
+                .list_contigs_names_only(sample)
+                .map_err(|e| format!("Failed to list contigs for sample '{sample}': {e}"))?;
+            eprintln!(
+                "[seqindex] build_index_agc: sample '{sample}' has {} contig(s)",
+                contigs.len()
+            );
+
+            for contig in &contigs {
+                let len = decompressor
+                    .get_contig_length(sample, contig)
+                    .map_err(|e| {
+                        format!("Failed to get length of '{contig}' in '{sample}': {e}")
+                    })?;
+
+                if len == 0 {
+                    if !notified_empty_seqs {
+                        notified_empty_seqs = true;
+                        eprintln!("[seqindex] WARNING: AGC archive contains empty sequences, which will be ignored.");
+                    }
+                    continue;
+                }
+
+                // Match the FASTA rule: the sequence name is the first whitespace token.
+                let seq_name = contig.split_whitespace().next().unwrap_or("").to_string();
+
+                // Record name boundary (position of '>' in concatenated name text)
+                name_boundary_positions.push(name_text.len() as u64);
+                name_text.push('>');
+                name_text.push_str(&seq_name);
+                name_text.push(' ');
+
+                // Record sequence boundary; the bases go in during pass 2.
+                seq_boundary_positions.push(total_bytes);
+                jobs.push((sample.clone(), contig.clone(), total_bytes, len));
+                total_bytes += len as u64;
+                self.seq_count += 1;
+            }
+        }
+
+        // Add final boundary for total length
+        seq_boundary_positions.push(total_bytes);
+
+        // --- Pass 2: decompress the bases into the concatenated .sqq file at their fixed offsets.
+        // AGC decompression is the cost here and scales with total bp, so for large archives we
+        // fan out across threads, each writing a disjoint [offset, offset+len) range of a
+        // memory-mapped file. Small archives stay on the simple serial writer (no thread overhead,
+        // and it is the well-worn path for the common per-gene / per-chromosome pggb input).
+        const PARALLEL_MIN_BYTES: u64 = 32 * 1024 * 1024;
+        let threads = rayon::current_num_threads();
+
+        if threads > 1 && total_bytes >= PARALLEL_MIN_BYTES {
+            eprintln!(
+                "[seqindex] build_index_agc: parallel decompress of {total_bytes} bp across {threads} thread(s)"
+            );
+            // Pre-size the file, then map it writable.
+            {
+                let f = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&seq_file)
+                    .map_err(|e| format!("Failed to create sequence file: {e}"))?;
+                f.set_len(total_bytes)
+                    .map_err(|e| format!("Failed to size sequence file: {e}"))?;
+            }
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&seq_file)
+                .map_err(|e| format!("Failed to open sequence file for mmap: {e}"))?;
+            let mut mmap = unsafe {
+                MmapMut::map_mut(&file).map_err(|e| format!("Failed to mmap sequence file: {e}"))?
+            };
+            // Base address as usize so it can cross the rayon closure (raw pointers are !Send).
+            // Each job writes a disjoint [offset, offset+len) slice, so the writes never alias.
+            let base = mmap.as_mut_ptr() as usize;
+
+            // One decompressor per rayon thread (ragc's Decompressor is !Sync and its readers take
+            // &mut self); each thread only touches its own slot, so the Mutex never contends.
+            let n_slots = threads + 1;
+            let pool: Vec<Mutex<Option<Decompressor>>> =
+                (0..n_slots).map(|_| Mutex::new(None)).collect();
+            let path = filename.to_string();
+
+            jobs.par_iter().try_for_each(
+                |(sample, contig, offset, len)| -> Result<(), String> {
+                    let tid = rayon::current_thread_index().unwrap_or(n_slots - 1);
+                    let mut slot = pool[tid].lock().unwrap();
+                    let dec = slot.get_or_insert_with(|| {
+                        Decompressor::open(&path, DecompressorConfig { verbosity: 0 })
+                            .unwrap_or_else(|e| {
+                                panic!("Failed to open AGC '{path}' for thread: {e}")
+                            })
+                    });
+                    let numeric = dec
+                        .get_contig_range(sample, contig, 0, *len)
+                        .map_err(|e| format!("Failed to read '{contig}' in '{sample}': {e}"))?;
+                    // SAFETY: [offset, offset+len) is disjoint across jobs (prefix-sum offsets) and
+                    // lies within the file sized to total_bytes, so no two threads write the same
+                    // bytes and every byte is written exactly once.
+                    let dst = unsafe {
+                        std::slice::from_raw_parts_mut(
+                            (base as *mut u8).add(*offset as usize),
+                            *len,
+                        )
+                    };
+                    for (d, &b) in dst.iter_mut().zip(numeric.iter()) {
+                        *d = match b {
+                            0 => b'A',
+                            1 => b'C',
+                            2 => b'G',
+                            3 => b'T',
+                            _ => b'N',
+                        };
+                    }
+                    Ok(())
+                },
+            )?;
+
+            mmap.flush()
+                .map_err(|e| format!("Failed to flush sequence file: {e}"))?;
+        } else {
+            eprintln!("[seqindex] build_index_agc: serial decompress of {total_bytes} bp");
+            let mut seq_out = BufWriter::with_capacity(
+                1024 * 1024,
+                OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&seq_file)
+                    .map_err(|e| format!("Failed to create sequence file: {e}"))?,
+            );
+            for (sample, contig, _offset, len) in &jobs {
+                let numeric = decompressor
+                    .get_contig_range(sample, contig, 0, *len)
+                    .map_err(|e| format!("Failed to read '{contig}' in '{sample}': {e}"))?;
+                let seq: Vec<u8> = numeric
+                    .iter()
+                    .map(|&b| match b {
+                        0 => b'A',
+                        1 => b'C',
+                        2 => b'G',
+                        3 => b'T',
+                        _ => b'N',
+                    })
+                    .collect();
+                seq_out
+                    .write_all(&seq)
+                    .map_err(|e| format!("Failed to write sequence: {e}"))?;
+            }
+            drop(seq_out);
+        }
+
+        eprintln!(
+            "[seqindex] build_index_agc: ingested {} sequence(s), {total_bytes} bp total",
+            self.seq_count
+        );
+
+        self.finalize(
+            name_text,
+            name_boundary_positions,
+            seq_boundary_positions,
+            total_bytes,
+        )
+    }
+
+    /// Finalize the index once every record has been written to the sequence temp file:
+    /// build the FM-index over the concatenated names, the sparse boundary bitvectors, and
+    /// memory-map the sequence file. Shared by the FASTA/FASTQ and AGC readers.
+    fn finalize(
+        &mut self,
+        name_text: String,
+        name_boundary_positions: Vec<u64>,
+        seq_boundary_positions: Vec<u64>,
+        seq_bytes_written: u64,
+    ) -> Result<(), String> {
         // Build FM-index (CSA) from name text
         // Space: O(n log σ) bits where n = name_text.len()
         // FM-index requires text to end with exactly one zero character

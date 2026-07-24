@@ -63,5 +63,8 @@ itoa = "1"                      # Fast integer-to-decimal formatting for GFA emi
 # CLI dependencies
 clap = { version = "4.5", features = ["derive"] }  # Command-line argument parsing
 
+# AGC (Assembled Genomes Compressor) input support: pure-Rust decompressor, same crate/rev impg and cigzip use
+ragc-core = { git = "https://github.com/AndreaGuarracino/ragc", rev = "c2d7ac2f40b80bab7b17b3c038f755f061dd5593" }
+
 [build-dependencies]
 cbindgen = "0.27"

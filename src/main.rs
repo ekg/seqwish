@@ -60,7 +60,7 @@ fn main() -> io::Result<()> {
             .short('s')
             .long("seqs")
             .value_name("FILE")
-            .help("The sequences used to generate the alignments (FASTA, FASTQ, .seq)")
+            .help("The sequences used to generate the alignments (FASTA, FASTQ, .seq, .agc)")
             .required(true))
         .arg(Arg::new("gfa")
             .short('g')
