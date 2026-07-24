@@ -297,12 +297,10 @@ impl SeqIndex {
             samples.len()
         );
 
-        // (sample, contig, offset, len) for every non-empty contig, in archive order.
-        let mut jobs: Vec<(String, String, u64, usize)> = Vec::new();
-        let mut name_text = String::new();
-        let mut name_boundary_positions: Vec<u64> = Vec::new();
-        let mut seq_boundary_positions: Vec<u64> = Vec::new();
-        let mut total_bytes: u64 = 0;
+        // (sample, contig, short name, len) for every non-empty contig, in archive order.
+        let mut records: Vec<(String, String, String, usize)> = Vec::new();
+        let mut short_name_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         let mut notified_empty_seqs = false;
 
         for sample in &samples {
@@ -330,20 +328,47 @@ impl SeqIndex {
                 }
 
                 // Match the FASTA rule: the sequence name is the first whitespace token.
-                let seq_name = contig.split_whitespace().next().unwrap_or("").to_string();
-
-                // Record name boundary (position of '>' in concatenated name text)
-                name_boundary_positions.push(name_text.len() as u64);
-                name_text.push('>');
-                name_text.push_str(&seq_name);
-                name_text.push(' ');
-
-                // Record sequence boundary; the bases go in during pass 2.
-                seq_boundary_positions.push(total_bytes);
-                jobs.push((sample.clone(), contig.clone(), total_bytes, len));
-                total_bytes += len as u64;
-                self.seq_count += 1;
+                let short_name = contig.split_whitespace().next().unwrap_or("").to_string();
+                *short_name_counts.entry(short_name.clone()).or_insert(0) += 1;
+                records.push((sample.clone(), contig.clone(), short_name, len));
             }
+        }
+
+        // (sample, contig, offset, len) for every non-empty contig, in archive order.
+        let mut jobs: Vec<(String, String, u64, usize)> = Vec::new();
+        let mut name_text = String::new();
+        let mut name_boundary_positions: Vec<u64> = Vec::new();
+        let mut seq_boundary_positions: Vec<u64> = Vec::new();
+        let mut total_bytes: u64 = 0;
+        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for (sample, contig, short_name, len) in records {
+            // AGC identifies a sequence by (sample, contig), seqwish by name alone, so the
+            // name must be unique: a contig name that occurs in several samples is qualified
+            // as "contig@sample" (AGC's own query syntax, matching wfmash). Names that are
+            // already unique - as in a PanSN archive - are used verbatim.
+            let seq_name = if short_name_counts[&short_name] > 1 {
+                format!("{short_name}@{sample}")
+            } else {
+                short_name
+            };
+            if !seen_names.insert(seq_name.clone()) {
+                return Err(format!(
+                    "AGC archive {filename} contains duplicate sequence name '{seq_name}'"
+                ));
+            }
+
+            // Record name boundary (position of '>' in concatenated name text)
+            name_boundary_positions.push(name_text.len() as u64);
+            name_text.push('>');
+            name_text.push_str(&seq_name);
+            name_text.push(' ');
+
+            // Record sequence boundary; the bases go in during pass 2.
+            seq_boundary_positions.push(total_bytes);
+            jobs.push((sample, contig, total_bytes, len));
+            total_bytes += len as u64;
+            self.seq_count += 1;
         }
 
         // Add final boundary for total length
