@@ -5,5 +5,3 @@ experiments/
 *#*
 include
 target/
-# Local, opt-in build tuning; never shipped.
-.cargo/config.toml
