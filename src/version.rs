@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-// Git version injected at build time - fallback to "unknown" if not set
+// Git version injected at build time; fall back to the crate version when
+// git is unavailable (e.g. building from a release tarball or crates.io).
 const GIT_VERSION: &str = match option_env!("SEQWISH_GIT_VERSION") {
     Some(v) => v,
-    None => "unknown",
+    None => env!("CARGO_PKG_VERSION"),
 };
 
 static CODENAMES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
