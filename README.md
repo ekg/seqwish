@@ -81,6 +81,14 @@ cargo build --release
 # Binary will be in target/release/seqwish
 ```
 
+For a faster binary on the same computer you build on, run:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo build --release
+```
+
+This binary may not work on other computers, so do not use it for packages you share.
+
 ### from crates.io after publication
 
 ```bash
